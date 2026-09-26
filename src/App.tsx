@@ -9,6 +9,10 @@ import { DEFAULTS, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
 
 type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean }
 
+// The tab title cache key, shared with the inline script in index.html. Kept as the
+// theme's own key so two themes on one origin cannot fight over it.
+const TITLE_CACHE_KEY = "jikasei:site_name"
+
 // Split out because recharts is most of this bundle and the list page draws no
 // chart. The landing page is 242 kB rather than 629 kB (77 kB gzipped against
 // 188 kB), with the rest fetched immediately after it paints.
@@ -128,9 +132,26 @@ export default function App() {
   // `/node/{id}` is a page people bookmark and share, so the tab needs the node's
   // name. The site name rather than a fixed string, since the hub lets an operator
   // rename the site.
+  //
+  // Nothing is written until `me` is in: while it is missing the only value we could
+  // write is the placeholder, and that shows up as the tab flipping through one more
+  // title on every load. One write, the right one — and it is remembered so that the
+  // next reload starts on the real name instead of the placeholder (index.html).
   useEffect(() => {
-    document.title = [selected?.name, me?.site_name || "Monitor"].filter(Boolean).join(" · ")
-  }, [selected?.name, me?.site_name])
+    if (!me) return
+    const siteName = me.site_name || "Monitor"
+    // Claim the tab: index.html's inline script fetches /api/me on a cold visit and may
+    // answer seconds later. Once this runs, that response must not overwrite the title —
+    // on `/node/{id}` it would drop the node name.
+    ;(window as unknown as { __titleOwned?: boolean }).__titleOwned = true
+    document.title = [selected?.name, siteName].filter(Boolean).join(" · ")
+    try {
+      localStorage.setItem(TITLE_CACHE_KEY, siteName)
+    } catch {
+      // Private mode / storage disabled: the tab still gets its title, reloads just
+      // fall back to the placeholder.
+    }
+  }, [selected?.name, me])
 
   // Only while there is nothing else to show. Once `me` has loaded, a later
   // failure belongs beside the page rather than over it.

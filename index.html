@@ -6,7 +6,13 @@
     <!-- 标签页图标：与顶栏那枚站标同一个地址（站长在「主题设置」里改一次，两处一起变）。
          这里是 JS 起来之前的静态值，运行时会按设置项改写 <link rel="icon"> 与 apple-touch-icon。 -->
     <link rel="icon" href="/site-icon.png" />
-    <title>jikasei</title>
+    <!-- 标签页标题的占位值：静态 HTML 不可能知道站长把站名改成了什么，真站名要到 JS 里才有。
+         上游这里就是 "Monitor"，保持原样——换成本主题的名字只会让刷新时多闪一跳。 -->
+    <title>Monitor</title>
+    <!-- 标题的头一步（用缓存里的站名 / 冷启动时早问一次 /api/me）：public/title-probe.js，
+         与 src/App.tsx 里的 TITLE_CACHE_KEY 共用一个键。独立文件而不是内联脚本——
+         站点前面若有 CSP，内联脚本会被挡掉。 -->
+    <script src="/title-probe.js"></script>
     <!-- 站内自己的入口脚本（顶栏那枚「养鸡场」图标）：public/farm-entry.js，原样伺服、
          不进 bundle。它在 React 挂载后把入口补进顶栏，所以要早于入口包开始执行。
          别的站不做这件事时，删掉这一行与 public/farm-entry.js 即可。 -->
