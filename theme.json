@@ -2,7 +2,31 @@
   "name": "Komari定制主题",
   "short": "custom",
   "description": "",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "author": "stqfdyr",
-  "url": ""
+  "url": "",
+  "config": [
+    {
+      "type": "title",
+      "label": "顶栏"
+    },
+    {
+      "type": "string",
+      "key": "siteIcon",
+      "label": "站点图标",
+      "default": "/site-icon.png",
+      "help": "顶栏站点名左边那枚圆形图标，不是 1:1 的图会按 32px 圆形裁切。填完整网址（图床/CDN）最省事，也可以填站内路径；别把图片放进主题目录——主题升级会整目录替换。留空或取不到时回落到主题自带的那张。"
+    },
+    {
+      "type": "title",
+      "label": "列表"
+    },
+    {
+      "type": "boolean",
+      "key": "showGroupTabs",
+      "label": "显示分组标签行",
+      "default": true,
+      "help": "列表页顶部那行分组标签（全部 / 各组 / 未分组）的开关。关掉后节点按分组顺序平铺成一整列，标签行不再渲染；访客手里记着的分组选中态同时作废。节点本来就没有分组时，这一行无论如何都不显示。"
+    }
+  ]
 }

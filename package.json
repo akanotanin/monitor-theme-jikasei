@@ -1,15 +1,16 @@
 {
   "name": "monitor-theme-custom",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "node src/lib/format.test.ts && node src/lib/api.test.ts",
+    "check": "node scripts/check-config.mjs",
     "preview": "vite preview",
-    "package": "npm run build && node scripts/package.mjs"
+    "package": "npm run build && npm run check && node scripts/package.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",

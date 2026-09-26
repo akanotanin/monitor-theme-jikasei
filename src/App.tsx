@@ -5,6 +5,7 @@ import { NodeCard } from "@/components/NodeCard"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupsOf, useNodes, type Node } from "@/lib/api"
+import { DEFAULTS, useThemeConfig } from "@/lib/theme-config"
 
 type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean }
 
@@ -79,6 +80,7 @@ function useTheme() {
 
 export default function App() {
   const [dark, toggleTheme] = useTheme()
+  const config = useThemeConfig()
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
   const { nodes, error, closed } = useNodes()
@@ -143,14 +145,11 @@ export default function App() {
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-4 py-3 sm:px-6">
           {/* The site name is the way back to the list, so a node page needs
-              no back button of its own. The hub's site icon leads the name, as a
-              32px disc: it is uploaded in the panel and served beside the theme,
-              so a theme without one still renders (the disc shows the muted
-              ground and nothing else). */}
+              no back button of its own. A 32px disc of the site's own icon leads
+              it; the address is a theme setting, the built-in one is the
+              fallback. */}
           <button className="flex items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
-            <span className="size-8 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
-              <img src="/site-icon.png" alt="" className="size-full object-cover" />
-            </span>
+            <SiteIcon src={config.siteIcon} />
             {me.site_name || "Monitor"}
           </button>
           <div className="flex-1" />
@@ -195,28 +194,50 @@ export default function App() {
             ))}
           </div>
         ) : (
-          <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} />
+          <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} showTabs={config.showGroupTabs} />
         )}
       </main>
     </div>
   )
 }
 
+/**
+ * 顶栏的圆形站标。默认用主题自带的 `/site-icon.png`，站长可以在后台换成任意地址；
+ * 换的那个取不到就退回自带这张，两张都取不到就不占位——不留一枚破图。
+ */
+function SiteIcon({ src }: { src: string }) {
+  // 去重：站长填回默认地址时只有一个候选，出错就没有下一个。
+  const candidates = [...new Set([src, DEFAULTS.siteIcon].filter(Boolean))]
+  const [step, setStep] = useState(0)
+  const current = candidates[step]
+  if (!current) return null
+  return (
+    <span className="size-8 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
+      <img src={current} alt="" className="size-full object-cover" onError={() => setStep((n) => n + 1)} />
+    </span>
+  )
+}
+
 // Group tabs appear only once the operator has grouped something, so a hub
-// without groups keeps the page it always had.
-function NodeList({ nodes, group, onGroup, onOpen }: {
+// without groups keeps the page it always had. The operator can also switch the
+// row off outright (theme setting `showGroupTabs`), which leaves the page as one
+// flat list.
+function NodeList({ nodes, group, onGroup, onOpen, showTabs }: {
   nodes: Node[]
   /** null is every node, "" the ungrouped. */
   group: string | null
   onGroup: (group: string | null) => void
   onOpen: (id: number) => void
+  showTabs: boolean
 }) {
   const groups = groupsOf(nodes)
   const ungrouped = nodes.filter((n) => !n.group).length
   // A tab that has since emptied or been renamed -- 未分组 included -- falls back
   // to every node rather than to an empty page, and is forgotten, so a later
   // group of the same name does not take the page over.
-  const current = group === null || (group === "" ? ungrouped > 0 : groups.includes(group)) ? group : null
+  //
+  // 关掉标签行时同样回到全部：站长在后台一关，访客手里的分组选中态就作废。
+  const current = !showTabs ? null : group === null || (group === "" ? ungrouped > 0 : groups.includes(group)) ? group : null
   useEffect(() => {
     if (current !== group) onGroup(current)
   }, [current, group, onGroup])
@@ -228,7 +249,7 @@ function NodeList({ nodes, group, onGroup, onOpen }: {
   ]
   return (
     <>
-      {groups.length > 0 && (
+      {showTabs && groups.length > 0 && (
         <div role="group" aria-label="分组" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
           {tabs.map(([value, label, count]) => (
             <Button

@@ -130,7 +130,12 @@ for (const shot of SHOTS.filter((s) => !ONLY || s.name.includes(ONLY))) {
     flags: document.querySelectorAll('img[src^="/flags/"]').length,
     flagSrc: [...document.querySelectorAll('img[src^="/flags/"]')].slice(0, 3).map((i) => i.getAttribute('src')),
     farmEntry: !!document.querySelector('a[href="/chicken/"]'),
-    siteIcon: !!document.querySelector('img[src="/site-icon.png"]'),
+    // 站标地址是主题设置项，可能被站长换掉；顺带报它有没有真的加载出来
+    // （naturalWidth=0 就是取不到、已经退回默认或者空白）。
+    siteIcon: document.querySelector('header img')?.getAttribute('src') || '(没有)',
+    siteIconLoaded: (document.querySelector('header img')?.naturalWidth ?? 0) > 0,
+    // 分组标签行是主题设置项；关掉后这里应当是空数组。
+    groupTabs: [...document.querySelectorAll('[role=group][aria-label=分组] button')].map((b) => b.innerText.replace(/\s+/g, ' ')),
     cards: document.querySelectorAll('[role=button]').length,
     h3: [...document.querySelectorAll('h3')].slice(0, 3).map((h) => h.textContent),
     text: document.body.innerText.replace(/\\s+/g, ' ').slice(0, 220),
