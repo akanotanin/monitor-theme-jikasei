@@ -1,8 +1,8 @@
 {
   "name": "jikasei",
   "short": "jikasei",
-  "description": "",
-  "version": "1.2.1",
+  "description": "自家制の极简探针（Monitor）主题。",
+  "version": "1.2.2",
   "author": "akanotanin",
   "url": "",
   "config": [
