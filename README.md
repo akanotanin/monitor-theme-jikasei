@@ -1,4 +1,4 @@
-# monitor-theme-custom（Komari定制主题）
+# monitor-theme-jikasei（jikasei）
 
 [monitor](https://github.com/monitor-probe/monitor) 的第三方主题，跑在 komari.im 的公开状态页上。
 
@@ -43,6 +43,7 @@
 
 | 版本 | 说明 |
 |---|---|
+| 1.2.0 | 改名：主题名 `jikasei`、署名 `akanotanin`，`short` 由 `custom` 改为 `jikasei`（安装身份变化：已装 `custom` 的实例需重装并在面板切换）|
 | 1.1.0 | 新增两项后台设置：站点图标、分组标签行开关（`theme.json` 的 `config`）|
 | 1.0.2 | 本仓库首版：基线换成上游 v1.1.0 源码，此前所有改动重建进源码 |
 | 1.0.0 / 1.0.1 | 历史版本，只有构建产物，没有源码 |
@@ -59,7 +60,7 @@
 | 站点图标 | `/site-icon.png` | 顶栏那枚 32px 圆形站标的地址。填完整网址或站内路径；取不到就回落到主题自带那张，两张都取不到则不占位。 |
 | 显示分组标签行 | 开 | 列表页顶部那行分组标签（全部 / 各组 / 未分组）的开关。关掉后节点按分组顺序平铺成一整列；关掉的那一刻访客手里选着的分组同时作废（回到全部）。节点本来就没有分组时，这行无论如何都不显示。 |
 
-两项都只走站点级配置（`GET` / `PUT /api/themes/custom/config`）；访客自己的深浅色偏好仍旧走
+两项都只走站点级配置（`GET` / `PUT /api/themes/jikasei/config`）；访客自己的深浅色偏好仍旧走
 localStorage，不混在一起。
 
 `theme.json` 的 `config` 声明表单，`src/lib/theme-config.ts` 的 `DEFAULTS` 是页面的兜底，
@@ -124,7 +125,7 @@ MONITOR_HUB=https://hub.example.com npm run dev
 每个 tag 的 release 里的 `theme.tar.gz` 解开就是这个目录——hub 构建时嵌入的是同一个包。
 
 将目录复制到 hub 的 `--themes` 位置，在后台「主题」页切换，无需重启。本主题的 `short` 是
-`custom`，`url` 留空（面板上的「更新」按钮因此不可用，改由 `npm run package` 出的包手动安装）。
+`jikasei`，`url` 留空（面板上的「更新」按钮因此不可用，改由 `npm run package` 出的包手动安装）。
 
 ## 主题契约
 

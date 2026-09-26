@@ -8,7 +8,7 @@ import { api } from "@/lib/api"
  * `config` 现画，两边靠 key 对上；DEFAULTS 必须与 theme.json 里那些 `default` 一致，
  * `scripts/check-config.mjs` 在打包前兜底。
  */
-const SHORT = "custom"
+const SHORT = "jikasei"
 
 export type ThemeConfig = {
   /** 顶栏那枚圆形站标的地址；取不到就退回主题自带那张。 */

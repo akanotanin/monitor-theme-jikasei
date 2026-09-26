@@ -1,9 +1,9 @@
 {
-  "name": "Komari定制主题",
-  "short": "custom",
+  "name": "jikasei",
+  "short": "jikasei",
   "description": "",
-  "version": "1.1.0",
-  "author": "stqfdyr",
+  "version": "1.2.0",
+  "author": "akanotanin",
   "url": "",
   "config": [
     {
