@@ -36,8 +36,10 @@ async function connect() {
 const ws = new WebSocket(await connect());
 await new Promise((r) => { ws.onopen = r; });
 const send = (m, p = {}) => new Promise((res) => { const i = ++id; pend.set(i, res); ws.send(JSON.stringify({ id: i, method: m, params: p })); });
-// 故意给一份「轴里存着的旧值」：面板要画出表单，页面才知道该读哪些键，两边靠 key 对上。
-const saved = { siteIcon: '', showGroupTabs: false };
+// 站点配置喂 `{}` = 从没保存过：面板的初值是 `saved[key] ?? default`，
+// 所以截图里应当看到主题自带的默认值（/site-icon.png、开关是开的）。
+// 「保存过非默认值」那一态不用这里验——线上真机的 PUT/匿名读回才是判据。
+const saved = {};
 ws.onmessage = (e) => {
   const m = JSON.parse(e.data);
   if (m.id && pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id); return; }
