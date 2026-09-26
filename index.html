@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="/favicon.svg" />
+    <!-- 标签页图标：与顶栏那枚站标同一个地址（站长在「主题设置」里改一次，两处一起变）。
+         这里是 JS 起来之前的静态值，运行时会按设置项改写 <link rel="icon"> 与 apple-touch-icon。 -->
+    <link rel="icon" href="/site-icon.png" />
     <title>jikasei</title>
     <!-- 站内自己的入口脚本（顶栏那枚「养鸡场」图标）：public/farm-entry.js，原样伺服、
          不进 bundle。它在 React 挂载后把入口补进顶栏，所以要早于入口包开始执行。

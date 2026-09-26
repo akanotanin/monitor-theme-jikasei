@@ -134,6 +134,9 @@ for (const shot of SHOTS.filter((s) => !ONLY || s.name.includes(ONLY))) {
     // （naturalWidth=0 就是取不到、已经退回默认或者空白）。
     siteIcon: document.querySelector('header img')?.getAttribute('src') || '(没有)',
     siteIconLoaded: (document.querySelector('header img')?.naturalWidth ?? 0) > 0,
+    // 标签页图标跟站点图标是同一个地址（主题设置里改一处两处一起变）。
+    favicon: document.querySelector('link[rel~="icon"]')?.getAttribute('href') || '(没有)',
+    touchIcon: document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href') || '(没有)',
     // 分组标签行是主题设置项；关掉后这里应当是空数组。
     groupTabs: [...document.querySelectorAll('[role=group][aria-label=分组] button')].map((b) => b.innerText),
     cards: document.querySelectorAll('[role=button]').length,

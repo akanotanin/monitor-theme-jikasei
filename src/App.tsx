@@ -5,7 +5,7 @@ import { NodeCard } from "@/components/NodeCard"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupsOf, useNodes, type Node } from "@/lib/api"
-import { DEFAULTS, useThemeConfig } from "@/lib/theme-config"
+import { DEFAULTS, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
 
 type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean }
 
@@ -81,6 +81,9 @@ function useTheme() {
 export default function App() {
   const [dark, toggleTheme] = useTheme()
   const config = useThemeConfig()
+  // 顶栏那张站标最终用的是哪个地址（加载成功才知道），标签页图标跟着它走。
+  const [settledIcon, setSettledIcon] = useState<string | null>(null)
+  useSiteFavicon(settledIcon)
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
   const { nodes, error, closed } = useNodes()
@@ -149,7 +152,7 @@ export default function App() {
               it; the address is a theme setting, the built-in one is the
               fallback. */}
           <button className="flex items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
-            <SiteIcon src={config.siteIcon} />
+            <SiteIcon key={config.siteIcon} src={config.siteIcon} onSettle={setSettledIcon} />
             {me.site_name || "Monitor"}
           </button>
           <div className="flex-1" />
@@ -205,15 +208,25 @@ export default function App() {
  * 顶栏的圆形站标。默认用主题自带的 `/site-icon.png`，站长可以在后台换成任意地址；
  * 换的那个取不到就退回自带这张，两张都取不到就不占位——不留一枚破图。
  */
-function SiteIcon({ src }: { src: string }) {
+function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | null) => void }) {
   // 去重：站长填回默认地址时只有一个候选，出错就没有下一个。
   const candidates = [...new Set([src, DEFAULTS.siteIcon].filter(Boolean))]
   const [step, setStep] = useState(0)
+  // 站长那一项到得比首帧晚：调用处用 key={src} 让它重挂，候选与步骤都从头来，
+  // 不用在 effect 里回头改状态（那会多一轮渲染）。
   const current = candidates[step]
+  // 候选全试完还把 onSettle 留在 null —— 标签页图标就维持静态值，不留破图。
+  useEffect(() => { if (!current) onSettle(null) }, [current, onSettle])
   if (!current) return null
   return (
     <span className="size-8 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
-      <img src={current} alt="" className="size-full object-cover" onError={() => setStep((n) => n + 1)} />
+      <img
+        src={current}
+        alt=""
+        className="size-full object-cover"
+        onLoad={() => onSettle(current)}
+        onError={() => setStep((n) => n + 1)}
+      />
     </span>
   )
 }
