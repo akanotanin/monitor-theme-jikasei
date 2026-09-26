@@ -1,0 +1,6 @@
+# 统一用 LF：源码里有大段中文注释，避免不同平台检出后整文件行尾翻转
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.svg binary
+*.tar.gz binary

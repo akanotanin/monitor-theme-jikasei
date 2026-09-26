@@ -1,0 +1,47 @@
+name: Package theme
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: 校验 tag 与版本号
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag 必须是 x.x.x 形式：$TAG" >&2
+            exit 1
+          fi
+          node -e '
+            const fs = require("node:fs");
+            const tag = process.env.TAG;
+            for (const file of ["theme.json", "package.json"]) {
+              const version = JSON.parse(fs.readFileSync(file, "utf8")).version;
+              if (version !== tag) throw new Error(`${file} 的版本 ${version} 与 tag ${tag} 不一致`);
+            }
+          '
+      - run: npm ci
+      # package 自己会先 build，再校验 dist/ 是否比源码新，最后打 theme.tar.gz 并开包核对
+      - name: 构建并打包
+        run: npm run package
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" release/theme.tar.gz release/*.sha256 --verify-tag --title "$TAG" --generate-notes
