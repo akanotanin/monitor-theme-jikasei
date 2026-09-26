@@ -135,12 +135,15 @@ for (const shot of SHOTS.filter((s) => !ONLY || s.name.includes(ONLY))) {
     siteIcon: document.querySelector('header img')?.getAttribute('src') || '(没有)',
     siteIconLoaded: (document.querySelector('header img')?.naturalWidth ?? 0) > 0,
     // 分组标签行是主题设置项；关掉后这里应当是空数组。
-    groupTabs: [...document.querySelectorAll('[role=group][aria-label=分组] button')].map((b) => b.innerText.replace(/\s+/g, ' ')),
+    groupTabs: [...document.querySelectorAll('[role=group][aria-label=分组] button')].map((b) => b.innerText),
     cards: document.querySelectorAll('[role=button]').length,
     h3: [...document.querySelectorAll('h3')].slice(0, 3).map((h) => h.textContent),
     text: document.body.innerText.replace(/\\s+/g, ' ').slice(0, 220),
   })`)
-  facts[shot.name] = JSON.parse(f)
+  const parsed = JSON.parse(f)
+  // 空白归一化放在 node 侧：写进页面表达式就要在模板字面量里再套一层转义，容易写坏（踩过）。
+  if (Array.isArray(parsed.groupTabs)) parsed.groupTabs = parsed.groupTabs.map((t) => t.replace(/\s+/g, ' '))
+  facts[shot.name] = parsed
   console.log(`${shot.name.padEnd(14)} ${JSON.stringify(facts[shot.name])}`)
 }
 console.log('控制台异常:', errors.length ? errors : '无')
