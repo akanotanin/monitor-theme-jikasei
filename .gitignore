@@ -31,3 +31,6 @@ dist-ssr
 /docs/
 /CLAUDE.md
 /.claude/
+
+# 站内自用：只在自家隔离测试 hub 上跑的运维脚本（登录、切主题、改设置），不进公开仓库
+/tools/testhub_theme.sh

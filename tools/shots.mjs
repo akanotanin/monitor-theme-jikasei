@@ -2,7 +2,7 @@
 //
 // 用法：
 //   node tools/shots.mjs http://127.0.0.1:28081 shots
-//   node tools/shots.mjs https://komari.im shots/live
+//   node tools/shots.mjs https://<你的站点> shots/live
 //
 // 拍什么：桌面亮/暗的列表页、节点详情页、延迟页，以及手机（390×844）的列表页与详情页。
 // 报什么：国旗、养鸡场入口、站标这些「只有本主题才有」的元素在不在，以及控制台报错。
