@@ -5,7 +5,8 @@ import { NodeCard } from "@/components/NodeCard"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupsOf, useNodes, type Node } from "@/lib/api"
-import { DEFAULTS, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
+import { DEFAULTS, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
+import { FarmIcon } from "@/components/FarmIcon"
 
 type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean }
 
@@ -82,9 +83,27 @@ function useTheme() {
   ] as const
 }
 
+/**
+ * 站内那套养鸡场（同域）用当前标签页打开就好，它属于本站导航；指向别的站时才开新标签页——
+ * 默认值就是那样的一座公开养鸡场，不该把访客从状态页带走。
+ */
+function farmLinkProps(url: string) {
+  try {
+    if (new URL(url, location.href).origin === location.origin) return {}
+  } catch {
+    // 地址本身不合法就按外链处理：让它自己在新标签页里报错，别把本站带跑。
+  }
+  return { target: "_blank", rel: "noreferrer" }
+}
+
 export default function App() {
   const [dark, toggleTheme] = useTheme()
-  const config = useThemeConfig()
+  const { config, loaded } = useThemeConfig()
+  // 站长没填地址时，自动认本站约定的那个位置（`/chicken/`）有没有养鸡场；
+  // 填了就以他填的为准。**等设置到了再探**（loaded）——不然「关掉入口」「填了自己地址」
+  // 的站都会白探一次，那两次探测还会让护栏分不清「该探没探」。
+  const detectedFarm = useLocalFarm(loaded && config.showFarmEntry && !config.farmUrl)
+  const farmUrl = config.showFarmEntry ? config.farmUrl || detectedFarm : ""
   // 顶栏那张站标最终用的是哪个地址（加载成功才知道），标签页图标跟着它走。
   const [settledIcon, setSettledIcon] = useState<string | null>(null)
   useSiteFavicon(settledIcon)
@@ -190,6 +209,15 @@ export default function App() {
               <Wrench />
             </a>
           </Button>
+          {/* 养鸡场入口：站长填了地址就指向那里；留空则本站 `/chicken/` 上真装了养鸡场
+              才出现（自动探测，见 useLocalFarm），开关关掉则一律不出现。 */}
+          {farmUrl && (
+            <Button variant="ghost" size="icon" asChild>
+              <a href={farmUrl} title="养鸡场" aria-label="养鸡场" {...farmLinkProps(farmUrl)}>
+                <FarmIcon />
+              </a>
+            </Button>
+          )}
           <Button variant="ghost" size="icon" onClick={toggleTheme} title="切换主题">
             {dark ? <Sun /> : <Moon />}
           </Button>

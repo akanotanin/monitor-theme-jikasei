@@ -129,7 +129,8 @@ for (const shot of SHOTS.filter((s) => !ONLY || s.name.includes(ONLY))) {
     dark: document.documentElement.classList.contains('dark'),
     flags: document.querySelectorAll('img[src^="/flags/"]').length,
     flagSrc: [...document.querySelectorAll('img[src^="/flags/"]')].slice(0, 3).map((i) => i.getAttribute('src')),
-    farmEntry: !!document.querySelector('a[href="/chicken/"]'),
+    farmEntry: !!document.querySelector('a[title="养鸡场"]'),
+    farmHref: document.querySelector('a[title="养鸡场"]')?.getAttribute('href') || '(没有)',
     // 站标地址是主题设置项，可能被站长换掉；顺带报它有没有真的加载出来
     // （naturalWidth=0 就是取不到、已经退回默认或者空白）。
     siteIcon: document.querySelector('header img')?.getAttribute('src') || '(没有)',

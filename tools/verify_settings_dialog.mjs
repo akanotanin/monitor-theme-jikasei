@@ -15,8 +15,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
-// 本站要靠这两项给站长换图标、开关分组标签行——名字与 theme.json 的 label 逐字对应。
-const WANTED = ['站点图标', '显示分组标签行'];
+// 本站要靠这几项给站长换图标、开关分组标签行、指养鸡场入口——名字与 theme.json 的 label 逐字对应。
+const WANTED = ['站点图标', '显示养鸡场入口', '养鸡场地址', '显示分组标签行'];
 const PORT = 9780 + Math.floor(Math.random() * 20);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe']
   .find((p) => existsSync(p)) || 'chrome';

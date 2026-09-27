@@ -2,9 +2,9 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "author": "akanotanin",
-  "url": "",
+  "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
     {
       "type": "title",
@@ -16,6 +16,20 @@
       "label": "站点图标",
       "default": "/site-icon.png",
       "help": "顶栏站点名左边那枚圆形图标，同时也是浏览器标签页／书签／手机桌面快捷方式的图标——改这一处，两处一起变。不是 1:1 的图会按 32px 圆形裁切。填完整网址（图床/CDN）最省事，也可以填站内路径；别把图片放进主题目录——主题升级会整目录替换。留空或取不到时回落到主题自带的那张。"
+    },
+    {
+      "type": "boolean",
+      "key": "showFarmEntry",
+      "label": "显示养鸡场入口",
+      "default": true,
+      "help": "顶栏那枚「养鸡场」图标的开关。开着时，下面那个地址留空就自动认本站 /chicken/：装了养鸡场才显示，没装就不显示（所以只装主题的站不会多出一枚点不到东西的图标）。"
+    },
+    {
+      "type": "string",
+      "key": "farmUrl",
+      "label": "养鸡场地址",
+      "default": "",
+      "help": "留空 = 自动认本站的 /chicken/（推荐：养鸡场装好后刷新，这枚图标自己出现）。想固定指向别处就填地址：同域写 /chicken/，跨站写完整网址（跨站的会在新标签页打开，例如想直接进公开的养鸡场可以填 https://komari.im/chicken/）。"
     },
     {
       "type": "title",

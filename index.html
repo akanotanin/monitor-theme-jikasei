@@ -13,10 +13,6 @@
          与 src/App.tsx 里的 TITLE_CACHE_KEY 共用一个键。独立文件而不是内联脚本——
          站点前面若有 CSP，内联脚本会被挡掉。 -->
     <script src="/title-probe.js"></script>
-    <!-- 站内自己的入口脚本（顶栏那枚「养鸡场」图标）：public/farm-entry.js，原样伺服、
-         不进 bundle。它在 React 挂载后把入口补进顶栏，所以要早于入口包开始执行。
-         别的站不做这件事时，删掉这一行与 public/farm-entry.js 即可。 -->
-    <script src="/farm-entry.js"></script>
   </head>
   <body>
     <div id="root"></div>
