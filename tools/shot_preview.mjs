@@ -22,6 +22,13 @@ const OUT = process.argv[3] || 'preview.png'
 const W = Number(process.argv[4] || 1440)
 const H = Number(process.argv[5] || 810)
 const DPR = Number(process.argv[6] || 2)
+// 可选（第 7 个参数）：把站点配置里的 cardStyle 钉成这个值再截。
+// 三种形态要各拍一张，但线上同一时刻只能处在一种形态——与其来回改站长的站点配置
+// （访客会跟着看到跳变、还要登录后台），不如只把这一条响应在浏览器层换掉：
+// 站点配置原样取回来，只改 cardStyle 一个键，其余（延迟线路清单等）与线上完全一致。
+// 线上配置一个字都不动。
+const SHORT = 'jikasei'
+const STYLE = process.argv[7] || null
 const PORT = 9700 + Math.floor(Math.random() * 200)
 const CHROME = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -52,7 +59,29 @@ for (let i = 0; i < 80 && !wsUrl; i++) {
 if (!wsUrl) throw new Error('Chrome 没起来')
 const ws = new WebSocket(wsUrl)
 await new Promise((r) => { ws.onopen = r })
-ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) } }
+// 覆写主题配置时的计数：拍完要断言「这条机制真的发生过」，否则可能是压根没生效却看着像成功。
+const overridden = []
+let SERVED_CONFIG = null
+ws.onmessage = (e) => {
+  const m = JSON.parse(e.data)
+  if (m.method === 'Fetch.requestPaused') {
+    const url = m.params.request.url
+    ws.send(JSON.stringify({
+      id: ++id, method: 'Fetch.fulfillRequest',
+      params: {
+        requestId: m.params.requestId, responseCode: 200,
+        responseHeaders: [
+          { name: 'Content-Type', value: 'application/json' },
+          { name: 'Cache-Control', value: 'no-store' },
+        ],
+        body: Buffer.from(SERVED_CONFIG, 'utf8').toString('base64'),
+      },
+    }))
+    overridden.push(url)
+    return
+  }
+  if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) }
+}
 const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })) })
 const evalJS = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value
 
@@ -60,6 +89,15 @@ await send('Runtime.enable')
 await send('Page.enable')
 await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: DPR, mobile: false })
 await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })
+
+// 要钉档位时：先把线上配置取回来（只改 cardStyle 一个键），再把这条请求交给 Fetch 域就地答复。
+if (STYLE) {
+  const live = await (await fetch(`${BASE}/api/themes/${SHORT}/config`)).json()
+  SERVED_CONFIG = JSON.stringify({ ...live, cardStyle: STYLE })
+  await send('Fetch.enable', { patterns: [{ urlPattern: `*api/themes/${SHORT}/config*`, requestStage: 'Request' }] })
+  console.log(`卡片形态钉成 ${STYLE}（其余键原样取自线上：${Object.keys(live).join(" / ")}）；线上配置未改动`)
+}
+
 await send('Page.navigate', { url: BASE + '/' })
 
 // 1) 页面起来（卡片出来了）
@@ -109,6 +147,12 @@ const geometry = JSON.parse(await evalJS(`JSON.stringify((() => {
     farmEntry: !!document.querySelector('a[title="养鸡场"]'),
   }
 })())`))
+
+// 钉档位时，必须在按快门前确认那条覆写真的发生过（否则拍到的是线上原本那一档）。
+if (STYLE && overridden.length === 0) {
+  throw new Error(`钉了 cardStyle=${STYLE}，但主题配置那条请求一次都没被拦到——这张图不是你要的形态，别用`)
+}
+if (STYLE) console.log(`主题配置请求已就地覆写 ${overridden.length} 次：${overridden.map((u) => u.replace(BASE, '')).join(', ')}`)
 
 const png = await send('Page.captureScreenshot', { format: 'png' })
 await writeFile(OUT, Buffer.from(png.result.data, 'base64'))

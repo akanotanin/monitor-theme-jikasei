@@ -10,7 +10,7 @@
 
 | 经典形态（默认） | 延迟形态 | 详细形态 |
 |---|---|---|
-| ![经典形态](preview-classic.png) | ![延迟形态](preview-latency.png) | ![详细形态](preview-detailed.png) |
+| ![经典形态](preview-classic.png) | ![延迟形态](preview-latency.png?v=2) | ![详细形态](preview-detailed.png) |
 
 ## 安装
 
