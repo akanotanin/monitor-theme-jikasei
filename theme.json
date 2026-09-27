@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -15,32 +15,54 @@
       "key": "siteIcon",
       "label": "站点图标",
       "default": "/site-icon.png",
-      "help": "顶栏站点名左边那枚圆形图标，同时也是浏览器标签页／书签／手机桌面快捷方式的图标——改这一处，两处一起变。不是 1:1 的图会按 32px 圆形裁切。填完整网址（图床/CDN）最省事，也可以填站内路径；别把图片放进主题目录——主题升级会整目录替换。留空或取不到时回落到主题自带的那张。"
+      "help": "顶栏站名左边那枚圆形图标，同时也是浏览器标签页／书签／手机桌面的图标——改这一处，两处一起变。填完整网址或站内路径；留空或取不到时用主题自带那张。"
     },
     {
       "type": "boolean",
       "key": "showFarmEntry",
       "label": "显示养鸡场入口",
       "default": true,
-      "help": "顶栏那枚「养鸡场」图标的开关。开着时，下面那个地址留空就自动认本站 /chicken/：装了养鸡场才显示，没装就不显示（所以只装主题的站不会多出一枚点不到东西的图标）。"
+      "help": "顶栏那枚「养鸡场」图标的开关。"
     },
     {
       "type": "string",
       "key": "farmUrl",
       "label": "养鸡场地址",
       "default": "",
-      "help": "留空 = 自动认本站的 /chicken/（推荐：养鸡场装好后刷新，这枚图标自己出现）。想固定指向别处就填地址：同域写 /chicken/，跨站写完整网址。"
+      "help": "留空 = 自动认本站 /chicken/（装了才显示）。想固定指向别处就填地址：同域写路径，跨站写完整网址。"
     },
     {
       "type": "title",
-      "label": "列表"
+      "label": "列表与卡片"
     },
     {
       "type": "boolean",
       "key": "showGroupTabs",
       "label": "显示分组标签行",
       "default": false,
-      "help": "列表页顶部那行分组标签（全部 / 各组 / 未分组）的开关。默认关闭，节点按分组顺序平铺成一整列，标签行不再渲染；访客手里记着的分组选中态同时作废。节点本来就没有分组时，这一行无论如何都不显示。"
+      "help": "列表页顶部那行分组标签（全部 / 各组 / 未分组）的开关；节点没有分组时不显示。"
+    },
+    {
+      "type": "select",
+      "key": "cardStyle",
+      "label": "卡片形态",
+      "default": "classic",
+      "options": [
+        { "value": "classic", "label": "经典：网络速率与总量分两行，不含延迟" },
+        { "value": "detail", "label": "详细：网络合成一行，下方带三网延迟" }
+      ],
+      "help": "经典更紧凑，也不去拉延迟数据；详细会把三网延迟挂在卡片下方。"
+    },
+    {
+      "type": "title",
+      "label": "三网延迟"
+    },
+    {
+      "type": "text",
+      "key": "pingLines",
+      "label": "显示的延迟线路",
+      "default": "",
+      "help": "每行一个 ping 任务名（后台「延迟监控」里的名字），最多三个，按填写的顺序显示；留空则按后台顺序自动显示前几条。仅在「详细」卡片形态下生效。"
     }
   ]
 }

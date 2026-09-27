@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
+import { LatencyPanel } from "@/components/Latency"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { bytes, FOREVER, pair, percent, rate } from "@/lib/format"
@@ -84,7 +85,7 @@ function trafficFoot(node: Node) {
     : `${bytes(monthUsage(node))} / ${FOREVER}`
 }
 
-export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
+export function NodeCard({ node, onOpen, latencyLines, cardStyle }: { node: Node; onOpen: () => void; latencyLines: string; cardStyle: "detail" | "classic" }) {
   const m = node.metrics
 
   return (
@@ -139,24 +140,50 @@ export function NodeCard({ node, onOpen }: { node: Node; onOpen: () => void }) {
             />
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-4 text-xs">
-            <span className="tnum inline-flex items-center gap-1.5">
-              <ArrowDown className="size-3 text-muted-foreground" />
-              {m ? rate(m.net_rx) : "—"}
-            </span>
-            <span className="tnum inline-flex items-center gap-1.5">
-              <ArrowUp className="size-3 text-muted-foreground" />
-              {m ? rate(m.net_tx) : "—"}
-            </span>
-            <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
-              <ArrowDown className="size-3" />
-              {bytes(node.total_rx)}
-            </span>
-            <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
-              <ArrowUp className="size-3" />
-              {bytes(node.total_tx)}
-            </span>
-          </div>
+          {cardStyle === "classic" ? (
+            /* 经典形态：速率一行、总量一行，2×2；不含延迟，也就不发延迟请求。 */
+            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-4 text-xs">
+              <span className="tnum inline-flex items-center gap-1.5">
+                <ArrowDown className="size-3 text-muted-foreground" />
+                {m ? rate(m.net_rx) : "—"}
+              </span>
+              <span className="tnum inline-flex items-center gap-1.5">
+                <ArrowUp className="size-3 text-muted-foreground" />
+                {m ? rate(m.net_tx) : "—"}
+              </span>
+              <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
+                <ArrowDown className="size-3" />
+                {bytes(node.total_rx)}
+              </span>
+              <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
+                <ArrowUp className="size-3" />
+                {bytes(node.total_tx)}
+              </span>
+            </div>
+          ) : (
+            <>
+              {/* 两个方向各一组、左右各占一端，组内「累计总量 · 实时速率」用一枚分隔点
+                  连起来；颜色沿用原本一套：实时速率用前景色，累计总量与箭头、分隔点都用弱化灰。 */}
+              {/* 上行/下行那组：紧接在上面的用量格之后，横线挪到它下面（见 Latency 的边框），
+                  由那条线把「总量 · 速率」与下面的三网延迟分开。 */}
+              <div className="mt-4 flex items-center justify-between gap-x-3 text-xs">
+                <span className="tnum inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <ArrowUp className="size-3 shrink-0 text-muted-foreground" />
+                  <span className="text-muted-foreground">{bytes(node.total_tx)}</span>
+                  <span className="text-muted-foreground">·</span>
+                  {m ? rate(m.net_tx) : "—"}
+                </span>
+                <span className="tnum inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <ArrowDown className="size-3 shrink-0 text-muted-foreground" />
+                  <span className="text-muted-foreground">{bytes(node.total_rx)}</span>
+                  <span className="text-muted-foreground">·</span>
+                  {m ? rate(m.net_rx) : "—"}
+                </span>
+              </div>
+              {/* 三网延迟：每条线路一行，数据来自 hub 的 ping 历史（详见 Latency.tsx）。 */}
+              <LatencyPanel node={node} lines={latencyLines} />
+            </>
+          )}
         </>
       ) : (
         /* Never connected: nothing to plot, so the card stays short rather than

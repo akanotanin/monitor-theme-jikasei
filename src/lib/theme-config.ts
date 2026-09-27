@@ -19,6 +19,10 @@ export type ThemeConfig = {
   farmUrl: string
   /** 列表页是否显示分组标签行（全部 / 各组 / 未分组）。 */
   showGroupTabs: boolean
+  /** 卡片形态：classic = 网络两行、不含延迟；detail = 网络单行 + 三网延迟。 */
+  cardStyle: "classic" | "detail"
+  /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */
+  pingLines: string
 }
 
 export const DEFAULTS: ThemeConfig = {
@@ -30,6 +34,11 @@ export const DEFAULTS: ThemeConfig = {
   farmUrl: "",
   // 默认关：分组标签行是个可选的视图，没分组的站开着也看不见东西。
   showGroupTabs: false,
+  // 默认「经典」：更紧凑、不发延迟请求；想带三网延迟的在后台切「详细」。
+  cardStyle: "classic",
+  // 延迟线路：留空 = 按后台顺序自动显示前几条；填了名字就只显示这些（一行一个）。
+  // 名字是 ping 任务的名字，不是节点名——对不上的行会被跳过。
+  pingLines: "",
 }
 
 /**
@@ -131,6 +140,13 @@ export function useThemeConfig(): { config: ThemeConfig; loaded: boolean } {
             typeof saved.showFarmEntry === "boolean" ? saved.showFarmEntry : DEFAULTS.showFarmEntry,
           showGroupTabs:
             typeof saved.showGroupTabs === "boolean" ? saved.showGroupTabs : DEFAULTS.showGroupTabs,
+          // select：值不在声明里的选项内（旧版本、手改）就当没保存过，回落默认。
+          cardStyle:
+            saved.cardStyle === "classic" || saved.cardStyle === "detail"
+              ? saved.cardStyle
+              : DEFAULTS.cardStyle,
+          // 留空是有意义的值（= 自动取前几条），空串不能当「没填过」；只有类型不对时才回落。
+          pingLines: typeof saved.pingLines === "string" ? saved.pingLines : DEFAULTS.pingLines,
         })
         setLoaded(true)
       })

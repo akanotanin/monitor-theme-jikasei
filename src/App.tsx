@@ -246,7 +246,9 @@ export default function App() {
             ))}
           </div>
         ) : (
-          <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} showTabs={config.showGroupTabs} />
+          <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} showTabs={config.showGroupTabs}
+            latencyLines={config.pingLines}
+            cardStyle={config.cardStyle} />
         )}
       </main>
     </div>
@@ -284,13 +286,17 @@ function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | nu
 // without groups keeps the page it always had. The operator can also switch the
 // row off outright (theme setting `showGroupTabs`), which leaves the page as one
 // flat list.
-function NodeList({ nodes, group, onGroup, onOpen, showTabs }: {
+function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardStyle }: {
   nodes: Node[]
   /** null is every node, "" the ungrouped. */
   group: string | null
   onGroup: (group: string | null) => void
   onOpen: (id: number) => void
   showTabs: boolean
+  /** 卡片延迟块要显示哪几条线路（ping 任务名，换行分隔）；空串 = 自动。 */
+  latencyLines: string
+  /** 卡片形态：detail 网络单行 + 延迟；classic 网络两行、无延迟。 */
+  cardStyle: "detail" | "classic"
 }) {
   const groups = groupsOf(nodes)
   const ungrouped = nodes.filter((n) => !n.group).length
@@ -335,7 +341,7 @@ function NodeList({ nodes, group, onGroup, onOpen, showTabs }: {
       ) : (
         <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {shown.map((n) => (
-            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} />
+            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} latencyLines={latencyLines} cardStyle={cardStyle} />
           ))}
         </div>
       )}
