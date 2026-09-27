@@ -1,7 +1,7 @@
 // 本地静态伺服 dist/ + 桩掉 /api/*：不依赖任何远端 hub 也能验主题的渲染与设置项。
 //
 // 用法：node tools/serve.mjs [端口=5199] [config JSON 文件] [nodes JSON 文件]
-//   node tools/serve.mjs 5199 '{"siteIcon":"/site-icon.png","showGroupTabs":true}'
+//   node tools/serve.mjs 5199 '{"siteIcon":"/site-icon.png","listTop":"groups"}'
 //   node tools/serve.mjs 5199 cfg.json ../../chicken-farm/tools/fake_nodes.json
 //
 // 为什么要它：经 SSH 隧道取静态文件时，同一个地址被并发请求（标签页图标 + 顶栏图标）

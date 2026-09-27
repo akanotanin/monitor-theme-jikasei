@@ -30,7 +30,7 @@ const DPR = Number(process.argv[6] || 2)
 //
 // 可选（第 8 个参数）：再叠一组键值（JSON 字面量），同一套机制。
 // 「开关默认关的新功能长什么样」就靠它拍：站点配置一个字都不用改，也不会让访客看到跳变。
-//   node tools/shot_preview.mjs https://<站点> shots/summary.png 1440 900 2 "" '{"showSummary":true}'
+//   node tools/shot_preview.mjs https://<站点> shots/summary.png 1440 900 2 "" '{"listTop":"summary"}'
 const SHORT = 'jikasei'
 const STYLE = process.argv[7] || null
 const EXTRA = process.argv[8] ? JSON.parse(process.argv[8]) : {}

@@ -1,62 +1,20 @@
 import { useEffect, useState } from "react"
 
 import { api } from "@/lib/api"
+import { DEFAULTS, normalizeConfig, type ThemeConfig } from "@/lib/site-settings"
 
 /**
  * 站点级设置：只存 Hub（`/api/themes/<short>/config`），一个站一份，不落访客的浏览器——
  * 访客自己的偏好（深浅色）才用 localStorage。后台「主题设置」表单按 theme.json 的
- * `config` 现画，两边靠 key 对上；DEFAULTS 必须与 theme.json 里那些 `default` 一致，
+ * `config` 现画，两边靠 key 对上；默认值与迁移规则在 `site-settings.ts`（那里能单测），
  * `scripts/check-config.mjs` 在打包前兜底。
  */
 const SHORT = "jikasei"
 
-export type ThemeConfig = {
-  /** 顶栏那枚圆形站标的地址，同时也是标签页图标；取不到就退回主题自带那张。 */
-  siteIcon: string
-  /** 顶栏那枚「养鸡场」图标的开关。 */
-  showFarmEntry: boolean
-  /** 养鸡场的地址；空串 = 自动探测本站的 `/chicken/`。 */
-  farmUrl: string
-  /** 列表页是否显示分组标签行（全部 / 各组 / 未分组）。 */
-  showGroupTabs: boolean
-  /** 列表页顶上那行概览卡片（节点 / 最忙节点 / 今日流量 / 实时网速）的开关。 */
-  showSummary: boolean
-  /** 卡片形态：classic = 网络两行、不含延迟；latency = 网络单行 + 三网延迟；detailed = 再加在线时长、价格与到期。 */
-  cardStyle: "classic" | "latency" | "detailed"
-  /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */
-  pingLines: string
-}
-
-export const DEFAULTS: ThemeConfig = {
-  siteIcon: "/site-icon.png",
-  showFarmEntry: true,
-  // 留空 = 自动：本站在约定的 `/chicken/` 上真装了养鸡场才显示那枚图标。
-  // 「装主题」与「部署养鸡场」是两件事，站长没装就不该多出一枚点了没反应的图标；
-  // 想固定指向别处（包括别人的公开那座）就填地址。
-  farmUrl: "",
-  // 默认关：分组标签行是个可选的视图，没分组的站开着也看不见东西。
-  showGroupTabs: false,
-  // 默认关：概览那一行是「一眼看全站」的补充，站点本来就有每台机器的卡片；
-  // 关着时它整个不挂载，首屏与不发这个开关之前一模一样。
-  showSummary: false,
-  // 默认「经典」：更紧凑、不发延迟请求；想带三网延迟的在后台切「延迟」。
-  cardStyle: "classic",
-  // 延迟线路：留空 = 按后台顺序自动显示前几条；填了名字就只显示这些（一行一个）。
-  // 名字是 ping 任务的名字，不是节点名——对不上的行会被跳过。
-  pingLines: "",
-}
-
-/**
- * 卡片形态这一档的取值。它在上一版（≤1.2.9）叫 "detail"，现在改叫 "latency"
- * ——「延迟」才是这一档真正展示的东西，也把「详细」这个名字腾给后面那一档。
- * 读到旧值就迁过来：不迁的话，存过 "detail" 的站会被当成从没保存过、悄悄掉回经典。
- */
-function cardStyleOf(v: unknown): ThemeConfig["cardStyle"] {
-  // ≤1.2.9 的值：那时候这一档叫「详细」，现在叫「延迟」——同一档，只是换了名字。
-  if (v === "detail") return "latency"
-  if (v === "classic" || v === "latency" || v === "detailed") return v
-  return DEFAULTS.cardStyle
-}
+// 类型、默认值、收窄与迁移都在 site-settings.ts；这里只留取数据与页面侧的钩子，
+// 顺手再导出一遍，页面统一从 `@/lib/theme-config` 拿。
+export { DEFAULTS, hasGroupTabs, hasSummary } from "@/lib/site-settings"
+export type { ThemeConfig } from "@/lib/site-settings"
 
 /**
  * 标签页／书签／手机桌面快捷方式的图标，跟顶栏那枚站标用同一个地址：
@@ -129,10 +87,7 @@ export function useLocalFarm(enabled: boolean): string {
 
 /**
  * 读回本站的设置。任何失败都回落默认值：后台没存过（Hub 回 `{}`）、旧 hub 没这个接口、
- * 反代拦了——都不该让公开页白屏或缺一块。
- *
- * 逐项收窄类型：Hub 存的是自由 JSON，站长清空输入框可能留下空串或 null，
- * 直接展开会让一个空串把默认图标顶掉。
+ * 反代拦了——都不该让公开页白屏或缺一块。收窄与迁移见 `normalizeConfig`。
  */
 export function useThemeConfig(): { config: ThemeConfig; loaded: boolean } {
   const [config, setConfig] = useState(DEFAULTS)
@@ -144,27 +99,8 @@ export function useThemeConfig(): { config: ThemeConfig; loaded: boolean } {
     api<Partial<ThemeConfig>>(`/themes/${SHORT}/config`)
       .then((saved) => {
         if (!active) return
-        setConfig({
-          siteIcon:
-            typeof saved.siteIcon === "string" && saved.siteIcon.trim()
-              ? saved.siteIcon.trim()
-              : DEFAULTS.siteIcon,
-          // 留空是有意义的值（「自动探测本站」），不能像 siteIcon 那样回落成某个固定地址——
-          // 那会把站长的选择又变成一座指向别处的图标。只有这一项从来没过才用默认值。
-          farmUrl:
-            typeof saved.farmUrl === "string" ? saved.farmUrl.trim() : DEFAULTS.farmUrl,
-          showFarmEntry:
-            typeof saved.showFarmEntry === "boolean" ? saved.showFarmEntry : DEFAULTS.showFarmEntry,
-          showGroupTabs:
-            typeof saved.showGroupTabs === "boolean" ? saved.showGroupTabs : DEFAULTS.showGroupTabs,
-          showSummary:
-            typeof saved.showSummary === "boolean" ? saved.showSummary : DEFAULTS.showSummary,
-          // select：值不在声明里的选项内（旧版本、手改）就当没保存过，回落默认；
-          // 旧值 "detail" 迁到 "latency"（见 cardStyleOf）。
-          cardStyle: cardStyleOf(saved.cardStyle),
-          // 留空是有意义的值（= 自动取前几条），空串不能当「没填过」；只有类型不对时才回落。
-          pingLines: typeof saved.pingLines === "string" ? saved.pingLines : DEFAULTS.pingLines,
-        })
+        // 逐项收窄 + 旧值迁移都在 site-settings.ts（那里能单测）。
+        setConfig(normalizeConfig(saved))
         setLoaded(true)
       })
       .catch(() => {

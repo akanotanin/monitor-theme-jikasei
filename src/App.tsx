@@ -6,7 +6,7 @@ import { SummaryCards } from "@/components/Summary"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupsOf, useNodes, type Node } from "@/lib/api"
-import { DEFAULTS, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
+import { DEFAULTS, hasGroupTabs, hasSummary, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
 import { FarmIcon } from "@/components/FarmIcon"
 
 type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean }
@@ -248,9 +248,9 @@ export default function App() {
           </div>
         ) : (
           <>
-            {/* 概览卡片行：开关关着时整个不挂载（不是藏起来），首屏与没有这个功能时一致。 */}
-            {config.showSummary && <SummaryCards nodes={sorted} />}
-            <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} showTabs={config.showGroupTabs}
+            {/* 概览卡片行：设置里没选它时整个不挂载（不是藏起来），首屏与没有这个功能时一致。 */}
+            {hasSummary(config.listTop) && <SummaryCards nodes={sorted} />}
+            <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} showTabs={hasGroupTabs(config.listTop)}
               latencyLines={config.pingLines}
               cardStyle={config.cardStyle} />
           </>
@@ -288,8 +288,8 @@ function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | nu
 }
 
 // Group tabs appear only once the operator has grouped something, so a hub
-// without groups keeps the page it always had. The operator can also switch the
-// row off outright (theme setting `showGroupTabs`), which leaves the page as one
+// without groups keeps the page it always had. The operator can also keep the
+// row off outright (theme setting `listTop`), which leaves the page as one
 // flat list.
 function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardStyle }: {
   nodes: Node[]

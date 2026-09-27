@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -15,7 +15,7 @@
       "key": "siteIcon",
       "label": "站点图标",
       "default": "/site-icon.png",
-      "help": "顶栏站名左边那枚圆形图标，同时也是浏览器标签页／书签／手机桌面的图标——改这一处，两处一起变。填完整网址或站内路径；留空或取不到时用主题自带那张。"
+      "help": "站名左边那枚圆形图标，也是浏览器标签页与书签的图标。"
     },
     {
       "type": "boolean",
@@ -29,25 +29,11 @@
       "key": "farmUrl",
       "label": "养鸡场地址",
       "default": "",
-      "help": "留空 = 自动认本站 /chicken/（装了才显示）。想固定指向别处就填地址：同域写路径，跨站写完整网址。"
+      "help": "留空 = 自动认本站 /chicken/，也可填别处地址。"
     },
     {
       "type": "title",
       "label": "列表与卡片"
-    },
-    {
-      "type": "boolean",
-      "key": "showSummary",
-      "label": "显示概览卡片行",
-      "default": false,
-      "help": "列表页顶部那行四张卡片：节点（在线 / 总数）、最忙节点（CPU 占用最高的那台）、今日流量与累计流量、全站实时网速。数据都取自节点列表本身，不多发请求；第四张下面那条走势线画的是访客打开页面后的实时速率，刷新页面就从空的重新攒。"
-    },
-    {
-      "type": "boolean",
-      "key": "showGroupTabs",
-      "label": "显示分组标签行",
-      "default": false,
-      "help": "列表页顶部那行分组标签（全部 / 各组 / 未分组）的开关；节点没有分组时不显示。"
     },
     {
       "type": "select",
@@ -59,7 +45,20 @@
         { "value": "latency", "label": "延迟：网络合成一行，下方带三网延迟" },
         { "value": "detailed", "label": "详细：在延迟之上再加在线时长、价格与到期" }
       ],
-      "help": "经典最紧凑，也不去拉延迟数据；延迟把网络合成一行（下行在左、上行在右），下方挂三网延迟、每 60 秒刷新一次；详细在延迟的基础上再添在线时长、价格与到期，卡片最全、也最高。"
+      "help": "经典最紧凑；延迟合一行并挂三网延迟；详细再加时长与计费。"
+    },
+    {
+      "type": "select",
+      "key": "listTop",
+      "label": "列表页顶部",
+      "default": "none",
+      "options": [
+        { "value": "none", "label": "都不显示" },
+        { "value": "groups", "label": "只显示分组标签" },
+        { "value": "summary", "label": "只显示概览卡片" },
+        { "value": "both", "label": "两个都显示" }
+      ],
+      "help": "分组标签 = 全部 / 各组那一行；概览卡片 = 四张统计卡片。"
     },
     {
       "type": "title",
@@ -70,7 +69,7 @@
       "key": "pingLines",
       "label": "显示的延迟线路",
       "default": "",
-      "help": "每行一个 ping 任务名（后台「延迟监控」里的名字），最多三个，按填写的顺序显示；留空则按后台顺序自动显示前三条。仅在「延迟」「详细」卡片形态下生效。"
+      "help": "每行一个 ping 任务名，最多三条；留空自动取前三条。"
     }
   ]
 }

@@ -234,7 +234,8 @@ const check = (name, ok, detail) => { results.push({ name, ok, detail }); consol
 
 /* 2) 打开 → 四张卡片 + 逐个数字 */
 {
-  const dom = await render({ showSummary: true }, 'on')
+  // 1.5.0 起「列表页顶部」是一个四选一下拉（listTop）：summary = 只显示概览卡片。
+  const dom = await render({ listTop: 'summary' }, 'on')
   check('打开：四张概览卡片都在', dom.tiles === 4, `概览 ${dom.tiles} 张`)
   check('打开：概览行排在节点卡片之前', dom.tilesAboveNodes === true && dom.order.startsWith('节点,最忙节点,今日流量,实时网速,'), `顺序 ${dom.order.slice(0, 60)}`)
   check('节点卡：在线 / 总数 + 离线台数', dom.tileText['节点'] === '节点 | 3 / 4 | 1 台离线', dom.tileText['节点'])
@@ -248,7 +249,7 @@ const check = (name, ok, detail) => { results.push({ name, ok, detail }); consol
 
 /* 3) 和别的开关共存：概览 + 分组标签行 + 延迟形态 + 延迟线路 */
 {
-  const dom = await render({ showSummary: true, showGroupTabs: true, cardStyle: 'latency', pingLines: '北京电信' }, 'coexist')
+  const dom = await render({ listTop: 'both', cardStyle: 'latency', pingLines: '北京电信' }, 'coexist')
   check('与分组标签行 / 延迟形态共存：该在的都在',
     dom.tiles === 4 && dom.body.includes('全部') && dom.body.includes('未分组') && dom.nodeCards === 4,
     `概览 ${dom.tiles} / 卡片 ${dom.nodeCards} / 分组行 ${dom.body.includes('全部')}`)
@@ -256,7 +257,7 @@ const check = (name, ok, detail) => { results.push({ name, ok, detail }); consol
 
 /* 4) 走势线：冷启动没有（一个采样画不出走势），攒到两个点才画；卡片高度不因此变 */
 {
-  const first = await render({ showSummary: true }, 'sparkline')
+  const first = await render({ listTop: 'summary' }, 'sparkline')
   check('走势线：刚打开时不画（采样不足两个点）', first.summaryPolylines === 0, `polyline ${first.summaryPolylines}`)
   const { dom, waited } = await waitForSparkline()
   check('走势线：采样攒够后画两条（下行 + 上行）', dom.summaryPolylines === 2, `polyline ${dom.summaryPolylines}，等待 ${(waited / 1000).toFixed(1)}s`)
@@ -268,24 +269,48 @@ const check = (name, ok, detail) => { results.push({ name, ok, detail }); consol
 
 /* 5) 空数据与降级：全站掉线时「—」而不是 0%；并列时留先出现的 */
 {
-  const down = await render({ showSummary: true }, 'down', 'down')
+  const down = await render({ listTop: 'summary' }, 'down', 'down')
   check('全掉线：0 / 4 + 4 台离线', down.tileText['节点'] === '节点 | 0 / 4 | 4 台离线', down.tileText['节点'])
   check('全掉线：最忙节点显示「— / 无在线节点」，不是 0%',
     down.tileText['最忙节点'] === '最忙节点 | — | 无在线节点', down.tileText['最忙节点'])
   check('全掉线：网速是 0 B/s（不是 NaN/undefined）',
     down.tileText['实时网速'] === '实时网速 | 0 B/s | 0 B/s', down.tileText['实时网速'])
 
-  const tied = await render({ showSummary: true }, 'tied', 'tied')
+  const tied = await render({ listTop: 'summary' }, 'tied', 'tied')
   check('最忙并列：留列表里先出现的那台', tied.tileText['最忙节点'] === '最忙节点 | 30.0% | 先出现的', tied.tileText['最忙节点'])
 }
 
 /* 6) 窄屏 390：概览的多列栅格不能把页面撑出横向滚动 */
 {
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true })
-  const dom = await render({ showSummary: true, showGroupTabs: true, cardStyle: 'detailed' }, 'narrow')
+  const dom = await render({ listTop: 'both', cardStyle: 'detailed' }, 'narrow')
   check('窄屏 390：无横向滚动', dom.scroll[0] === dom.scroll[1], `scrollWidth ${dom.scroll[0]} / clientWidth ${dom.scroll[1]}`)
   check('窄屏 390：四张卡片仍都在', dom.tiles === 4, `概览 ${dom.tiles} 张`)
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1200, deviceScaleFactor: 1, mobile: false })
+}
+
+/* 7) 旧配置迁移：≤1.4.0 存的是 showSummary / showGroupTabs 两个布尔开关 */
+// 这两个键现在读不出来了（列表页顶部合成一个 listTop 四选一），必须按组合迁过来——
+// 不迁的表现不是报错，而是「站长开着的那一行自己关了」。
+{
+  const onlySummary = await render({ showSummary: true }, 'legacy-summary')
+  check('旧键迁移：只存 showSummary=true → 概览行照常出现、分组标签行不出现',
+    onlySummary.tiles === 4 && !onlySummary.body.includes('未分组'),
+    `概览 ${onlySummary.tiles} 张 / 分组行 ${onlySummary.body.includes('未分组')}`)
+
+  const onlyTabs = await render({ showGroupTabs: true }, 'legacy-tabs')
+  check('旧键迁移：只存 showGroupTabs=true → 分组标签行在、概览行不在',
+    onlyTabs.tiles === 0 && onlyTabs.body.includes('未分组'),
+    `概览 ${onlyTabs.tiles} 张 / 分组行 ${onlyTabs.body.includes('未分组')}`)
+
+  const both = await render({ showSummary: true, showGroupTabs: true }, 'legacy-both')
+  check('旧键迁移：两个旧键都开 → 两个都显示',
+    both.tiles === 4 && both.body.includes('未分组'),
+    `概览 ${both.tiles} 张 / 分组行 ${both.body.includes('未分组')}`)
+
+  const none = await render({ showSummary: false, showGroupTabs: false }, 'legacy-none')
+  check('旧键迁移：两个旧键都关 → 两个都不显示', none.tiles === 0 && !none.body.includes('未分组'),
+    `概览 ${none.tiles} 张 / 分组行 ${none.body.includes('未分组')}`)
 }
 
 ws.close()

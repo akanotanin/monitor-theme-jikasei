@@ -6,10 +6,15 @@
 // 对照组用法：先拿**改动前**的 theme.json 跑一遍，断言必须 FAIL（证明这个护栏真看得见设置项的增删），
 // 再拿改动后的跑，断言必须全 PASS。只验「正确时通过」等于没验。
 //
-// ★字段数 > 6 且分组数 > 1 时，对话框换成「左侧分组导航 + 只挂载当前那一组」的布局。
-// 因此「对话框文本里有没有某个设置项」这句话，只有在**先把那一组点开之后**才成立：
-// 拿一次文本去断所有组，会把没打开的组整批判成「没画出来」——实测 6 项 → 7 项正好跨过这道坎，
-// 新加的开关连同它后面那一组一起「消失」，看着像 manifest 写坏了。所以下面按组点开、按组断言。
+// ★Hub 1.3.0 的两条布局规则（从前端 bundle 里挖出来的，判据就是**非标题字段的个数**）：
+//     o = 非标题字段 > 6  → 栅格变**两列**（每格半宽）
+//     s = o && 分组数 > 1 → 再加**左侧分组导航、只挂载当前那一组**
+//   1.4.0 的 7 个设置项正好跨过第一道坎：两列里长说明折成四五行的同时并排两项高矮不齐、
+//   每组最后一行还空半格。1.5.0 把两个「列表页顶部」开关并成一个四选一，回到 6 项 → 单列平铺。
+//   文字断言因此**按组点开、按组断言**（有导航时只挂载当前组，拿一次文本去断所有组会把没打开的
+//   那批整批判成「没画出来」）；下面的排版断言则不管哪种布局都成立。
+//
+// 用法: node tools/verify_settings_dialog.mjs <theme.json> <截图前缀> [baseUrl=http://127.0.0.1:28081]
 //
 // 用法: node tools/verify_settings_dialog.mjs <theme.json> <截图前缀> [baseUrl=http://127.0.0.1:28081]
 //   baseUrl 通常是 ssh -L 隧道到测试 hub 的本地端口。
@@ -20,8 +25,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
-// 本站要靠这几项给站长换图标、开关概览卡片行、开关分组标签行、指养鸡场入口——名字与 theme.json 的 label 逐字对应。
-const WANTED = ['站点图标', '显示养鸡场入口', '养鸡场地址', '显示概览卡片行', '显示分组标签行'];
+// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行——名字与 theme.json 的 label 逐字对应。
+const WANTED = ['站点图标', '显示养鸡场入口', '养鸡场地址', '卡片形态', '列表页顶部', '显示的延迟线路'];
 const PORT = 9780 + Math.floor(Math.random() * 20);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe']
   .find((p) => existsSync(p)) || 'chrome';
@@ -194,6 +199,49 @@ for (const entry of entries.filter((e) => e.type === 'boolean')) {
   const state = await switchState(entry.label);
   check(`开关「${entry.label}」的初值 = theme.json 的 default（${entry.default}）`, state === String(entry.default), `面板读到 ${state}`);
 }
+
+// ── 排版护栏：字段数 ≤ 6 时必须是单列平铺 ──────────────────────────────
+// 这一条正是 1.5.0 的来由：7 个设置项会让 Hub 切成两列 + 分组导航，而两列里每格只有半宽，
+// 长说明折成四五行、并排两项高矮不齐、每组最后一行空半格。以后真想回到两列，先来这里改断言。
+const layout = await js(`(() => {
+  const dlg = document.querySelector('[role="dialog"]')
+  if (!dlg) return null
+  const grids = [...dlg.querySelectorAll('div[class*="grid"]')].map((g) => String(g.className))
+  const twoCol = grids.filter((c) => c.includes('grid-cols-2'))
+  // 设置项容器：字段那张栅格里除小节标题（h3）以外的直接子元素。
+  const pane = [...dlg.querySelectorAll('div[class*="grid"]')].find((g) => g.querySelector('input, textarea, button[role=switch]'))
+  const items = pane ? [...pane.children].filter((el) => el.tagName !== 'H3') : []
+  const widths = [...new Set(items.map((el) => Math.round(el.getBoundingClientRect().width)))]
+  const heights = [...new Set(items.map((el) => Math.round(el.getBoundingClientRect().height)))]
+  return { twoCol: twoCol.length, nav: dlg.querySelectorAll('button[aria-current]').length, items: items.length, widths, heights }
+})()`)
+check('排版：没有两列栅格（单列平铺）', !!layout && layout.twoCol === 0, layout ? `两列容器 ${layout.twoCol} 个` : '量不到')
+check('排版：没有分组导航', !!layout && layout.nav <= 1, `导航项 ${layout?.nav ?? '?'} 个`)
+check('排版：设置项全部挂载（无「只挂载当前组」）',
+  !!layout && layout.items === declaredKeys.length, `挂载 ${layout?.items} 项 / 声明 ${declaredKeys.length} 项`)
+check('排版：所有设置项同宽（没有半格）',
+  !!layout && layout.widths.length === 1, `宽度 ${JSON.stringify(layout?.widths ?? [])}`)
+// 说明文案占几行才是这次的病根：两列时半宽，四五行的说明既折得碎又把并排两项拉得一高一矮。
+// 逐项按 theme.json 里 help 的**原文**定位那个元素（文本完全相等），量它的高度 / 行高。
+async function helpLines(help) {
+  return await js(`(() => {
+    const dlg = document.querySelector('[role="dialog"]')
+    if (!dlg) return -1
+    const el = [...dlg.querySelectorAll('*')].find((x) => x.children.length === 0 && x.textContent.trim() === ${JSON.stringify(help)})
+    if (!el) return -1
+    const cs = getComputedStyle(el)
+    const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5 || 16
+    return Math.round(el.getBoundingClientRect().height / lh)
+  })()`)
+}
+const wrapped = []
+for (const field of entries.filter((e) => e.type !== 'title' && e.help)) {
+  const owner = groups.find((g) => g.fields.includes(field))
+  await openGroup(owner?.label ?? '')
+  const n = await helpLines(field.help)
+  if (n !== 1) wrapped.push(`${field.label}=${n < 0 ? '没找到' : n + ' 行'}`)
+}
+check('排版：每项说明都只占一行（没有折成四五行的）', wrapped.length === 0, wrapped.join('、') || '全部 1 行')
 
 mkdirSync(PREFIX.split('/').slice(0, -1).join('/') || '.', { recursive: true });
 const shot = await send('Page.captureScreenshot', { format: 'png' });

@@ -1,4 +1,4 @@
-// theme.json 的 config 默认值，必须与 src/lib/theme-config.ts 的 DEFAULTS 逐项一致。
+// theme.json 的 config 默认值，必须与 src/lib/site-settings.ts 的 DEFAULTS 逐项一致。
 //
 // 这两处是同一个开关的两半：面板按 theme.json 现画表单，页面按 DEFAULTS 兜底。
 // 只改一处就是那种「后台显示开着、页面还是旧样子」的毛病，而且两边都不报错。
@@ -10,9 +10,9 @@ const manifest = JSON.parse(readFileSync('theme.json', 'utf8'))
 const fields = (manifest.config || []).filter((entry) => entry.type !== 'title' && entry.key)
 if (!fields.length) throw new Error('theme.json 的 config 里没有任何设置项')
 
-const source = readFileSync('src/lib/theme-config.ts', 'utf8')
+const source = readFileSync('src/lib/site-settings.ts', 'utf8')
 const block = source.match(/export const DEFAULTS[^=]*=\s*\{([\s\S]*?)\n\}/)
-if (!block) throw new Error('src/lib/theme-config.ts 里找不到 DEFAULTS')
+if (!block) throw new Error('src/lib/site-settings.ts 里找不到 DEFAULTS')
 const declared = {}
 for (const line of block[1].split('\n')) {
   const m = line.match(/^\s*([A-Za-z_$][\w$]*)\s*:\s*(.+?),?\s*$/)
