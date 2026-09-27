@@ -50,26 +50,52 @@ function normalize(d: { ping?: PingPoint[]; probes?: Probes; loss?: Loss }): Pro
 }
 
 /**
+ * 卡片的延迟数据多久算过期。页面上其余数字跟着 hub 的快照在跳，这一块要是只在挂载时
+ * 取一次，访客开着页面看十几分钟仍是进页面那一刻的延迟。到点重新取一次，成本与首屏
+ * 相同（仍走上面那个三条并发的队列）。
+ */
+const TTL = 60_000
+
+/**
  * 拉本节点最近一小时的延迟：点数取 40，够画一条能看出起伏的走势线，又不至于让每张
  * 卡片多背一大坨。失败与「这段时间没有延迟数据」都收敛成空数组，卡片上什么都不画。
+ *
+ * 每 `TTL` 刷新一次；页面切到后台时不发（省掉访客看不见的流量），回到前台时若手上这份
+ * 已经过期就补一次。同一时刻只允许一条在飞，避免慢请求叠着打。
  */
 function useNodePing(id: number): Probe[] | null {
   const [probes, setProbes] = useState<Probe[] | null>(null)
   useEffect(() => {
     let alive = true
-    acquire().then(() => {
-      if (!alive) {
-        release()
-        return
-      }
-      api<{ ping?: PingPoint[]; probes?: Probes; loss?: Loss }>(
-        `/nodes/${id}/metrics?hours=1&points=40&series=ping`,
-      )
-        .then((d) => { if (alive) setProbes(normalize(d)) })
-        .catch(() => { if (alive) setProbes([]) })
-        .finally(release)
-    })
-    return () => { alive = false }
+    let busy = false
+    let fetchedAt = 0
+    const load = () => {
+      if (busy || Date.now() - fetchedAt < TTL) return
+      busy = true
+      fetchedAt = Date.now()
+      acquire().then(() => {
+        if (!alive) {
+          busy = false
+          release()
+          return
+        }
+        api<{ ping?: PingPoint[]; probes?: Probes; loss?: Loss }>(
+          `/nodes/${id}/metrics?hours=1&points=40&series=ping`,
+        )
+          .then((d) => { if (alive) setProbes(normalize(d)) })
+          .catch(() => { if (alive) setProbes([]) })
+          .finally(() => { busy = false; release() })
+      })
+    }
+    const onVisible = () => { if (document.visibilityState === "visible") load() }
+    load()
+    const timer = window.setInterval(onVisible, TTL)
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
   }, [id])
   return probes
 }
@@ -145,16 +171,18 @@ function Sparkline({ values, className }: { values: Array<number | null>; classN
  * 数据来自 hub 的 ping 历史（同详情页的延迟图），按 `task_id` 一条一条摊开；线路名用的是
  * 站长在后台给 ping 任务起的名字，所以「广东电信」这类带地域的叫法原样呈现。
  * 延迟与走势只走灰阶，越糟越深（见 toneClass）。站长可在后台「三网延迟」里指定显示哪几条
- * （按 ping 任务名匹配，一行一个，最多三条）；留空时按后台顺序自动取前几条。
+ * （按 ping 任务名匹配，一行一个，最多三条）；留空时按后台顺序自动取前三条。数据每 60 秒
+ * 刷新一次（页面在后台时不取）。
  */
 export function LatencyPanel({ node, lines }: { node: Node; lines: string }) {
   const probes = useNodePing(node.id)
-  // 填了名字就只显示这些、按填写的顺序（最多三条）；留空则按后台顺序自动取前几条。
-  // 匹配用的是 ping 任务的名字，改过名、删过任务的那一行自然落空，不占位。
+  // 填了名字就只显示这些、按填写的顺序；留空则按后台顺序自动取前三条。
+  // 两档都卡在三条以内（与设置项里写的「最多三个」一致），匹配用的是 ping 任务的名字，
+  // 改过名、删过任务的那一行自然落空，不占位。
   const rows = useMemo(() => {
     const all = probes ?? []
     const wanted = [...new Set(lines.split("\n").map((s) => s.trim()).filter(Boolean))]
-    if (wanted.length === 0) return all.slice(0, 4)
+    if (wanted.length === 0) return all.slice(0, 3)
     const byName = new Map<string, Probe>()
     for (const p of all) if (!byName.has(p.name)) byName.set(p.name, p)
     return wanted.slice(0, 3).map((name) => byName.get(name)).filter((p): p is Probe => p !== undefined)
