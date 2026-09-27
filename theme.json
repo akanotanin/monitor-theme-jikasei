@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -51,7 +51,7 @@
         { "value": "classic", "label": "经典：网络速率与总量分两行，不含延迟" },
         { "value": "detail", "label": "详细：网络合成一行，下方带三网延迟" }
       ],
-      "help": "经典更紧凑，也不去拉延迟数据；详细会把三网延迟挂在卡片下方。"
+      "help": "经典更紧凑，也不去拉延迟数据；详细把网络合成一行（下行在左、上行在右），下方挂三网延迟、每 60 秒刷新一次。"
     },
     {
       "type": "title",
@@ -62,7 +62,7 @@
       "key": "pingLines",
       "label": "显示的延迟线路",
       "default": "",
-      "help": "每行一个 ping 任务名（后台「延迟监控」里的名字），最多三个，按填写的顺序显示；留空则按后台顺序自动显示前几条。仅在「详细」卡片形态下生效。"
+      "help": "每行一个 ping 任务名（后台「延迟监控」里的名字），最多三个，按填写的顺序显示；留空则按后台顺序自动显示前三条。仅在「详细」卡片形态下生效。"
     }
   ]
 }
