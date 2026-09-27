@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -29,7 +29,7 @@
       "key": "farmUrl",
       "label": "养鸡场地址",
       "default": "",
-      "help": "留空 = 自动认本站的 /chicken/（推荐：养鸡场装好后刷新，这枚图标自己出现）。想固定指向别处就填地址：同域写 /chicken/，跨站写完整网址（跨站的会在新标签页打开，例如想直接进公开的养鸡场可以填 https://komari.im/chicken/）。"
+      "help": "留空 = 自动认本站的 /chicken/（推荐：养鸡场装好后刷新，这枚图标自己出现）。想固定指向别处就填地址：同域写 /chicken/，跨站写完整网址。"
     },
     {
       "type": "title",
@@ -39,8 +39,8 @@
       "type": "boolean",
       "key": "showGroupTabs",
       "label": "显示分组标签行",
-      "default": true,
-      "help": "列表页顶部那行分组标签（全部 / 各组 / 未分组）的开关。关掉后节点按分组顺序平铺成一整列，标签行不再渲染；访客手里记着的分组选中态同时作废。节点本来就没有分组时，这一行无论如何都不显示。"
+      "default": false,
+      "help": "列表页顶部那行分组标签（全部 / 各组 / 未分组）的开关。默认关闭，节点按分组顺序平铺成一整列，标签行不再渲染；访客手里记着的分组选中态同时作废。节点本来就没有分组时，这一行无论如何都不显示。"
     }
   ]
 }

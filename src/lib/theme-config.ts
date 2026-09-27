@@ -28,7 +28,8 @@ export const DEFAULTS: ThemeConfig = {
   // 「装主题」与「部署养鸡场」是两件事，站长没装就不该多出一枚点了没反应的图标；
   // 想固定指向别处（包括别人的公开那座）就填地址。
   farmUrl: "",
-  showGroupTabs: true,
+  // 默认关：分组标签行是个可选的视图，没分组的站开着也看不见东西。
+  showGroupTabs: false,
 }
 
 /**

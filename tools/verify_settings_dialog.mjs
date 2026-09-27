@@ -112,6 +112,36 @@ for (const label of WANTED) {
 check('theme.json 里的小节标题都画出来了', titles.length > 0 && titles.every((t) => text.includes(t)), titles.join('、') || '（一个都没有）');
 console.log(`声明的设置项: ${declaredKeys.join('、') || '（无）'}  小节: ${titles.join('、') || '（无）'}  version=${MANIFEST.version}`);
 
+// 设置项的**说明文案**与**开关初值**也要断：它们是站长唯一看得见的地方，
+// 改了 theme.json 的 help / default 却在面板上没生效（或残留旧句子）就等于没改。
+// 「养鸡场地址」的说明曾经带一个跨站示例（会指向一个具体站点），那是要脱敏掉的。
+const helpText = (entries.find((e) => e.key === 'farmUrl') || {}).help || '';
+check('「养鸡场地址」的说明不再带跨站示例', helpText !== '' && !/例如|跨站的会在新标签页打开/.test(helpText), `help=${helpText}`);
+check('对话框里也没有残留的旧示例句子', !text.includes('例如想直接进公开的养鸡场') && !/komari\.im\/chicken/.test(text));
+
+// 开关初值 = `saved[key] ?? default`（站点配置喂的是 `{}`，所以看到的就是主题自带的默认值）。
+// 面板对 boolean 用的是 Radix Switch：`button[role=switch][aria-checked]`，所以按开关读状态，
+// 别去猜它内部的 DOM 结构。找不到开关要报 FAIL，不能静默通过。
+async function switchState(label) {
+  return await js(`(() => {
+    const dlg = document.querySelector('[role="dialog"]')
+    if (!dlg) return 'no-dialog'
+    const node = [...dlg.querySelectorAll('*')].find((el) => el.children.length === 0 && el.textContent.trim() === ${JSON.stringify(label)})
+    if (!node) return 'no-label'
+    let box = node
+    for (let i = 0; i < 5 && box && box !== dlg; i++) {
+      const sw = box.querySelector('[role="switch"], input[type=checkbox]')
+      if (sw) return sw.getAttribute('aria-checked') ?? String(sw.checked)
+      box = box.parentElement
+    }
+    return 'no-switch'
+  })()`)
+}
+for (const entry of entries.filter((e) => e.type === 'boolean')) {
+  const state = await switchState(entry.label)
+  check(`开关「${entry.label}」的初值 = theme.json 的 default（${entry.default}）`, state === String(entry.default), `面板读到 ${state}`)
+}
+
 mkdirSync(PREFIX.split('/').slice(0, -1).join('/') || '.', { recursive: true });
 const shot = await send('Page.captureScreenshot', { format: 'png' });
 writeFileSync(`${PREFIX}.png`, Buffer.from(shot.result.data, 'base64'));
