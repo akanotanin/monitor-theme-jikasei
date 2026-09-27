@@ -19,6 +19,8 @@ export type ThemeConfig = {
   farmUrl: string
   /** 列表页是否显示分组标签行（全部 / 各组 / 未分组）。 */
   showGroupTabs: boolean
+  /** 列表页顶上那行概览卡片（节点 / 最忙节点 / 今日流量 / 实时网速）的开关。 */
+  showSummary: boolean
   /** 卡片形态：classic = 网络两行、不含延迟；latency = 网络单行 + 三网延迟；detailed = 再加在线时长、价格与到期。 */
   cardStyle: "classic" | "latency" | "detailed"
   /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */
@@ -34,6 +36,9 @@ export const DEFAULTS: ThemeConfig = {
   farmUrl: "",
   // 默认关：分组标签行是个可选的视图，没分组的站开着也看不见东西。
   showGroupTabs: false,
+  // 默认关：概览那一行是「一眼看全站」的补充，站点本来就有每台机器的卡片；
+  // 关着时它整个不挂载，首屏与不发这个开关之前一模一样。
+  showSummary: false,
   // 默认「经典」：更紧凑、不发延迟请求；想带三网延迟的在后台切「延迟」。
   cardStyle: "classic",
   // 延迟线路：留空 = 按后台顺序自动显示前几条；填了名字就只显示这些（一行一个）。
@@ -152,6 +157,8 @@ export function useThemeConfig(): { config: ThemeConfig; loaded: boolean } {
             typeof saved.showFarmEntry === "boolean" ? saved.showFarmEntry : DEFAULTS.showFarmEntry,
           showGroupTabs:
             typeof saved.showGroupTabs === "boolean" ? saved.showGroupTabs : DEFAULTS.showGroupTabs,
+          showSummary:
+            typeof saved.showSummary === "boolean" ? saved.showSummary : DEFAULTS.showSummary,
           // select：值不在声明里的选项内（旧版本、手改）就当没保存过，回落默认；
           // 旧值 "detail" 迁到 "latency"（见 cardStyleOf）。
           cardStyle: cardStyleOf(saved.cardStyle),

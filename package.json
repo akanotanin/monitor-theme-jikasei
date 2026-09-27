@@ -1,13 +1,13 @@
 {
   "name": "monitor-theme-jikasei",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts",
+    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts && node src/lib/summary.test.ts",
     "check": "node scripts/check-config.mjs",
     "preview": "vite preview",
     "package": "npm run build && npm run check && node scripts/package.mjs"

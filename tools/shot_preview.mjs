@@ -27,8 +27,13 @@ const DPR = Number(process.argv[6] || 2)
 // （访客会跟着看到跳变、还要登录后台），不如只把这一条响应在浏览器层换掉：
 // 站点配置原样取回来，只改 cardStyle 一个键，其余（延迟线路清单等）与线上完全一致。
 // 线上配置一个字都不动。
+//
+// 可选（第 8 个参数）：再叠一组键值（JSON 字面量），同一套机制。
+// 「开关默认关的新功能长什么样」就靠它拍：站点配置一个字都不用改，也不会让访客看到跳变。
+//   node tools/shot_preview.mjs https://<站点> shots/summary.png 1440 900 2 "" '{"showSummary":true}'
 const SHORT = 'jikasei'
 const STYLE = process.argv[7] || null
+const EXTRA = process.argv[8] ? JSON.parse(process.argv[8]) : {}
 const PORT = 9700 + Math.floor(Math.random() * 200)
 const CHROME = [
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -90,12 +95,13 @@ await send('Page.enable')
 await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: DPR, mobile: false })
 await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })
 
-// 要钉档位时：先把线上配置取回来（只改 cardStyle 一个键），再把这条请求交给 Fetch 域就地答复。
-if (STYLE) {
+// 要钉档位 / 叠设置项时：先把线上配置取回来（只改那几个键），再把这条请求交给 Fetch 域就地答复。
+const OVERRIDE = { ...(STYLE ? { cardStyle: STYLE } : {}), ...EXTRA }
+if (Object.keys(OVERRIDE).length) {
   const live = await (await fetch(`${BASE}/api/themes/${SHORT}/config`)).json()
-  SERVED_CONFIG = JSON.stringify({ ...live, cardStyle: STYLE })
+  SERVED_CONFIG = JSON.stringify({ ...live, ...OVERRIDE })
   await send('Fetch.enable', { patterns: [{ urlPattern: `*api/themes/${SHORT}/config*`, requestStage: 'Request' }] })
-  console.log(`卡片形态钉成 ${STYLE}（其余键原样取自线上：${Object.keys(live).join(" / ")}）；线上配置未改动`)
+  console.log(`就地覆写 ${JSON.stringify(OVERRIDE)}（其余键原样取自线上：${Object.keys(live).join(" / ")}）；线上配置未改动`)
 }
 
 await send('Page.navigate', { url: BASE + '/' })
@@ -148,11 +154,11 @@ const geometry = JSON.parse(await evalJS(`JSON.stringify((() => {
   }
 })())`))
 
-// 钉档位时，必须在按快门前确认那条覆写真的发生过（否则拍到的是线上原本那一档）。
-if (STYLE && overridden.length === 0) {
-  throw new Error(`钉了 cardStyle=${STYLE}，但主题配置那条请求一次都没被拦到——这张图不是你要的形态，别用`)
+// 覆写过配置时，必须在按快门前确认那条覆写真的发生过（否则拍到的是线上原本那一档/原本的开关）。
+if (Object.keys(OVERRIDE).length && overridden.length === 0) {
+  throw new Error(`覆写了 ${JSON.stringify(OVERRIDE)}，但主题配置那条请求一次都没被拦到——这张图不是你要的样子，别用`)
 }
-if (STYLE) console.log(`主题配置请求已就地覆写 ${overridden.length} 次：${overridden.map((u) => u.replace(BASE, '')).join(', ')}`)
+if (Object.keys(OVERRIDE).length) console.log(`主题配置请求已就地覆写 ${overridden.length} 次：${overridden.map((u) => u.replace(BASE, '')).join(', ')}`)
 
 const png = await send('Page.captureScreenshot', { format: 'png' })
 await writeFile(OUT, Buffer.from(png.result.data, 'base64'))

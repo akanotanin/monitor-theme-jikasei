@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore 
 import { Moon, Sun, Wrench } from "lucide-react"
 
 import { NodeCard } from "@/components/NodeCard"
+import { SummaryCards } from "@/components/Summary"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupsOf, useNodes, type Node } from "@/lib/api"
@@ -246,9 +247,13 @@ export default function App() {
             ))}
           </div>
         ) : (
-          <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} showTabs={config.showGroupTabs}
-            latencyLines={config.pingLines}
-            cardStyle={config.cardStyle} />
+          <>
+            {/* 概览卡片行：开关关着时整个不挂载（不是藏起来），首屏与没有这个功能时一致。 */}
+            {config.showSummary && <SummaryCards nodes={sorted} />}
+            <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} showTabs={config.showGroupTabs}
+              latencyLines={config.pingLines}
+              cardStyle={config.cardStyle} />
+          </>
         )}
       </main>
     </div>
