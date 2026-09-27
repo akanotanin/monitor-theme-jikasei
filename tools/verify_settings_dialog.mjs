@@ -243,6 +243,11 @@ for (const field of entries.filter((e) => e.type !== 'title' && e.help)) {
 }
 check('排版：每项说明都只占一行（没有折成四五行的）', wrapped.length === 0, wrapped.join('、') || '全部 1 行')
 
+// 留档截图前回到第一组：上面的检查会一组组点过去，停在哪一组取决于断言顺序，
+// 截图要的是「稳定可复现的那一屏」而不是「最后一个被点到的那一屏」。
+if (hasNav && groups.length) await openGroup(groups[0].label)
+await sleep(300)
+
 mkdirSync(PREFIX.split('/').slice(0, -1).join('/') || '.', { recursive: true });
 const shot = await send('Page.captureScreenshot', { format: 'png' });
 writeFileSync(`${PREFIX}.png`, Buffer.from(shot.result.data, 'base64'));
