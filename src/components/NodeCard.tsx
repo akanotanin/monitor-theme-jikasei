@@ -1,12 +1,14 @@
-import { useState } from "react"
-import { ArrowDown, ArrowUp } from "lucide-react"
+import { useState, type ComponentType, type ReactNode } from "react"
+import {
+  ArrowDown, ArrowDownUp, ArrowUp, CalendarClock, Cpu, HardDrive, MemoryStick,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { LatencyPanel } from "@/components/Latency"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
-import { bytes, FOREVER, pair, percent, rate } from "@/lib/format"
+import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
 
 /**
  * This period's usage as the plan meters it. The hub computes it; the switch
@@ -38,6 +40,10 @@ export function deployed(node: Node) {
 // 详情页把同一个时长写进了信息项里的「在线时间」（见 NodeDetail 的 onlineFor）。
 // 要恢复，去上游 monitor-theme-default 的 v1.1.0 取回该组件，并把 index.css 里
 // --online / --offline 两个色值一起加回来。
+//
+// 详细档标题行前那枚状态点（StatusDot）也一并撤了：那一点紧贴国旗、挤在名字前头，
+// 位置局促；何况在线与否在下面的 MetaRow 里已写成「在线 …」的文字，不必再用一枚
+// 无标签的圆点重复一遍。标题行现在只剩「旗子 + 名字」。
 
 /**
  * Where the machine is: its flag, or the bare code for one the set lacks.
@@ -77,6 +83,76 @@ export function Country({ node }: { node: Node }) {
   )
 }
 
+/* ------------------------------------------------------------------ 详细档的小件 */
+
+/** 详细档第二行左边那句「在线 …」。没接入的节点没有时长可说，返回 null。 */
+function onlineText(node: Node): string | null {
+  if (node.online) return node.metrics ? `在线 ${uptime(node.metrics.uptime)}` : "在线"
+  if (!deployed(node)) return null
+  const down = node.last_seen ? Date.now() / 1000 - node.last_seen : 0
+  return down >= 60 ? `离线 ${uptime(down)}` : "离线"
+}
+
+function priceText(node: Node): string | null {
+  return node.price > 0 ? money(node.price, node.currency) : null
+}
+
+function cycleText(node: Node): string | null {
+  if (node.price <= 0) return null
+  return CYCLES[node.billing_cycle] ?? (node.billing_cycle || null)
+}
+
+/**
+ * 到期还剩多少天。优先用 hub 算好的 `expires_in`：它按 hub 的时区算，还会给在线节点
+ * 顺延到期日，访客自己按浏览器时钟算会在顺延前的那几个小时里显示成「已过期」。只有
+ * 旧 hub 没这个 key 时，才退回按 `expires_at` 自己数。
+ */
+function expiryText(node: Node): string | null {
+  const days = node.expires_in !== undefined ? node.expires_in : daysUntil(node.expires_at)
+  if (days === null || days === undefined) return null
+  if (days < 0) return `已过期 ${-days} 天`
+  if (days === 0) return "今天到期"
+  return `剩余 ${days} 天`
+}
+
+/** 详细档第二行：左「在线时长」、右「价格 / 周期」。两样都没有就整行不画。 */
+function MetaRow({ node }: { node: Node }) {
+  const online = onlineText(node)
+  const price = priceText(node)
+  const cycle = cycleText(node)
+  if (!online && !price) return null
+  return (
+    <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+      <span className="truncate">{online}</span>
+      {price && <span className="tnum shrink-0">{cycle ? `${price} / ${cycle}` : price}</span>}
+    </div>
+  )
+}
+
+/**
+ * 详细档那三枚读数盒：实时速率 / 累计总量 / 到期。一层浅底把它们与上下的网格分开，
+ * 像仪表盘上嵌进去的读数窗——三个盒子对应三个时间尺度：此刻、累计、还剩多久。
+ */
+function InfoBox({ children }: { children: ReactNode }) {
+  return (
+    <div className="min-w-0 space-y-1.5 overflow-hidden rounded-md bg-muted/60 px-2 py-2 text-xs">
+      {children}
+    </div>
+  )
+}
+
+function Stat({ icon: Icon, children }: {
+  icon: ComponentType<{ className?: string }>
+  children: ReactNode
+}) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <Icon className="size-3 shrink-0" />
+      <span className="tnum truncate">{children}</span>
+    </span>
+  )
+}
+
 // Traffic uses the plan's own counting rule, so the bar matches the quota the
 // node is billed against.
 function trafficFoot(node: Node) {
@@ -85,8 +161,15 @@ function trafficFoot(node: Node) {
     : `${bytes(monthUsage(node))} / ${FOREVER}`
 }
 
-export function NodeCard({ node, onOpen, latencyLines, cardStyle }: { node: Node; onOpen: () => void; latencyLines: string; cardStyle: "detail" | "classic" }) {
+export function NodeCard({ node, onOpen, latencyLines, cardStyle }: {
+  node: Node
+  onOpen: () => void
+  latencyLines: string
+  cardStyle: "classic" | "latency" | "detailed"
+}) {
   const m = node.metrics
+  // 详细档：图标、元信息行与三枚读数盒都只在它里面出现；配色仍与另外两档同一套灰。
+  const detailed = cardStyle === "detailed"
 
   return (
     <Card
@@ -114,25 +197,31 @@ export function NodeCard({ node, onOpen, latencyLines, cardStyle }: { node: Node
           the live figures blank beats a stretched card with one line in it. */}
       {deployed(node) ? (
         <>
+          {detailed && <MetaRow node={node} />}
+
           <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4">
             {/* The core count belongs beside the word CPU: it is what the
                 percentage and the load averages are both measured against. */}
             <Meter
+              icon={detailed ? Cpu : undefined}
               label={`CPU ${node.cpu_cores} 核`}
               pct={m ? m.cpu : null}
               foot={m ? m.load.map((n) => n.toFixed(2)).join(" ") : "—"}
             />
             <Meter
+              icon={detailed ? MemoryStick : undefined}
               label="内存"
               pct={m ? percent(m.mem_used, m.mem_total) : null}
               foot={m ? pair(m.mem_used, m.mem_total) : bytes(node.mem_total)}
             />
             <Meter
+              icon={detailed ? HardDrive : undefined}
               label="硬盘"
               pct={m ? percent(m.disk_used, m.disk_total) : null}
               foot={m ? pair(m.disk_used, m.disk_total) : bytes(node.disk_total)}
             />
             <Meter
+              icon={detailed ? ArrowDownUp : undefined}
               label="流量"
               pct={node.traffic_limit > 0 ? percent(monthUsage(node), node.traffic_limit) : null}
               empty={FOREVER}
@@ -160,7 +249,7 @@ export function NodeCard({ node, onOpen, latencyLines, cardStyle }: { node: Node
                 {bytes(node.total_tx)}
               </span>
             </div>
-          ) : (
+          ) : cardStyle === "latency" ? (
             <>
               {/* 两个方向各一组、左右各占一端（下行在左、上行在右，与经典形态的读法一致），
                   组内「实时速率 · 累计总量」用一枚分隔点连起来；颜色沿用原本一套：实时速率用
@@ -182,6 +271,29 @@ export function NodeCard({ node, onOpen, latencyLines, cardStyle }: { node: Node
                 </span>
               </div>
               {/* 三网延迟：每条线路一行，数据来自 hub 的 ping 历史（详见 Latency.tsx）。 */}
+              <LatencyPanel node={node} lines={latencyLines} />
+            </>
+          ) : (
+            <>
+              {/* 详细形态：网速、总量、到期三枚读数盒并排。速率与总量各按上下行分两行，
+                  到期一盒写剩余天数与到期日；配色与另外两档同一套灰。下面照旧挂三网延迟
+                  （与延迟档同一个灰阶块）。 */}
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <InfoBox>
+                  <Stat icon={ArrowDown}>{m ? rate(m.net_rx) : "—"}</Stat>
+                  <Stat icon={ArrowUp}>{m ? rate(m.net_tx) : "—"}</Stat>
+                </InfoBox>
+                <InfoBox>
+                  <Stat icon={ArrowDown}>{bytes(node.total_rx)}</Stat>
+                  <Stat icon={ArrowUp}>{bytes(node.total_tx)}</Stat>
+                </InfoBox>
+                <InfoBox>
+                  <Stat icon={CalendarClock}>{expiryText(node) ?? "无期限"}</Stat>
+                  {node.expires_at && (
+                    <span className="block truncate pl-[18px] text-muted-foreground">{node.expires_at}</span>
+                  )}
+                </InfoBox>
+              </div>
               <LatencyPanel node={node} lines={latencyLines} />
             </>
           )}

@@ -1,12 +1,22 @@
-import type { ReactNode } from "react"
+import type { CSSProperties, ComponentType, ReactNode } from "react"
 
-type Props = { label: ReactNode; pct: number | null; foot: ReactNode; empty?: ReactNode }
+type Props = {
+  label: ReactNode
+  pct: number | null
+  foot: ReactNode
+  empty?: ReactNode
+  /** 详细档：表名前的图标（lucide 组件）。经典与延迟档不传，保持纯文字。 */
+  icon?: ComponentType<{ className?: string; style?: CSSProperties }>
+}
 
 /**
  * One metric: name and percentage on top, bar in the middle, raw numbers
  * underneath. Monochrome, since the length of the bar carries the message.
+ *
+ * 详细档也照旧：只是在表名前多一枚图标，颜色仍与其余两档同一套灰——图标随所在的
+ * 弱化灰文字走 currentColor，不另上色。
  */
-export function Meter({ label, pct, foot, empty = "—" }: Props) {
+export function Meter({ label, pct, foot, empty = "—", icon: Icon }: Props) {
   // null means the metric has no ceiling to fill, so the bar stays empty rather
   // than reporting 0%. What replaces the percentage depends on the reason:
   // unknown for a node with no metrics, ∞ for a plan with no limit.
@@ -14,7 +24,10 @@ export function Meter({ label, pct, foot, empty = "—" }: Props) {
   return (
     <div className="min-w-0">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-xs text-muted-foreground">{label}</span>
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          {Icon && <Icon className="size-3 shrink-0" />}
+          <span className="truncate">{label}</span>
+        </span>
         <span className="tnum text-xs font-medium">
           {pct === null ? empty : `${filled < 10 ? filled.toFixed(1) : filled.toFixed(0)}%`}
         </span>

@@ -178,14 +178,19 @@ export function LatencyPanel({ node, lines }: { node: Node; lines: string }) {
   const probes = useNodePing(node.id)
   // 填了名字就只显示这些、按填写的顺序；留空则按后台顺序自动取前三条。
   // 两档都卡在三条以内（与设置项里写的「最多三个」一致），匹配用的是 ping 任务的名字，
-  // 改过名、删过任务的那一行自然落空，不占位。
+  // 改过名、删过任务的那一行自然落空，不占位——三条的上限卡在**真正渲染出来的行**上，
+  // 所以先按名字取、再截断（反过来写的话，填写清单里前三个名字有一个对不上，访客就只
+  // 看到两行，而设置项里明明写着三条）。
   const rows = useMemo(() => {
     const all = probes ?? []
     const wanted = [...new Set(lines.split("\n").map((s) => s.trim()).filter(Boolean))]
     if (wanted.length === 0) return all.slice(0, 3)
     const byName = new Map<string, Probe>()
     for (const p of all) if (!byName.has(p.name)) byName.set(p.name, p)
-    return wanted.slice(0, 3).map((name) => byName.get(name)).filter((p): p is Probe => p !== undefined)
+    return wanted
+      .map((name) => byName.get(name))
+      .filter((p): p is Probe => p !== undefined)
+      .slice(0, 3)
   }, [probes, lines])
   if (rows.length === 0) return null
   return (

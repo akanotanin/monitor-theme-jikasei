@@ -19,8 +19,8 @@ export type ThemeConfig = {
   farmUrl: string
   /** 列表页是否显示分组标签行（全部 / 各组 / 未分组）。 */
   showGroupTabs: boolean
-  /** 卡片形态：classic = 网络两行、不含延迟；detail = 网络单行 + 三网延迟。 */
-  cardStyle: "classic" | "detail"
+  /** 卡片形态：classic = 网络两行、不含延迟；latency = 网络单行 + 三网延迟；detailed = 再加在线时长、价格与到期。 */
+  cardStyle: "classic" | "latency" | "detailed"
   /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */
   pingLines: string
 }
@@ -34,11 +34,23 @@ export const DEFAULTS: ThemeConfig = {
   farmUrl: "",
   // 默认关：分组标签行是个可选的视图，没分组的站开着也看不见东西。
   showGroupTabs: false,
-  // 默认「经典」：更紧凑、不发延迟请求；想带三网延迟的在后台切「详细」。
+  // 默认「经典」：更紧凑、不发延迟请求；想带三网延迟的在后台切「延迟」。
   cardStyle: "classic",
   // 延迟线路：留空 = 按后台顺序自动显示前几条；填了名字就只显示这些（一行一个）。
   // 名字是 ping 任务的名字，不是节点名——对不上的行会被跳过。
   pingLines: "",
+}
+
+/**
+ * 卡片形态这一档的取值。它在上一版（≤1.2.9）叫 "detail"，现在改叫 "latency"
+ * ——「延迟」才是这一档真正展示的东西，也把「详细」这个名字腾给后面那一档。
+ * 读到旧值就迁过来：不迁的话，存过 "detail" 的站会被当成从没保存过、悄悄掉回经典。
+ */
+function cardStyleOf(v: unknown): ThemeConfig["cardStyle"] {
+  // ≤1.2.9 的值：那时候这一档叫「详细」，现在叫「延迟」——同一档，只是换了名字。
+  if (v === "detail") return "latency"
+  if (v === "classic" || v === "latency" || v === "detailed") return v
+  return DEFAULTS.cardStyle
 }
 
 /**
@@ -140,11 +152,9 @@ export function useThemeConfig(): { config: ThemeConfig; loaded: boolean } {
             typeof saved.showFarmEntry === "boolean" ? saved.showFarmEntry : DEFAULTS.showFarmEntry,
           showGroupTabs:
             typeof saved.showGroupTabs === "boolean" ? saved.showGroupTabs : DEFAULTS.showGroupTabs,
-          // select：值不在声明里的选项内（旧版本、手改）就当没保存过，回落默认。
-          cardStyle:
-            saved.cardStyle === "classic" || saved.cardStyle === "detail"
-              ? saved.cardStyle
-              : DEFAULTS.cardStyle,
+          // select：值不在声明里的选项内（旧版本、手改）就当没保存过，回落默认；
+          // 旧值 "detail" 迁到 "latency"（见 cardStyleOf）。
+          cardStyle: cardStyleOf(saved.cardStyle),
           // 留空是有意义的值（= 自动取前几条），空串不能当「没填过」；只有类型不对时才回落。
           pingLines: typeof saved.pingLines === "string" ? saved.pingLines : DEFAULTS.pingLines,
         })
