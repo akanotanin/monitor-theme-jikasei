@@ -442,7 +442,7 @@ for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
 {
   const { dom, ping } = await renderCompact({ cardStyle: 'compact' }, 1440, 'compact')
   check('紧凑：渲染成一张表、一行一台（3 台 = 3 行）', dom.tables === 1 && dom.rows === 3, `表 ${dom.tables} / 行 ${dom.rows}`)
-  check('紧凑：宽屏八列齐全', dom.heads.join('/') === '名称/在线/负载/网速/CPU/内存/硬盘/流量', dom.heads.join('/'))
+  check('紧凑：宽屏十一列齐全（列序对齐源站，另加续费价）', dom.heads.join('/') === '名称/系统/在线/剩余/价格/负载/网速 ↓|↑/CPU/内存/硬盘/流量', dom.heads.join('/'))
   check('紧凑：不再是卡片网格（没有 xl 四列）', !dom.grid4, '仍带 xl:grid-cols-4')
   check('紧凑：每行四根进度条（CPU / 内存 / 硬盘 / 流量）', dom.bars === 4 * dom.rows, `条 ${dom.bars} / 行 ${dom.rows}`)
   check('紧凑：表头与数值都在（读到 CPU 与流量读数）', /13%/.test(dom.text) && /1\.00 TB/.test(dom.text), dom.text)
@@ -451,14 +451,21 @@ for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
 
 /* 6b) 列随屏宽收放 */
 {
+  const { dom } = await renderCompact({ cardStyle: 'compact' }, 1100, 'compact-lg')
+  check('紧凑 lg（1100）：剩余与价格回来、系统还收着，十列',
+    dom.cells === 10 && dom.heads.includes('剩余') && dom.heads.includes('价格') && !dom.heads.includes('系统'), `${dom.cells} 列：${dom.heads.join('/')}`)
+  check('紧凑 lg：无横向溢出', !dom.overflowX, '横向溢出')
+}
+{
   const { dom } = await renderCompact({ cardStyle: 'compact' }, 900, 'compact-md')
-  check('紧凑 md（900）：八列仍在', dom.cells === 8 && dom.heads.length === 8, `${dom.cells} 列`)
+  check('紧凑 md（900）：系统 / 剩余 / 价格 收掉，剩八列',
+    dom.cells === 8 && !dom.heads.includes('系统') && !dom.heads.includes('剩余') && !dom.heads.includes('价格'), `${dom.cells} 列：${dom.heads.join('/')}`)
   check('紧凑 md：无横向溢出', !dom.overflowX, '横向溢出')
 }
 {
   const { dom, ping } = await renderCompact({ cardStyle: 'compact' }, 700, 'compact-sm')
-  check('紧凑 sm（700）：负载与硬盘收掉，剩六列',
-    dom.cells === 6 && !dom.heads.includes('负载') && !dom.heads.includes('硬盘'), `${dom.cells} 列：${dom.heads.join('/')}`)
+  check('紧凑 sm（700）：在线 / 负载 / 硬盘 收掉，剩五列',
+    dom.cells === 5 && !dom.heads.includes('在线') && !dom.heads.includes('负载') && !dom.heads.includes('硬盘'), `${dom.cells} 列：${dom.heads.join('/')}`)
   check('紧凑 sm：无横向溢出', !dom.overflowX, '横向溢出')
   check('紧凑 sm：仍不发延迟请求', ping === 0, `实测 ${ping} 次`)
 }
@@ -482,6 +489,26 @@ for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
     })
   })()`))
   check('紧凑：超长机器名被截断、不把表格撑出屏幕', long.clipped && !long.overflowX, JSON.stringify(long))
+}
+
+/* 6d) 点一行就地展开延迟，不跳详情页（源站的做法） */
+{
+  await renderCompact({ cardStyle: 'compact' }, 1440, 'compact-open')
+  await evalJS(`(() => { const r = document.querySelector('tbody tr[role=button]'); if (r) r.click(); return r ? 'ok' : 'no-row' })()`)
+  await sleep(2000) // 等 NodeDetail 那个 chunk 与延迟图落地
+  // 包一层 try：求值撞上重渲染时会丢上下文，直接 JSON.parse(undefined) 会让整脚本莫名地断在这里。
+  const raw = await evalJS(`(() => { try { return JSON.stringify({
+    path: location.pathname,
+    expanded: !!document.querySelector('tbody tr[aria-expanded="true"]'),
+    rows: document.querySelectorAll('tbody tr').length,
+    detailLink: [...document.querySelectorAll('button')].some((b) => /完整详情/.test(b.textContent)),
+    svg: document.querySelectorAll('tbody tr td[colspan] svg').length,
+    rangePills: /1 小时/.test(document.body.innerText) && /7 天/.test(document.body.innerText),
+  }) } catch (e) { return JSON.stringify({ error: String(e), path: location.pathname }) } })()`)
+  const state = JSON.parse(raw ?? '{"error":"eval 返回 undefined"}')
+  check('紧凑：点一行就地展开、不跳详情页', state.path === '/' && state.expanded === true && state.rows === 4, raw)
+  check('紧凑：展开里是延迟图（含 1/6/24/7 天范围）', state.svg > 0 && state.rangePills === true, raw)
+  check('紧凑：展开行留有去整页详情的入口', state.detailLink === true, raw)
 }
 
 ws.close()

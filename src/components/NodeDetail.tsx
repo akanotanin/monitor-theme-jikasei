@@ -147,8 +147,15 @@ function Fact({ label, value }: { label: string; value?: string | number | null 
   )
 }
 
-export function NodeDetail({ node }: { node: Node }) {
-  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("resources")
+export function NodeDetail({ node, embedded = false, onOpenDetail }: {
+  node: Node
+  /** 紧凑形态点开一行时的就地渲染：省掉身份行与规格，直接落在延迟上，高度写死。 */
+  embedded?: boolean
+  /** 就地展开时通往整页详情的口子。不传就不画那个链接。 */
+  onOpenDetail?: () => void
+}) {
+  // 就地展开只讲延迟（那一格点开就是为了看延迟），所以页签默认落在延迟而不是资源。
+  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>(embedded ? "latency" : "resources")
   // Each tab keeps its own range: a 7-day trend and a 1-hour trace answer
   // different questions.
   const [ranges, setRanges] = useState({ resources: 6, latency: 6 })
@@ -329,6 +336,10 @@ export function NodeDetail({ node }: { node: Node }) {
 
   return (
     <div className="space-y-4">
+      {/* 就地展开（紧凑形态点开一行）时不重复这台机器的身份行、规格与备注：那一行在表格里
+          已经报过名字，规格留给整页详情，这里只留延迟本身。 */}
+      {!embedded && (
+      <>
       {/* 旗子在前、名字在后，与卡片上的次序一致。状态徽章与 agent 版本不在这行：
           在线时长已经并进下面的信息项，agent 版本对访客没有意义。 */}
       <div className="flex items-center gap-2">
@@ -362,8 +373,11 @@ export function NodeDetail({ node }: { node: Node }) {
       {node.remark && (
         <p className="rounded-md bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{node.remark}</p>
       )}
+      </>
+      )}
 
-      <div className="space-y-2 border-t pt-4">
+      <div className={embedded ? "space-y-2" : "space-y-2 border-t pt-4"}>
+        {!embedded && (
         <div className="flex gap-1">
           {TABS.map((t) => (
             <Tab key={t.key} active={tab === t.key} onClick={() => setTab(t.key)}>
@@ -371,6 +385,7 @@ export function NodeDetail({ node }: { node: Node }) {
             </Tab>
           ))}
         </div>
+        )}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex gap-1">
             {RANGES_FOR[tab].map((r) => (
@@ -394,6 +409,12 @@ export function NodeDetail({ node }: { node: Node }) {
               削峰
             </label>
           )}
+          {/* 就地展开时，通往整页详情的口子仍在：延迟是这一格的主角，规格与四张资源图在那边。 */}
+          {embedded && onOpenDetail && (
+            <button onClick={onOpenDetail} className="ml-auto text-xs text-muted-foreground transition-colors hover:text-foreground">
+              完整详情 ›
+            </button>
+          )}
         </div>
       </div>
 
@@ -415,14 +436,15 @@ export function NodeDetail({ node }: { node: Node }) {
             // re-renders every two seconds, so a scrolled page would re-derive the
             // height from a top that has moved.
             ref={(el) => {
-              if (el) setChartTop(el.getBoundingClientRect().top + scrollY)
+              // 就地展开时高度写死，不再按视口撑满：它下面还压着别的行。
+              if (el && !embedded) setChartTop(el.getBoundingClientRect().top + scrollY)
             }}
             style={
-              chartTop
+              !embedded && chartTop
                 ? { height: `calc(100svh - ${Math.round(chartTop)}px - 1rem)` }
                 : undefined
             }
-            className="flex min-h-72 flex-col gap-3">
+            className={embedded ? "flex h-72 flex-col gap-3" : "flex min-h-72 flex-col gap-3"}>
             {/* `min-h-0` is what makes `flex-1` a real number rather than the
                 content's own height: ResponsiveContainer reads its parent, and
                 a flex child not told it may shrink reports whatever the SVG

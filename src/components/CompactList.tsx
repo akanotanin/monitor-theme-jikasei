@@ -1,30 +1,48 @@
-import { ArrowDown, ArrowUp } from "lucide-react"
+import { lazy, Suspense, useEffect, useState } from "react"
+import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react"
 
 import { Country, deployed, monthUsage } from "@/components/NodeCard"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { Node } from "@/lib/api"
-import { FOREVER, bytes, pair, percent, rate } from "@/lib/format"
+import { FOREVER, CYCLES, bytes, daysUntil, money, osName, pair, percent, rate } from "@/lib/format"
 
 /**
- * 「紧凑」形态：一行一台机器的表格。
+ * 「紧凑」形态：一行一台机器的表格，点一行就地摊开延迟。
  *
  * 另外三种形态都是网格里的卡片，一屏只排得下八到十几台；这一档换成表格，同样高度能排
- * 下两三倍，适合机器多、只想扫一眼余量的站。布局参考的是常见监控面板那种行列式，但配色
- * 仍是本主题这一套灰阶：进度条一律前景色，不按「越满越危险」上色（那是详情页仪表盘的事），
- * 弱化灰只留给列名、负载与离线这类附注。
+ * 下两三倍，适合机器多、只想扫一眼余量的站。
  *
- * 列随屏宽收放：最窄只留「名称 / CPU / 流量」，依次加回网速、在线、内存、负载、硬盘。
- * 表头一直在（窄屏也不收）——数据列收得越少，越需要一行字告诉访客哪列是什么。
- * 延迟、时长、计费都不在这一档里：它要的正是「一屏看全」，那些留给详情页与另外三档。
+ * 版式照着 monitor-theme-design（tom2almighty）那张服务器表排——列序与对齐都对齐它：
+ *   名称（折角 + 国旗 + 名字，左对齐） 系统 在线 剩余 价格 负载 网速 CPU 内存 硬盘 流量
+ * 除名称列外一律居中，每个指标是「读数压在一条细进度条上」，网速是「↓ 下行 | ↑ 上行」，
+ * 表头一直挂在上方、网速那格还缀着 `↓|↑`。国旗仍排在名字之前、不自成一列——与另外三种
+ * 形态同一处身份读法（旗子认地方、名字认机器）。续费价是源站没有的一列，本主题把它与
+ * 到期摆在一起，讲的都是账期。
  *
- * 参考了 monitor-theme-design（tom2almighty）那张服务器表格的行列式布局，但只取骨架，
- * 不搬它的配色与交互：它有状态点、排序表头、搜索框与内联展开，这些都是本主题另有取舍的地方
- * （状态点早随本主题删掉、排序与搜索不做、点一行是跳详情页而不是就地展开）；列宽也只能写死，
- * 不开 `table-fixed` 就撑不住长机器名。
+ * 点一行**就地摊开延迟**（源站亦然，不跳详情页）：展开行里挂的是整页详情那份延迟图
+ * （NodeDetail 的 embedded 模式，含 1/6/24/7天 范围与削峰开关），点名称前那枚折角或在
+ * 行上敲回车都会开合。折角因此是「点得进去」的提示，落点是就地展开而不是整页跳转；真要去
+ * 整页详情，展开行右上角留了「完整详情 ›」。
+ *
+ * 只借版式，不借它的皮：配色仍是本主题这一套灰阶（进度条前景色、附注弱化灰，没有绿蓝箭头），
+ * 也没有它的状态点、排序表头与搜索框——本主题早把状态点删了、不做排序与搜索。
+ *
+ * 列随屏宽收放（与源站同样的思路，只是断点用本主题一贯的视口断点而非容器查询）：
+ *   窄屏   名称 / CPU / 流量
+ *   sm+    加回 网速、内存
+ *   md+    加回 在线、负载、硬盘
+ *   lg+    加回 到期、价格
+ *   xl+    加回 系统（这一列要给名字留全，只有 ≥1280 才塞得下）
+ * 表头窄屏也保留——数据列收得越少，越需要一行字告诉访客哪列是什么。
  *
  * 用 `table-fixed`：走的是定宽算法，名称列不写宽度、吃掉余量，其余列写死宽度；名称过长
  * 在这里会真的截断，而不是把整张表撑出屏幕。`display:none` 的单元格从表里整个消失，所以
  * 表头与每行在各档断点下渲染出来的列数始终一致，不会错位。
  */
+
+// 点开一行就地摊开的那块：整页详情（含那张延迟图）单独一个 chunk，与 App 里那份同一个——
+// 表格本身不必背上 recharts，点开时才取（App 开页已经在预热这个 chunk）。
+const NodeDetail = lazy(() => import("@/components/NodeDetail").then((m) => ({ default: m.NodeDetail })))
 
 /** 单元格内的一条细进度条：宽度跟着格子走；没有上限（流量不限）就留空，与 Meter 对 null 一致。 */
 function Bar({ pct }: { pct: number | null }) {
@@ -55,20 +73,80 @@ function shortUptime(node: Node): string {
   return h > 0 ? `${h} 小时` : `${Math.floor(s / 60)} 分`
 }
 
-// 列宽与显隐：下面表头与每行共用同一份，改一处就得两处一起改（写在常量里，省得对不上）。
-const COL = {
-  uptime: "hidden w-16 sm:table-cell",
-  load: "hidden w-14 md:table-cell",
-  net: "hidden w-24 sm:table-cell sm:w-28",
-  cpu: "w-14 sm:w-16",
-  mem: "hidden w-14 sm:table-cell sm:w-16",
-  disk: "hidden w-14 md:table-cell",
-  traffic: "w-24 sm:w-32",
-} as const
-const HEAD = "px-3 py-2 text-right text-xs font-normal text-muted-foreground"
-const CELL = "whitespace-nowrap px-3 py-1.5 text-right align-middle"
+/**
+ * 表里的到期只写天数（详细档那句「剩余 95 天」太长）。取 hub 算好的 `expires_in`，
+ * 旧 hub 没有才按 `expires_at` 自己数——与 NodeCard 的 expiryText 同一套规则，只是更短。
+ * 快到期（≤7 天）与已过期改用前景色：源站在这一列挂红/黄徽章，本主题没红没黄，就用深浅
+ * 把该看一眼的从满列弱化灰里拎出来。
+ */
+function expiryShort(node: Node): { text: string; soon: boolean } {
+  const days = node.expires_in !== undefined ? node.expires_in : daysUntil(node.expires_at)
+  if (days === null || days === undefined) return { text: FOREVER, soon: false }
+  if (days < 0) return { text: `过期 ${-days} 天`, soon: true }
+  if (days <= 7) return { text: `${days} 天`, soon: true }
+  return { text: `${days} 天`, soon: false }
+}
 
-function Row({ node, onOpen }: { node: Node; onOpen: () => void }) {
+// 每一列从哪一档起出现（视口 px，0 = 一直都在）。表头、每行单元格、展开行要跨的列数
+// 都从这一份推，三处不会各写各的；列宽另放 W，只写宽度、不碰显隐。
+const MIN = {
+  name: 0, os: 1280, uptime: 768, expiry: 1024, price: 1024, load: 768,
+  net: 640, cpu: 0, mem: 640, disk: 768, traffic: 0,
+} as const
+const W = {
+  name: "", os: "w-36", uptime: "w-16", expiry: "w-14", price: "w-28", load: "w-14",
+  net: "w-24 lg:w-44", cpu: "w-14 sm:w-16 xl:w-20", mem: "w-14 sm:w-16 xl:w-20",
+  disk: "w-12 xl:w-20", traffic: "w-28 sm:w-32 xl:w-36",
+} as const
+type ColKey = keyof typeof MIN
+
+const visClass = (min: number) =>
+  min === 0 ? "" : min <= 640 ? "hidden sm:table-cell" : min <= 768 ? "hidden md:table-cell" : min <= 1024 ? "hidden lg:table-cell" : "hidden xl:table-cell"
+const colCls = (key: ColKey) => `${visClass(MIN[key])} ${W[key]}`.trim()
+
+const HEAD = "px-2 py-2 text-center text-xs font-normal text-muted-foreground"
+const CELL = "whitespace-nowrap px-2 py-2 text-center align-middle"
+
+/** 眼下看得见几列——展开行要跨的就是这个数。跟着 MIN 走，不另写一份。 */
+function useSpan(): number {
+  const count = () => (Object.values(MIN) as number[]).filter((m) => innerWidth >= m).length
+  const [span, setSpan] = useState(count)
+  useEffect(() => {
+    const onResize = () => setSpan(count())
+    addEventListener("resize", onResize)
+    return () => removeEventListener("resize", onResize)
+  }, [])
+  return span
+}
+
+/** 展开行里那块：整页详情的延迟图就地渲染；从没接入的机器没有历史可画，写一句话带过。 */
+function Expanded({ node, span, onOpenDetail }: { node: Node; span: number; onOpenDetail: () => void }) {
+  return (
+    <tr className="bg-muted/30">
+      {/* 展开行要跨满当前看得见的列数：colSpan 得跟着断点走（见 useSpan），写死一个数会
+          在窄屏上把表格撑出多余的列。 */}
+      <td colSpan={span} className="p-0">
+        <div className="border-t border-border/60 px-4 py-3">
+          {deployed(node) ? (
+            <Suspense fallback={<Skeleton className="h-72" />}>
+              <NodeDetail node={node} embedded onOpenDetail={onOpenDetail} />
+            </Suspense>
+          ) : (
+            <p className="py-6 text-center text-sm text-muted-foreground">还没有接入。在后台生成安装命令并执行一次。</p>
+          )}
+        </div>
+      </td>
+    </tr>
+  )
+}
+
+function Row({ node, span, open, onToggle, onOpenDetail }: {
+  node: Node
+  span: number
+  open: boolean
+  onToggle: () => void
+  onOpenDetail: () => void
+}) {
   const m = node.metrics
   // CPU 是 hub 直接给的百分比；内存、硬盘、流量都要自己按 used/total 算。流量按套餐口径
   // （monthUsage，与经典/延迟档同一套），没有上限就是没有上限：文本写 ∞、条留空。
@@ -78,73 +156,113 @@ function Row({ node, onOpen }: { node: Node; onOpen: () => void }) {
   const used = monthUsage(node)
   const trafficText = node.traffic_limit > 0 ? pair(used, node.traffic_limit) : `${bytes(used)} / ${FOREVER}`
   const traffic = node.traffic_limit > 0 ? percent(used, node.traffic_limit) : null
+  const expiry = expiryShort(node)
+  // 续费价与计费周期：与「详细」卡片同一套读法（金额 + 周期），只是压在一个格子里。
+  const cycle = CYCLES[node.billing_cycle] ?? (node.billing_cycle || null)
 
   return (
-    <tr
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
-      className="cursor-pointer outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50"
-    >
-      {/* 名称列不写宽度：定宽表把余量全给它，机器名长短不一时其余列纹丝不动。 */}
-      <td className="px-3 py-1.5 align-middle">
-        <span className="flex min-w-0 items-center gap-2">
-          <Country node={node} />
-          <span className="truncate font-medium">{node.name}</span>
-        </span>
-      </td>
-      <td className={`${COL.uptime} ${CELL} text-muted-foreground`}>{shortUptime(node)}</td>
-      <td className={`${COL.load} ${CELL} text-muted-foreground`}>{m ? m.load[0].toFixed(2) : "—"}</td>
-      <td className={`${COL.net} ${CELL}`}>
-        <span className="tnum inline-flex items-center gap-1">
-          <ArrowDown className="size-3 shrink-0 text-muted-foreground" />
-          {m ? rate(m.net_rx) : "—"}
-        </span>
-        <span className="tnum mt-0.5 flex items-center justify-end gap-1">
-          <ArrowUp className="size-3 shrink-0 text-muted-foreground" />
-          {m ? rate(m.net_tx) : "—"}
-        </span>
-      </td>
-      <td className={`${COL.cpu} ${CELL}`}>
-        <span className="tnum">{pctText(cpu)}</span>
-        <Bar pct={cpu} />
-      </td>
-      <td className={`${COL.mem} ${CELL}`}>
-        <span className="tnum">{pctText(mem)}</span>
-        <Bar pct={mem} />
-      </td>
-      <td className={`${COL.disk} ${CELL}`}>
-        <span className="tnum">{pctText(disk)}</span>
-        <Bar pct={disk} />
-      </td>
-      <td className={`${COL.traffic} ${CELL}`}>
-        <span className="tnum">{trafficText}</span>
-        <Bar pct={traffic} />
-      </td>
-    </tr>
+    <>
+      <tr
+        role="button"
+        aria-expanded={open}
+        tabIndex={0}
+        onClick={onToggle}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onToggle())}
+        className={`cursor-pointer outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 ${open ? "bg-muted/30" : ""}`}
+      >
+        {/* 名称列不写宽度、也不居中：定宽表把余量全给它，机器名长短不一时其余列纹丝不动。
+            折角 → 国旗 → 名字：折角是「点得进去」的提示，展开时转成朝下；国旗与另外三种
+            形态同一处读法，都排在名字之前。 */}
+        <td className="px-3 py-2 align-middle">
+          <span className="flex min-w-0 items-center gap-2">
+            <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground/60 transition-transform ${open ? "rotate-90" : ""}`} />
+            <Country node={node} />
+            <span className="truncate font-medium">{node.name}</span>
+          </span>
+        </td>
+        <td className={`${colCls("os")} ${CELL} text-muted-foreground`}>
+          <span className="block truncate">{node.os ? osName(node.os) : "—"}</span>
+        </td>
+        <td className={`${colCls("uptime")} ${CELL} text-muted-foreground`}>{shortUptime(node)}</td>
+        <td className={`${colCls("expiry")} ${CELL} tnum ${expiry.soon ? "" : "text-muted-foreground"}`}>{expiry.text}</td>
+        <td className={`${colCls("price")} ${CELL} tnum text-muted-foreground`}>
+          {node.price > 0
+            ? <span className="block truncate">{money(node.price, node.currency)}{cycle ? ` / ${cycle}` : ""}</span>
+            : "—"}
+        </td>
+        <td className={`${colCls("load")} ${CELL} tnum text-muted-foreground`}>{m ? m.load[0].toFixed(2) : "—"}</td>
+        <td className={`${colCls("net")} ${CELL}`}>
+          {/* 下行在左、上行在右，与三种卡片形态的读法一致；窄屏摞成两行（源站窄屏也这么摞），
+              宽屏才并排——那一排要一个半读数的宽度，窄屏给不起。 */}
+          <div className="tnum flex flex-col items-center gap-0.5 lg:flex-row lg:justify-center lg:gap-1">
+            <span className="inline-flex items-center gap-1">
+              <ArrowDown className="size-3 shrink-0 text-muted-foreground" />
+              {m ? rate(m.net_rx) : "—"}
+            </span>
+            <span className="hidden text-muted-foreground/60 lg:inline">|</span>
+            <span className="inline-flex items-center gap-1">
+              <ArrowUp className="size-3 shrink-0 text-muted-foreground" />
+              {m ? rate(m.net_tx) : "—"}
+            </span>
+          </div>
+        </td>
+        <td className={`${colCls("cpu")} ${CELL}`}>
+          <span className="tnum">{pctText(cpu)}</span>
+          <Bar pct={cpu} />
+        </td>
+        <td className={`${colCls("mem")} ${CELL}`}>
+          <span className="tnum">{pctText(mem)}</span>
+          <Bar pct={mem} />
+        </td>
+        <td className={`${colCls("disk")} ${CELL}`}>
+          <span className="tnum">{pctText(disk)}</span>
+          <Bar pct={disk} />
+        </td>
+        <td className={`${colCls("traffic")} ${CELL}`}>
+          <span className="tnum block truncate">{trafficText}</span>
+          <Bar pct={traffic} />
+        </td>
+      </tr>
+      {open && <Expanded node={node} span={span} onOpenDetail={onOpenDetail} />}
+    </>
   )
 }
 
-/** 紧凑形态的外壳：一张带边框的表。 */
+/** 紧凑形态的外壳：一张带边框的表，表头一行。展开的行由 CompactList 统一管开合。 */
 export function CompactList({ nodes, onOpen }: { nodes: Node[]; onOpen: (id: number) => void }) {
+  const span = useSpan()
+  // 一次只摊开一行：表格本来就密，同时摊开两块会把上下文冲散。
+  const [open, setOpen] = useState<number | null>(null)
+
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
       <table className="w-full table-fixed text-xs">
         <thead>
           <tr className="border-b bg-muted/40">
-            <th className="px-3 py-2 text-left text-xs font-normal text-muted-foreground">名称</th>
-            <th className={`${COL.uptime} ${HEAD}`}>在线</th>
-            <th className={`${COL.load} ${HEAD}`}>负载</th>
-            <th className={`${COL.net} ${HEAD}`}>网速</th>
-            <th className={`${COL.cpu} ${HEAD}`}>CPU</th>
-            <th className={`${COL.mem} ${HEAD}`}>内存</th>
-            <th className={`${COL.disk} ${HEAD}`}>硬盘</th>
-            <th className={`${COL.traffic} ${HEAD}`}>流量</th>
+            <th className={`${colCls("name")} px-3 py-2 text-left text-xs font-normal text-muted-foreground`}>名称</th>
+            <th className={`${colCls("os")} ${HEAD}`}>系统</th>
+            <th className={`${colCls("uptime")} ${HEAD}`}>在线</th>
+            <th className={`${colCls("expiry")} ${HEAD}`}>剩余</th>
+            <th className={`${colCls("price")} ${HEAD}`}>价格</th>
+            <th className={`${colCls("load")} ${HEAD}`}>负载</th>
+            <th className={`${colCls("net")} ${HEAD}`}>网速<span className="hidden lg:inline"> ↓|↑</span></th>
+            <th className={`${colCls("cpu")} ${HEAD}`}>CPU</th>
+            <th className={`${colCls("mem")} ${HEAD}`}>内存</th>
+            <th className={`${colCls("disk")} ${HEAD}`}>硬盘</th>
+            <th className={`${colCls("traffic")} ${HEAD}`}>流量</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/60">
-          {nodes.map((n) => <Row key={n.id} node={n} onOpen={() => onOpen(n.id)} />)}
+          {nodes.map((n) => (
+            <Row
+              key={n.id}
+              node={n}
+              span={span}
+              open={open === n.id}
+              onToggle={() => setOpen((cur) => (cur === n.id ? null : n.id))}
+              onOpenDetail={() => onOpen(n.id)}
+            />
+          ))}
         </tbody>
       </table>
     </div>
