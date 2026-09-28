@@ -49,10 +49,11 @@ const RANGES = [
   { hours: 168, label: "7 天" },
 ]
 
-// Latency stops at a day. A week-wide bucket would still carry the spread and the
-// loss figure, but a week of probe history is outside this page's purpose, and
-// these are the windows in which every ping remains on the chart.
-const RANGES_FOR = { resources: RANGES, latency: RANGES.filter((r) => r.hours <= 24) }
+// 两个页签共用同一组窗口。延迟页签原先停在上面的 24 小时——理由是一周宽的桶会把抖动与丢包
+// 摊平、且「一周的探测史」超出这页的用途；但那是替访客做判断：想看一周走势的人只能在资源
+// 页签里看，而延迟恰恰是资源页签给不了的那条。窗口拉长不会让点数变多，hub 只会把桶放得更宽
+// （168 小时 ≈ 9 分钟一桶），所以七天的探测史仍画得下、也仍看得见趋势。
+const RANGES_FOR = { resources: RANGES, latency: RANGES }
 
 const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: false }
 
