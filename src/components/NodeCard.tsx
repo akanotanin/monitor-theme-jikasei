@@ -15,7 +15,7 @@ import { hasNotes, tagsFor } from "@/lib/site-settings"
  * This period's usage as the plan meters it. The hub computes it; the switch
  * below serves only a hub from before `month_used`.
  */
-function monthUsage(node: Node): number {
+export function monthUsage(node: Node): number {
   if (typeof node.month_used === "number") return node.month_used
   const { month_rx: rx, month_tx: tx } = node
   switch (node.traffic_mode) {

@@ -15,6 +15,8 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { writeFile, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const BASE = (process.argv[2] || 'http://127.0.0.1:28081').replace(/\/$/, '')
@@ -47,7 +49,8 @@ const chrome = spawn(CHROME, [
   '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars',
   '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
   '--disable-renderer-backgrounding',
-  `--user-data-dir=${process.env.LOCALAPPDATA || '/tmp'}/Temp/shotpreview${PORT}`,
+  `--user-data-dir=${join(tmpdir(), `shotpreview${PORT}`)}`,
+  '--no-sandbox',
   'about:blank',
 ], { stdio: 'ignore' })
 

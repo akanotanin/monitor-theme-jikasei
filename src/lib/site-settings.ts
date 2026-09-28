@@ -24,8 +24,11 @@ export type ThemeConfig = {
    * 其它 = 自定义地址（同域路径或完整网址）。
    */
   farmUrl: string
-  /** 卡片形态：classic = 网络两行、不含延迟；latency = 网络单行 + 三网延迟；detailed = 再加在线时长、价格与到期。 */
-  cardStyle: "classic" | "latency" | "detailed"
+  /**
+   * 卡片形态：classic = 网络两行、不含延迟；latency = 网络单行 + 三网延迟；detailed = 再加在线时长、
+   * 价格与到期；compact = 一行一台的表格（列随屏宽收放，密度最高）。
+   */
+  cardStyle: "classic" | "latency" | "detailed" | "compact"
   /** 列表页顶部显示什么：none = 都不显示；groups = 分组标签行；summary = 概览卡片行；both = 两个都显示。 */
   listTop: "none" | "groups" | "summary" | "both"
   /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */
@@ -43,7 +46,7 @@ export const DEFAULTS: ThemeConfig = {
   // 「装主题」与「部署养鸡场」是两件事，站长没装就不该多出一枚点了没反应的图标；
   // 想固定指向别处（包括别人的公开那座）就填地址，想一律不显示就填 `off`。
   farmUrl: "",
-  // 默认「经典」：更紧凑、不发延迟请求；想带三网延迟的在后台切「延迟」。
+  // 默认「经典」：紧凑、不发延迟请求；想带三网延迟的在后台切「延迟」，机器多想一屏看全的切「紧凑」。
   cardStyle: "classic",
   // 默认「都不显示」：这两行都是「一眼看全站」的补充，站点本来就有每台机器的卡片；
   // 关着时它们整个不挂载，首屏与没有这个功能时一模一样。
@@ -64,7 +67,7 @@ export const DEFAULTS: ThemeConfig = {
 export function cardStyleOf(v: unknown): ThemeConfig["cardStyle"] {
   // ≤1.2.9 的值：那时候这一档叫「详细」，现在叫「延迟」——同一档，只是换了名字。
   if (v === "detail") return "latency"
-  if (v === "classic" || v === "latency" || v === "detailed") return v
+  if (v === "classic" || v === "latency" || v === "detailed" || v === "compact") return v
   return DEFAULTS.cardStyle
 }
 

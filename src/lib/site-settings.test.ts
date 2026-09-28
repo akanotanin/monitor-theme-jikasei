@@ -2,7 +2,7 @@
 // 跑法同另外几个：`npm test`（Node 自己剥类型，不需要 runner）。没有任何东西 import 它，不进 bundle。
 //
 // 重点在三处容易静默出错的迁移：
-//   1. cardStyle：≤1.2.9 的 "detail" 现在叫 "latency"；
+//   1. cardStyle：≤1.2.9 的 "detail" 现在叫 "latency"，1.9.0 起多了 "compact";
 //   2. listTop：≤1.4.0 是两个布尔开关（showSummary / showGroupTabs），1.5.0 合成四选一；
 //   3. farmUrl：≤1.5.0 是两个键（showFarmEntry + farmUrl），1.6.0 并成一个三态键。
 // 读不出来的表现不是报错，而是「站长开着的那一项自己关了」。
@@ -21,7 +21,7 @@ function eq(got: unknown, want: unknown, what: string) {
 
 // ── cardStyle：旧名迁移 ───────────────────────────────────────────────
 eq(cardStyleOf("detail"), "latency", '旧值 "detail" 迁到 "latency"')
-for (const v of ["classic", "latency", "detailed"]) eq(cardStyleOf(v), v, `cardStyle 保留 ${v}`)
+for (const v of ["classic", "latency", "detailed", "compact"]) eq(cardStyleOf(v), v, `cardStyle 保留 ${v}`)
 eq(cardStyleOf("nope"), "classic", "cardStyle 认不出的值回落经典")
 eq(cardStyleOf(undefined), "classic", "cardStyle 没存过回落经典")
 

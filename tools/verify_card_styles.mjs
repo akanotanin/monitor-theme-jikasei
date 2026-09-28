@@ -1,14 +1,15 @@
-// 验「卡片形态」三档（经典 / 延迟 / 详细）在真实渲染里各自的形状，以及旧值 detail → latency 的迁移。
+// 验「卡片形态」四档（经典 / 延迟 / 详细 / 紧凑）在真实渲染里各自的形状，以及旧值 detail → latency 的迁移。
 //
 // 用法：node tools/verify_card_styles.mjs [port]
 //
-// 为什么要它：三档的差别全在 NodeCard 里的条件分支上，改一处分支很容易让另一档跟着变
-// （或让 classic 偷偷开始拉延迟数据）。这里用本机静态伺服 + 桩 /api/*（含带 ping 历史的
-// /api/nodes/{id}/metrics）跑真 React 组件，逐档断言 DOM 形状、访客端请求数与卡片上的读数：
+// 为什么要它：各档的差别全在 NodeCard / CompactList 里的条件分支上，改一处分支很容易让另一档跟着变
+// （或让 classic 悄悄开始拉延迟数据）。这里用本机静态伺服 + 桩 /api/*（含带 ping 历史的
+// /api/nodes/{id}/metrics）跑真 React 组件，逐档断言 DOM 形状、访客端请求数与列表上的读数：
 //
 //   经典   —— 网络 2×2 那格在；不发任何 ping 请求
 //   延迟   —— 网络合成一行 + 三网延迟块；每节点恰好 1 次 ping 请求；指定线路按填写顺序、名字对不上跳过
 //   详细   —— 元信息行 + 三枚读数盒 + 三网延迟块；标题行不再有状态点；网格不再有 xl 四列
+//   紧凑   —— 一张表、一行一台，表头与列随屏宽收放；不发 ping 请求
 //   旧值   —— 配置里存 detail（1.2.9 的值）时必须渲染成「延迟」，不能掉回经典
 //   非法值 —— 回落经典（含不发延迟请求）
 //
@@ -19,6 +20,7 @@
 import { createServer } from 'node:http'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { extname, join, normalize } from 'node:path'
+import { tmpdir } from 'node:os'
 import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 
@@ -142,7 +144,8 @@ const chrome = spawn(CHROME, [
   '--no-first-run', '--no-default-browser-check', '--disable-gpu', '--hide-scrollbars',
   '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
   '--disable-renderer-backgrounding', '--no-proxy-server',
-  `--user-data-dir=${process.env.LOCALAPPDATA || '/tmp'}/Temp/cardstyles${CDP_PORT}`,
+  `--user-data-dir=${join(tmpdir(), `cardstyles${CDP_PORT}`)}`,
+  '--no-sandbox',
   'about:blank',
 ], { stdio: 'ignore' })
 
@@ -206,6 +209,48 @@ async function render(cfg, tag = '') {
   }
   if (!dom || dom.cards === 0) throw new Error(`形态 ${tag}：页面没渲染出卡片`)
   await sleep(1000) // 让延迟请求落地（每节点 1 次，三条并发）
+  const { pingHits: hits } = await (await fetch(`http://127.0.0.1:${PORT}/__stats`)).json()
+  return { dom, ping: hits.length }
+}
+
+/* ------------------------------------------------------------------ 紧凑形态探测 */
+
+// 紧凑形态的行是 tr[role=button]（不是卡片），探针另写一份：表头/单元格各自数「没被 display:none 收掉」的那些，
+// 它们正是访客看得见的列。
+const COMPACT_PROBE = `JSON.stringify((() => {
+  const table = document.querySelector('table')
+  const rows = [...document.querySelectorAll('tbody tr[role=button]')]
+  const visible = (el) => !!el && getComputedStyle(el).display !== 'none'
+  const heads = table ? [...table.querySelectorAll('thead tr > *')].filter(visible).map((h) => h.textContent.trim()) : []
+  const cells = rows[0] ? [...rows[0].children].filter(visible).length : 0
+  const html = document.documentElement
+  return {
+    tables: document.querySelectorAll('table').length,
+    rows: rows.length,
+    heads,
+    cells,
+    grid4: [...document.querySelectorAll('*')].some((e) => typeof e.className === 'string' && e.className.includes('xl:grid-cols-4')),
+    overflowX: html.scrollWidth > html.clientWidth,
+    bars: rows.reduce((n, r) => n + r.querySelectorAll('.h-full.rounded-full').length, 0),
+    text: rows[0] ? rows[0].innerText.replace(/\\n/g, ' | ') : '',
+  }
+})())`
+
+async function renderCompact(cfg, width, tag) {
+  config = cfg
+  await fetch(`http://127.0.0.1:${PORT}/__reset`)
+  await send('Emulation.setDeviceMetricsOverride', { width, height: 1400, deviceScaleFactor: 1, mobile: false })
+  await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/?m=${encodeURIComponent(tag)}` })
+  let dom = null
+  for (let i = 0; i < 60; i++) {
+    await sleep(300)
+    const raw = await evalJS(COMPACT_PROBE)
+    if (!raw) continue
+    dom = JSON.parse(raw)
+    if (dom.rows > 0) break
+  }
+  if (!dom || dom.rows === 0) throw new Error(`紧凑 ${tag}：页面没渲染出行`)
+  await sleep(900) // 让延迟请求落地（紧凑形态应当一次都不发）
   const { pingHits: hits } = await (await fetch(`http://127.0.0.1:${PORT}/__stats`)).json()
   return { dom, ping: hits.length }
 }
@@ -391,6 +436,52 @@ for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
   check(`非法值 ${tag} → 回落经典（含不发延迟请求）`,
     dom.classicNet === 1 && dom.latencyRow === 0 && dom.infoBox === 0 && ping === 0,
     `经典 ${dom.classicNet} / 行 ${dom.latencyRow} / 盒 ${dom.infoBox} / 请求 ${ping}`)
+}
+
+/* 6) 紧凑形态：一行一台的表格 */
+{
+  const { dom, ping } = await renderCompact({ cardStyle: 'compact' }, 1440, 'compact')
+  check('紧凑：渲染成一张表、一行一台（3 台 = 3 行）', dom.tables === 1 && dom.rows === 3, `表 ${dom.tables} / 行 ${dom.rows}`)
+  check('紧凑：宽屏八列齐全', dom.heads.join('/') === '名称/在线/负载/网速/CPU/内存/硬盘/流量', dom.heads.join('/'))
+  check('紧凑：不再是卡片网格（没有 xl 四列）', !dom.grid4, '仍带 xl:grid-cols-4')
+  check('紧凑：每行四根进度条（CPU / 内存 / 硬盘 / 流量）', dom.bars === 4 * dom.rows, `条 ${dom.bars} / 行 ${dom.rows}`)
+  check('紧凑：表头与数值都在（读到 CPU 与流量读数）', /13%/.test(dom.text) && /1\.00 TB/.test(dom.text), dom.text)
+  check('紧凑：不发延迟请求（这一档不含三网延迟）', ping === 0, `实测 ${ping} 次`)
+}
+
+/* 6b) 列随屏宽收放 */
+{
+  const { dom } = await renderCompact({ cardStyle: 'compact' }, 900, 'compact-md')
+  check('紧凑 md（900）：八列仍在', dom.cells === 8 && dom.heads.length === 8, `${dom.cells} 列`)
+  check('紧凑 md：无横向溢出', !dom.overflowX, '横向溢出')
+}
+{
+  const { dom, ping } = await renderCompact({ cardStyle: 'compact' }, 700, 'compact-sm')
+  check('紧凑 sm（700）：负载与硬盘收掉，剩六列',
+    dom.cells === 6 && !dom.heads.includes('负载') && !dom.heads.includes('硬盘'), `${dom.cells} 列：${dom.heads.join('/')}`)
+  check('紧凑 sm：无横向溢出', !dom.overflowX, '横向溢出')
+  check('紧凑 sm：仍不发延迟请求', ping === 0, `实测 ${ping} 次`)
+}
+{
+  const { dom } = await renderCompact({ cardStyle: 'compact' }, 480, 'compact-xs')
+  check('紧凑窄屏（480）：只留名称 / CPU / 流量三列', dom.cells === 3, `${dom.cells} 列：${dom.heads.join('/')}`)
+  check('紧凑窄屏：表头仍在（窄屏也告诉访客哪列是什么）', dom.heads.join('/') === '名称/CPU/流量', dom.heads.join('/'))
+  check('紧凑窄屏：无横向溢出', !dom.overflowX, '横向溢出')
+}
+
+/* 6c) 超长机器名不把表格撑出屏幕 */
+{
+  await renderCompact({ cardStyle: 'compact' }, 1000, 'compact-long')
+  const long = JSON.parse(await evalJS(`(() => {
+    const span = document.querySelector('tbody tr[role=button] td span.truncate')
+    span.textContent = '超长机器名'.repeat(40)
+    return JSON.stringify({
+      tableW: Math.round(document.querySelector('table').getBoundingClientRect().width),
+      overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      clipped: span.scrollWidth > span.clientWidth,
+    })
+  })()`))
+  check('紧凑：超长机器名被截断、不把表格撑出屏幕', long.clipped && !long.overflowX, JSON.stringify(long))
 }
 
 ws.close()

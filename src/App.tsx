@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore 
 import { Moon, Sun, Wrench } from "lucide-react"
 
 import { NodeCard } from "@/components/NodeCard"
+import { CompactList } from "@/components/CompactList"
 import { SummaryCards } from "@/components/Summary"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -242,11 +243,20 @@ export default function App() {
             </p>
           )
         ) : !nodes ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-72" />
-            ))}
-          </div>
+          // 还在等节点列表：骨架按当前形态画。紧凑形态是一行一台，用几根细条比三张大卡片更像它。
+          config.cardStyle === "compact" ? (
+            <div className="space-y-2">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-9" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-72" />
+              ))}
+            </div>
+          )
         ) : (
           <>
             {/* 概览卡片行：设置里没选它时整个不挂载（不是藏起来），首屏与没有这个功能时一致。 */}
@@ -302,8 +312,8 @@ function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardS
   showTabs: boolean
   /** 卡片延迟块要显示哪几条线路（ping 任务名，换行分隔）；空串 = 自动。 */
   latencyLines: string
-  /** 卡片形态：detailed 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟。 */
-  cardStyle: "classic" | "latency" | "detailed"
+  /** 卡片形态：compact = 一行一台的表格；detailed = 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟。 */
+  cardStyle: "classic" | "latency" | "detailed" | "compact"
   /** 「详细」形态的服务器备注清单（每行 `服务器名=备注`）；空串 = 关闭。 */
   notes: string
 }) {
@@ -347,6 +357,8 @@ function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardS
       )}
       {nodes.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
+      ) : cardStyle === "compact" ? (
+        <CompactList nodes={shown} onOpen={onOpen} />
       ) : (
         <div className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
           {shown.map((n) => (
