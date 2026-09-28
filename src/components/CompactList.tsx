@@ -44,12 +44,15 @@ import { FOREVER, CYCLES, bytes, daysUntil, money, osName, pair, percent, rate }
 // 表格本身不必背上 recharts，点开时才取（App 开页已经在预热这个 chunk）。
 const NodeDetail = lazy(() => import("@/components/NodeDetail").then((m) => ({ default: m.NodeDetail })))
 
-/** 单元格内的一条细进度条：宽度跟着格子走；没有上限（流量不限）就留空，与 Meter 对 null 一致。 */
+/**
+ * 单元格内的一条细进度条。高度、圆角、色值都照 Meter 来（h-1.5、填色 bg-foreground 纯前景色），
+ * 第四种形态才不像另一套零件拼的；没有上限（流量不限）就留空，与 Meter 对 null 一致。
+ */
 function Bar({ pct }: { pct: number | null }) {
   const filled = pct === null ? 0 : Math.min(100, Math.max(0, pct))
   return (
-    <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted">
-      <div className="h-full rounded-full bg-foreground/70 transition-[width] duration-500" style={{ width: `${filled}%` }} />
+    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div className="h-full rounded-full bg-foreground transition-[width] duration-500" style={{ width: `${filled}%` }} />
     </div>
   )
 }
@@ -177,7 +180,7 @@ function Row({ node, span, open, onToggle, onOpenDetail }: {
           <span className="flex min-w-0 items-center gap-2">
             <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground/60 transition-transform ${open ? "rotate-90" : ""}`} />
             <Country node={node} />
-            <span className="truncate font-medium">{node.name}</span>
+            <span className="truncate text-sm font-medium">{node.name}</span>
           </span>
         </td>
         <td className={`${colCls("os")} ${CELL} text-muted-foreground`}>
@@ -207,19 +210,19 @@ function Row({ node, span, open, onToggle, onOpenDetail }: {
           </div>
         </td>
         <td className={`${colCls("cpu")} ${CELL}`}>
-          <span className="tnum">{pctText(cpu)}</span>
+          <span className="tnum font-medium">{pctText(cpu)}</span>
           <Bar pct={cpu} />
         </td>
         <td className={`${colCls("mem")} ${CELL}`}>
-          <span className="tnum">{pctText(mem)}</span>
+          <span className="tnum font-medium">{pctText(mem)}</span>
           <Bar pct={mem} />
         </td>
         <td className={`${colCls("disk")} ${CELL}`}>
-          <span className="tnum">{pctText(disk)}</span>
+          <span className="tnum font-medium">{pctText(disk)}</span>
           <Bar pct={disk} />
         </td>
         <td className={`${colCls("traffic")} ${CELL}`}>
-          <span className="tnum block truncate">{trafficText}</span>
+          <span className="tnum block truncate font-medium">{trafficText}</span>
           <Bar pct={traffic} />
         </td>
       </tr>
@@ -235,7 +238,7 @@ export function CompactList({ nodes, onOpen }: { nodes: Node[]; onOpen: (id: num
   const [open, setOpen] = useState<number | null>(null)
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
+    <div className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
       <table className="w-full table-fixed text-xs">
         <thead>
           <tr className="border-b bg-muted/40">
