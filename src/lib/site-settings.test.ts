@@ -73,9 +73,9 @@ eq(normalizeConfig({ showSummary: true }).listTop, "summary", "normalizeConfig �
 eq(normalizeConfig({ listTop: "both" }).listTop, "both", "新值优先")
 
 // ── 备注清单的解析 ────────────────────────────────────────────────
-const NOTES = "# 注释行\n东京机=三网优化\nKirino San Jose = 主力\n东京机=覆盖旧值\n坏行没有等号\n=\n"
+const NOTES = "# 注释行\n东京机=三网优化\n测试机 A = 主力\n东京机=覆盖旧值\n坏行没有等号\n=\n"
 eq(tagsFor(NOTES, "东京机"), ["覆盖旧值"], "同一台多行时后一行覆盖前一行")
-eq(tagsFor(NOTES, "Kirino San Jose"), ["主力"], "名字两侧空白会被削掉")
+eq(tagsFor(NOTES, "测试机 A"), ["主力"], "名字两侧空白会被削掉")
 eq(tagsFor(NOTES, "没这台"), [], "没有匹配的机器返回空数组")
 eq(tagsFor(NOTES, ""), [], "空名字不会误匹配空值行")
 eq(tagsFor("", "任一台"), [], "空清单返回空数组")

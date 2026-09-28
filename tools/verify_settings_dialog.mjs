@@ -170,9 +170,11 @@ for (const label of WANTED) {
 // 设置项的**说明文案**与**开关初值**也要断：它们是站长唯一看得见的地方，
 // 改了 theme.json 的 help / default 却在面板上没生效（或残留旧句子）就等于没改。
 // 「养鸡场地址」的说明曾经带一个跨站示例（会指向一个具体站点），那是要脱敏掉的。
+// 断的时候只看**形状**（示例句子 + 指向 farm 路径的具体网址），不把站点名写进本仓库。
 const helpText = (entries.find((e) => e.key === 'farmUrl') || {}).help || '';
 check('「养鸡场入口」的说明不再带跨站示例', helpText !== '' && !/例如|跨站的会在新标签页打开/.test(helpText), `help=${helpText}`);
-check('对话框里也没有残留的旧示例句子', !everyText.includes('例如想直接进公开的养鸡场') && !/komari\.im\/chicken/.test(everyText));
+check('对话框里也没有残留的旧示例句子',
+  !everyText.includes('例如想直接进公开的') && !/https?:\/\/[^\s"）)]*\/chicken/.test(everyText));
 
 // 「服务器备注」的说明是站长唯一能看到的写法说明书：多标签功能上线时它必须换掉——
 // 新写法（`服务器名=备注1,备注2,备注3`）在、旧写法（光秃秃的 `服务器名=备注`）不再出现。

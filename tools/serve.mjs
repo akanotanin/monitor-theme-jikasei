@@ -2,7 +2,7 @@
 //
 // 用法：node tools/serve.mjs [端口=5199] [config JSON 文件] [nodes JSON 文件] [上游 hub]
 //   node tools/serve.mjs 5199 '{"siteIcon":"/site-icon.png","listTop":"groups"}'
-//   node tools/serve.mjs 5199 cfg.json ../../chicken-farm/tools/fake_nodes.json
+//   node tools/serve.mjs 5199 cfg.json ../fake_nodes.json
 //   node tools/serve.mjs 5199 '' '' http://127.0.0.1:28081     # /api/* 转给真 hub（经隧道），静态仍走本机
 //
 // 为什么要有「上游 hub」这一档：桩数据只有节点列表，历史指标全是空对象，图表相关的断言

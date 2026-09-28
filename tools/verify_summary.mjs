@@ -57,18 +57,18 @@ const base = (id, name, over) => ({
 //   ④ 掉线（有累计流量、不贡献速率）→ 「1 台离线」
 const MIXED = {
   nodes: [
-    base(1, 'Kirino San Jose', {
+    base(1, 'Node A', {
       online: true, group: '美国', day_rx: 1 * GB, day_tx: 0.5 * GB,
       total_rx: 2 * TB, total_tx: 1 * TB,
       metrics: metrics({ cpu: 12.5, net_rx: 512 * KB, net_tx: 128 * KB }),
     }),
-    base(2, 'Kyubey London', {
+    base(2, 'Node B', {
       online: true, group: '欧洲', day_rx: 0.25 * GB, day_tx: 0.25 * GB,
       total_rx: 0.5 * TB, total_tx: 0.25 * TB,
       metrics: metrics({ cpu: 51.04, net_rx: 20 * MB, net_tx: 40 * MB }),
     }),
-    base(3, 'Kaname Osaka', { online: true, group: '欧洲' }),
-    base(4, 'Mami Sakura', { online: false, total_rx: 1 * TB, total_tx: 1 * TB, day_rx: 0, day_tx: 0 }),
+    base(3, 'Node C', { online: true, group: '欧洲' }),
+    base(4, 'Node D', { online: false, total_rx: 1 * TB, total_tx: 1 * TB, day_rx: 0, day_tx: 0 }),
   ],
 }
 
@@ -239,8 +239,8 @@ const check = (name, ok, detail) => { results.push({ name, ok, detail }); consol
   check('打开：四张概览卡片都在', dom.tiles === 4, `概览 ${dom.tiles} 张`)
   check('打开：概览行排在节点卡片之前', dom.tilesAboveNodes === true && dom.order.startsWith('节点,最忙节点,今日流量,实时网速,'), `顺序 ${dom.order.slice(0, 60)}`)
   check('节点卡：在线 / 总数 + 离线台数', dom.tileText['节点'] === '节点 | 3 / 4 | 1 台离线', dom.tileText['节点'])
-  check('最忙节点卡：CPU 最高的那台（51.0% / Kyubey London）',
-    dom.tileText['最忙节点'] === '最忙节点 | 51.0% | Kyubey London', dom.tileText['最忙节点'])
+  check('最忙节点卡：CPU 最高的那台（51.0% / Node B）',
+    dom.tileText['最忙节点'] === '最忙节点 | 51.0% | Node B', dom.tileText['最忙节点'])
   check('今日流量卡：今日 1.25 GB ↓ / 768 MB ↑，总流量 3.50 TB ↓ / 2.25 TB ↑',
     dom.tileText['今日流量'] === '今日流量 | 1.25 GB | 768 MB | 总流量 | 3.50 TB | 2.25 TB', dom.tileText['今日流量'])
   check('实时网速卡：在线且有指标的节点之和（20.5 MB/s ↓ / 40.1 MB/s ↑）',
