@@ -24,8 +24,11 @@ import { FOREVER, CYCLES, bytes, daysUntil, money, osName, pair, percent, rate }
  * 行上敲回车都会开合。折角因此是「点得进去」的提示，落点是就地展开而不是整页跳转；真要去
  * 整页详情，展开行右上角留了「完整详情 ›」。
  *
- * 只借版式，不借它的皮：配色仍是本主题这一套灰阶（进度条前景色、附注弱化灰，没有绿蓝箭头），
- * 也没有它的状态点、排序表头与搜索框——本主题早把状态点删了、不做排序与搜索。
+ * 只借版式，不借它的皮：配色仍是本主题这一套灰阶。深浅只有一条规则——表头标签与箭头是弱化灰，
+ * 单元格里的数据是前景色，「没有这个值」（`—` / `∞` / `未接入`）也回到弱化灰；主次不再用深浅
+ * 区分（卡片里那层灰是「主读数底下的注脚」，而表里每个格子本身就是主读数），只在字重上留一线：
+ * 指标读数用 medium、其余常规。也没有它的状态点、排序表头与搜索框——本主题早把状态点删了、
+ * 不做排序与搜索。
  *
  * 列随屏宽收放（与源站同样的思路，只是断点用本主题一贯的视口断点而非容器查询）：
  *   窄屏   名称 / CPU / 流量
@@ -79,15 +82,16 @@ function shortUptime(node: Node): string {
 /**
  * 表里的到期只写天数（详细档那句「剩余 95 天」太长）。取 hub 算好的 `expires_in`，
  * 旧 hub 没有才按 `expires_at` 自己数——与 NodeCard 的 expiryText 同一套规则，只是更短。
- * 快到期（≤7 天）与已过期改用前景色：源站在这一列挂红/黄徽章，本主题没红没黄，就用深浅
- * 把该看一眼的从满列弱化灰里拎出来。
+ * 没有期限（∞）算「没有这个值」，走弱化灰；有天数就是数据，走前景色。快到期（≤7 天）与
+ * 已过期再加重一档字重——源站在这一列挂红/黄徽章，本主题没红没黄，就用字重把该看一眼的
+ * 从满列数据里拎出来。
  */
-function expiryShort(node: Node): { text: string; soon: boolean } {
+function expiryShort(node: Node): { text: string; soon: boolean; muted: boolean } {
   const days = node.expires_in !== undefined ? node.expires_in : daysUntil(node.expires_at)
-  if (days === null || days === undefined) return { text: FOREVER, soon: false }
-  if (days < 0) return { text: `过期 ${-days} 天`, soon: true }
-  if (days <= 7) return { text: `${days} 天`, soon: true }
-  return { text: `${days} 天`, soon: false }
+  if (days === null || days === undefined) return { text: FOREVER, soon: false, muted: true }
+  if (days < 0) return { text: `过期 ${-days} 天`, soon: true, muted: false }
+  if (days <= 7) return { text: `${days} 天`, soon: true, muted: false }
+  return { text: `${days} 天`, soon: false, muted: false }
 }
 
 // 每一列从哪一档起出现（视口 px，0 = 一直都在）。表头、每行单元格、展开行要跨的列数
@@ -183,17 +187,17 @@ function Row({ node, span, open, onToggle, onOpenDetail }: {
             <span className="truncate text-sm font-medium">{node.name}</span>
           </span>
         </td>
-        <td className={`${colCls("os")} ${CELL} text-muted-foreground`}>
+        <td className={`${colCls("os")} ${CELL} ${node.os ? "" : "text-muted-foreground"}`}>
           <span className="block truncate">{node.os ? osName(node.os) : "—"}</span>
         </td>
-        <td className={`${colCls("uptime")} ${CELL} text-muted-foreground`}>{shortUptime(node)}</td>
-        <td className={`${colCls("expiry")} ${CELL} tnum ${expiry.soon ? "" : "text-muted-foreground"}`}>{expiry.text}</td>
-        <td className={`${colCls("price")} ${CELL} tnum text-muted-foreground`}>
+        <td className={`${colCls("uptime")} ${CELL} ${deployed(node) ? "" : "text-muted-foreground"}`}>{shortUptime(node)}</td>
+        <td className={`${colCls("expiry")} ${CELL} tnum ${expiry.muted ? "text-muted-foreground" : ""} ${expiry.soon ? "font-medium" : ""}`}>{expiry.text}</td>
+        <td className={`${colCls("price")} ${CELL} tnum ${node.price > 0 ? "" : "text-muted-foreground"}`}>
           {node.price > 0
             ? <span className="block truncate">{money(node.price, node.currency)}{cycle ? ` / ${cycle}` : ""}</span>
             : "—"}
         </td>
-        <td className={`${colCls("load")} ${CELL} tnum text-muted-foreground`}>{m ? m.load[0].toFixed(2) : "—"}</td>
+        <td className={`${colCls("load")} ${CELL} tnum ${m ? "" : "text-muted-foreground"}`}>{m ? m.load[0].toFixed(2) : "—"}</td>
         <td className={`${colCls("net")} ${CELL}`}>
           {/* 下行在左、上行在右，与三种卡片形态的读法一致；窄屏摞成两行（源站窄屏也这么摞），
               宽屏才并排——那一排要一个半读数的宽度，窄屏给不起。 */}
