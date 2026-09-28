@@ -174,6 +174,14 @@ const helpText = (entries.find((e) => e.key === 'farmUrl') || {}).help || '';
 check('「养鸡场入口」的说明不再带跨站示例', helpText !== '' && !/例如|跨站的会在新标签页打开/.test(helpText), `help=${helpText}`);
 check('对话框里也没有残留的旧示例句子', !everyText.includes('例如想直接进公开的养鸡场') && !/komari\.im\/chicken/.test(everyText));
 
+// 「服务器备注」的说明是站长唯一能看到的写法说明书：多标签功能上线时它必须换掉——
+// 新写法（`服务器名=备注1,备注2,备注3`）在、旧写法（光秃秃的 `服务器名=备注`）不再出现。
+// 两句一起断才是双向的：只断「新的在」会漏掉旧句子残留在别处的情形。
+const notesHelp = (entries.find((e) => e.key === 'serverNotes') || {}).help || '';
+check('「服务器备注」的说明给了多标签写法', notesHelp.includes('服务器名=备注1,备注2,备注3'), `help=${notesHelp}`);
+check('对话框里的备注说明也是新的（旧写法已无）',
+  everyText.includes('服务器名=备注1,备注2,备注3') && !everyText.includes('写成「服务器名=备注」，'), '');
+
 // 开关初值 = `saved[key] ?? default`（站点配置喂的是 `{}`，所以看到的就是主题自带的默认值）。
 // 面板对 boolean 用的是 Radix Switch：`button[role=switch][aria-checked]`，所以按开关读状态，
 // 别去猜它内部的 DOM 结构。找不到开关要报 FAIL，不能静默通过。

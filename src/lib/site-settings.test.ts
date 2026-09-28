@@ -8,7 +8,7 @@
 // 读不出来的表现不是报错，而是「站长开着的那一项自己关了」。
 import { readFileSync } from "node:fs"
 
-import { DEFAULTS, FARM_OFF, cardStyleOf, hasGroupTabs, hasNotes, hasSummary, listTopOf, normalizeConfig, noteFor } from "./site-settings.ts"
+import { DEFAULTS, FARM_OFF, cardStyleOf, hasGroupTabs, hasNotes, hasSummary, listTopOf, normalizeConfig, tagsFor } from "./site-settings.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -74,12 +74,21 @@ eq(normalizeConfig({ listTop: "both" }).listTop, "both", "新值优先")
 
 // ── 备注清单的解析 ────────────────────────────────────────────────
 const NOTES = "# 注释行\n东京机=三网优化\nKirino San Jose = 主力\n东京机=覆盖旧值\n坏行没有等号\n=\n"
-eq(noteFor(NOTES, "东京机"), "覆盖旧值", "同一台多行时后一行覆盖前一行")
-eq(noteFor(NOTES, "Kirino San Jose"), "主力", "名字两侧空白会被削掉")
-eq(noteFor(NOTES, "没这台"), null, "没有匹配的机器返回 null")
-eq(noteFor(NOTES, ""), null, "空名字不会误匹配空值行")
-eq(noteFor("", "任一台"), null, "空清单返回 null")
-eq(noteFor("东京机=\n", "东京机"), null, "备注内容为空算没有")
+eq(tagsFor(NOTES, "东京机"), ["覆盖旧值"], "同一台多行时后一行覆盖前一行")
+eq(tagsFor(NOTES, "Kirino San Jose"), ["主力"], "名字两侧空白会被削掉")
+eq(tagsFor(NOTES, "没这台"), [], "没有匹配的机器返回空数组")
+eq(tagsFor(NOTES, ""), [], "空名字不会误匹配空值行")
+eq(tagsFor("", "任一台"), [], "空清单返回空数组")
+eq(tagsFor("东京机=\n", "东京机"), [], "备注内容为空算没有")
+// 逗号分隔＝多枚标签：半角与全角都认，两侧空白削掉、空片段丢掉、顺序照写。
+eq(tagsFor("东京机=三网优化,备用", "东京机"), ["三网优化", "备用"], "半角逗号切成两枚")
+eq(tagsFor("东京机=三网优化，备用, 高防", "东京机"), ["三网优化", "备用", "高防"], "全角逗号也认，逐枚削空白")
+eq(tagsFor("东京机= a , , b ,", "东京机"), ["a", "b"], "空片段丢掉、首尾逗号不算标签")
+eq(tagsFor("东京机=,,,", "东京机"), [], "全是逗号＝没有标签")
+eq(tagsFor("东京机=一枚", "东京机"), ["一枚"], "没有逗号就是一枚")
+eq(tagsFor("东京机=测试测试,222,333", "东京机"), ["测试测试", "222", "333"], "照多标签功能那张图里的写法")
+eq(tagsFor("东京机=a,b\n东京机=c", "东京机"), ["c"], "换行覆盖同样作用于标签列表")
+eq(tagsFor("东京机=a,b\n东京机=", "东京机"), [], "后一行写空＝这台不要标签")
 eq(hasNotes(""), false, "空清单＝关闭")
 eq(hasNotes("   \n"), false, "只有空白也算关闭")
 eq(hasNotes("东京机=三网优化"), true, "有内容即开启")

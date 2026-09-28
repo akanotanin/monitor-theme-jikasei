@@ -314,6 +314,68 @@ const check = (name, ok, detail) => { results.push({ name, ok, detail }); consol
     dom.classicNet === 1 && dom.infoBox === 0 && !dom.text.includes('东京 · 三网优化'), dom.text)
 }
 
+/* 3c) 详细 + 多枚标签：备注里用逗号分隔＝多枚独立胶囊（写法 `节点一=测试测试,222,333`）。
+   这一块的病根是「一枚胶囊里塞着带逗号的整串」——只看文本在不在抓不到，必须数胶囊。 */
+const TAGS_PROBE = `(() => {
+  const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
+  const first = card ? card.querySelector('[data-slot="badge"]') : null
+  const wrap = first ? first.parentElement : null
+  const row = wrap ? wrap.parentElement : null
+  const list = wrap ? [...wrap.querySelectorAll('[data-slot="badge"]')] : []
+  const box = (el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.left), r: Math.round(r.right), y: Math.round(r.top) } }
+  const online = row ? [...row.querySelectorAll('span')].find((s) => /^在线 /.test(s.textContent.trim())) : null
+  return JSON.stringify({
+    n: list.length,
+    texts: list.map((b) => b.innerText.trim()),
+    boxes: list.map(box),
+    rowLeft: row ? Math.round(row.getBoundingClientRect().left) : null,
+    rowRight: row ? Math.round(row.getBoundingClientRect().right) : null,
+    onlineRight: online ? Math.round(online.getBoundingClientRect().right) : null,
+    onlineText: online ? online.textContent.trim() : null,
+  })
+})()`
+{
+  const notes = '节点一=测试测试,222,333'
+  const { dom } = await render({ cardStyle: 'detailed', serverNotes: notes }, 'tags-three')
+  const b = JSON.parse(await evalJS(TAGS_PROBE))
+  const tops = [...new Set(b.boxes.map((x) => x.y))]
+  check('多标签：逗号分隔的备注挂成 3 枚独立胶囊', b.n === 3, `${b.n} 枚：${b.texts.join(' / ')}`)
+  check('多标签：每枚只装自己那一段（逗号不再糊进胶囊里）',
+    b.texts.join('|') === '测试测试|222|333' && !b.texts.some((t) => t.includes(',')), b.texts.join('|'))
+  check('多标签：三枚在同一行、互不重叠、间距一致',
+    tops.length === 1 && b.boxes.every((x, i) => i === 0 || x.x - b.boxes[i - 1].r === 4),
+    JSON.stringify(b.boxes))
+  check('多标签：末尾那枚没撞上右侧「在线时长」',
+    b.onlineRight !== null && b.boxes.at(-1).r <= b.onlineRight, `末枚右 ${b.boxes.at(-1)?.r} / 在线右 ${b.onlineRight}（${b.onlineText}）`)
+  check('多标签：「在线时长」仍贴右（与备注关时同一位置）',
+    b.onlineRight !== null && Math.abs(b.onlineRight - b.rowRight) <= 1, `在线右 ${b.onlineRight} / 行右 ${b.rowRight}`)
+  check('多标签：胶囊没越出卡片左边', b.boxes[0].x >= b.rowLeft, `${b.boxes[0].x} vs ${b.rowLeft}`)
+  check('多标签：卡片文本里仍是三段（不是带逗号的整串）', !dom.text.includes('测试测试,222,333'), dom.text)
+}
+{
+  // 排不下要折行，而不是把胶囊压扁或顶出卡片；折行时「在线时长」仍贴右。
+  const notes = `节点一=${Array.from({ length: 6 }, (_, i) => `标签${i + 1}号`).join(',')}`
+  const { dom } = await render({ cardStyle: 'detailed', serverNotes: notes }, 'tags-wrap')
+  const b = JSON.parse(await evalJS(TAGS_PROBE))
+  const tops = [...new Set(b.boxes.map((x) => x.y))]
+  check('多标签：排不下时折行（六枚都在、分了多行）', b.n === 6 && tops.length >= 2, `行 ${tops.length} / 枚 ${b.n}`)
+  check('多标签：折行后「在线时长」仍贴右', b.onlineRight !== null && Math.abs(b.onlineRight - b.rowRight) <= 1,
+    `在线右 ${b.onlineRight} / 行右 ${b.rowRight}`)
+  check('多标签：折行后没有横向溢出（每枚都在行内、不撞在线时长）',
+    b.boxes.every((x) => x.x >= b.rowLeft - 1 && x.r <= b.onlineRight + 1), JSON.stringify(b.boxes))
+  check('多标签：整体不超过卡片（备注区不撑破卡片）', b.boxes.every((x) => x.r <= b.rowRight + 1), JSON.stringify(b.boxes))
+  check('多标签：长清单下经典那格仍不在（只是多了标签）', dom.classicNet === 0, `${dom.classicNet}`)
+}
+{
+  // 没写逗号的单枚备注不许变成多枚，也不许换行。
+  const { dom } = await render({ cardStyle: 'detailed', serverNotes: '节点一=东京 · 三网优化' }, 'tags-one')
+  const b = JSON.parse(await evalJS(TAGS_PROBE))
+  check('单标签：一枚就是一枚（不因为改功能而多出胶囊）', b.n === 1 && b.texts[0] === '东京 · 三网优化', `${b.n} 枚：${b.texts.join('/')}`)
+  check('单标签：仍与左侧对齐、在线时长贴右', b.boxes[0].x >= b.rowLeft && Math.abs(b.onlineRight - b.rowRight) <= 1,
+    `X ${b.boxes[0].x}/${b.rowLeft} 在线右 ${b.onlineRight}/${b.rowRight}`)
+  check('单标签：卡片文本照旧（备注关这一档没被这次改动碰到）', /剩余 95 天/.test(dom.text), dom.text)
+}
+
 /* 4) 旧值 detail 必须迁到延迟，不能掉回经典 */
 {
   const { dom, ping } = await render({ cardStyle: 'detail' }, 'detail-old')

@@ -9,7 +9,7 @@ import { LatencyPanel } from "@/components/Latency"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { CYCLES, FOREVER, bytes, currencySymbol, daysUntil, money, moneyAmount, pair, percent, rate, uptime } from "@/lib/format"
-import { hasNotes, noteFor } from "@/lib/site-settings"
+import { hasNotes, tagsFor } from "@/lib/site-settings"
 
 /**
  * This period's usage as the plan meters it. The hub computes it; the switch
@@ -125,19 +125,31 @@ function expiryText(node: Node): string | null {
 function MetaRow({ node, notes, remark }: { node: Node; notes: string; remark: boolean }) {
   const online = onlineText(node)
   if (remark) {
-    const note = noteFor(notes, node.name)
-    if (!online && !note) return null
+    const tags = tagsFor(notes, node.name)
+    if (!online && tags.length === 0) return null
     return (
       <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        {/* 空占位那块保住「在线时长」始终贴右，与另一副面孔里的价格同一位置。 */}
-        {note
+        {/* 一枚标签一个胶囊：备注里用逗号分隔，这里就排成多枚（`三网优化,备用` 是两枚）。
+            容器 flex-1 + flex-wrap：排不下时往下折行，右侧「在线时长」始终贴右不动。
+            空占位那块保住「在线时长」始终贴右，与另一副面孔里的价格同一位置。 */}
+        {tags.length > 0
           ? (
-            <Badge variant="secondary" className="min-w-0 max-w-[65%] font-normal" title={note}>
-              <span className="min-w-0 truncate">{note}</span>
-            </Badge>
+            <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+              {tags.map((tag, i) => (
+                <Badge
+                  key={`${i}-${tag}`}
+                  variant="secondary"
+                  // Badge 自带 `w-fit shrink-0`：单枚过长时要能被容器截断，所以放开 shrink、限 max-w-full。
+                  className="min-w-0 max-w-full shrink font-normal"
+                  title={tag}
+                >
+                  <span className="min-w-0 truncate">{tag}</span>
+                </Badge>
+              ))}
+            </span>
           )
-          : <span className="min-w-0" />}
-        {online && <span className="truncate text-right">{online}</span>}
+          : <span className="min-w-0 flex-1" />}
+        {online && <span className="shrink-0 truncate text-right">{online}</span>}
       </div>
     )
   }

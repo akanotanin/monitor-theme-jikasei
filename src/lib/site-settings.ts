@@ -113,23 +113,35 @@ function farmEntryOf(s: Record<string, unknown>): string {
 }
 
 /**
- * 「服务器备注」清单里这台机器的备注。逐行读 `服务器名=备注`，`#` 开头的行是注释；
- * 名字按去掉首尾空白后逐字匹配节点名。同一台写多行时后面一行覆盖前面。没有匹配返回 null。
+ * 「服务器备注」清单里这台机器的标签。逐行读 `服务器名=备注`，`#` 开头的行是注释；
+ * 名字按去掉首尾空白后逐字匹配节点名。同一台写多行时后面一行覆盖前面。
+ *
+ * 备注里用逗号分隔＝多枚标签（半角 `,` 与全角 `，` 都认，两侧空白削掉、空片段丢掉）：
+ * `东京机=三网优化,备用` 在卡片上是两枚胶囊，而不是一枚写着「三网优化,备用」的。
+ * 没有匹配、或值里全是空片段，都返回空数组。
  *
  * 放在这里（而不是 NodeCard）是因为它是纯函数：能脱开 React 单测，改起来不怕漏。
  */
-export function noteFor(notes: string, name: string): string | null {
-  let found: string | null = null
+export function tagsFor(notes: string, name: string): string[] {
+  let found: string[] = []
   for (const raw of notes.split("\n")) {
     const line = raw.trim()
     if (!line || line.startsWith("#")) continue
     const at = line.indexOf("=")
     if (at <= 0) continue
     if (line.slice(0, at).trim() !== name) continue
-    const value = line.slice(at + 1).trim()
-    found = value || null
+    // 后一行覆盖前一行——包括「后一行写成空值」这种就是「这台不要标签」。
+    found = splitTags(line.slice(at + 1))
   }
   return found
+}
+
+/** 备注值 → 标签列表：逗号（半角 / 全角）分隔，削首尾空白、丢掉空片段。 */
+function splitTags(value: string): string[] {
+  return value
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
 }
 
 /** 备注功能开没开：清单非空即开。留空 = 关闭，「详细」卡片保持原样。 */
