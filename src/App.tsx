@@ -6,7 +6,7 @@ import { SummaryCards } from "@/components/Summary"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupsOf, useNodes, type Node } from "@/lib/api"
-import { DEFAULTS, hasGroupTabs, hasSummary, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
+import { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
 import { FarmIcon } from "@/components/FarmIcon"
 
 type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean }
@@ -101,10 +101,11 @@ export default function App() {
   const [dark, toggleTheme] = useTheme()
   const { config, loaded } = useThemeConfig()
   // 站长没填地址时，自动认本站约定的那个位置（`/chicken/`）有没有养鸡场；
-  // 填了就以他填的为准。**等设置到了再探**（loaded）——不然「关掉入口」「填了自己地址」
-  // 的站都会白探一次，那两次探测还会让护栏分不清「该探没探」。
-  const detectedFarm = useLocalFarm(loaded && config.showFarmEntry && !config.farmUrl)
-  const farmUrl = config.showFarmEntry ? config.farmUrl || detectedFarm : ""
+  // 填了就以他填的为准，填 `off` 则一律不显示。**等设置到了再探**（loaded）——不然
+  // 「关掉入口」「填了自己地址」的站都会白探一次，那两次探测还会让护栏分不清「该探没探」。
+  const farmAuto = config.farmUrl === ""
+  const detectedFarm = useLocalFarm(loaded && farmAuto)
+  const farmUrl = farmAuto ? detectedFarm : config.farmUrl === FARM_OFF ? "" : config.farmUrl
   // 顶栏那张站标最终用的是哪个地址（加载成功才知道），标签页图标跟着它走。
   const [settledIcon, setSettledIcon] = useState<string | null>(null)
   useSiteFavicon(settledIcon)
@@ -211,7 +212,7 @@ export default function App() {
             </a>
           </Button>
           {/* 养鸡场入口：站长填了地址就指向那里；留空则本站 `/chicken/` 上真装了养鸡场
-              才出现（自动探测，见 useLocalFarm），开关关掉则一律不出现。 */}
+              才出现（自动探测，见 useLocalFarm）；填 `off` 则一律不出现。 */}
           {farmUrl && (
             <Button variant="ghost" size="icon" asChild>
               <a href={farmUrl} title="养鸡场" aria-label="养鸡场" {...farmLinkProps(farmUrl)}>
@@ -252,7 +253,8 @@ export default function App() {
             {hasSummary(config.listTop) && <SummaryCards nodes={sorted} />}
             <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} showTabs={hasGroupTabs(config.listTop)}
               latencyLines={config.pingLines}
-              cardStyle={config.cardStyle} />
+              cardStyle={config.cardStyle}
+              notes={config.serverNotes} />
           </>
         )}
       </main>
@@ -291,7 +293,7 @@ function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | nu
 // without groups keeps the page it always had. The operator can also keep the
 // row off outright (theme setting `listTop`), which leaves the page as one
 // flat list.
-function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardStyle }: {
+function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardStyle, notes }: {
   nodes: Node[]
   /** null is every node, "" the ungrouped. */
   group: string | null
@@ -302,6 +304,8 @@ function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardS
   latencyLines: string
   /** 卡片形态：detailed 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟。 */
   cardStyle: "classic" | "latency" | "detailed"
+  /** 「详细」形态的服务器备注清单（每行 `服务器名=备注`）；空串 = 关闭。 */
+  notes: string
 }) {
   const groups = groupsOf(nodes)
   const ungrouped = nodes.filter((n) => !n.group).length
@@ -346,7 +350,7 @@ function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardS
       ) : (
         <div className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
           {shown.map((n) => (
-            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} latencyLines={latencyLines} cardStyle={cardStyle} />
+            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} latencyLines={latencyLines} cardStyle={cardStyle} notes={notes} />
           ))}
         </div>
       )}

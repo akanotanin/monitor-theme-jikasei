@@ -8,7 +8,8 @@ import { Card } from "@/components/ui/card"
 import { LatencyPanel } from "@/components/Latency"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
-import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
+import { CYCLES, FOREVER, bytes, currencySymbol, daysUntil, money, moneyAmount, pair, percent, rate, uptime } from "@/lib/format"
+import { hasNotes, noteFor } from "@/lib/site-settings"
 
 /**
  * This period's usage as the plan meters it. The hub computes it; the switch
@@ -115,9 +116,31 @@ function expiryText(node: Node): string | null {
   return `剩余 ${days} 天`
 }
 
-/** 详细档第二行：左「在线时长」、右「价格 / 周期」。两样都没有就整行不画。 */
-function MetaRow({ node }: { node: Node }) {
+/**
+ * 详细档第二行。两副面孔：
+ *   原样（备注关）——左「在线时长」、右「价格 / 周期」。
+ *   备注开——两边对调并让位：左「备注标签」、右「在线时长」，价格移进下面第三枚读数盒。
+ * 两样都没有就整行不画。
+ */
+function MetaRow({ node, notes, remark }: { node: Node; notes: string; remark: boolean }) {
   const online = onlineText(node)
+  if (remark) {
+    const note = noteFor(notes, node.name)
+    if (!online && !note) return null
+    return (
+      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+        {/* 空占位那块保住「在线时长」始终贴右，与另一副面孔里的价格同一位置。 */}
+        {note
+          ? (
+            <Badge variant="secondary" className="min-w-0 max-w-[65%] font-normal" title={note}>
+              <span className="min-w-0 truncate">{note}</span>
+            </Badge>
+          )
+          : <span className="min-w-0" />}
+        {online && <span className="truncate text-right">{online}</span>}
+      </div>
+    )
+  }
   const price = priceText(node)
   const cycle = cycleText(node)
   if (!online && !price) return null
@@ -130,8 +153,9 @@ function MetaRow({ node }: { node: Node }) {
 }
 
 /**
- * 详细档那三枚读数盒：实时速率 / 累计总量 / 到期。一层浅底把它们与上下的网格分开，
- * 像仪表盘上嵌进去的读数窗——三个盒子对应三个时间尺度：此刻、累计、还剩多久。
+ * 详细档那三枚读数盒：实时速率 / 累计总量 / 剩余时间。一层浅底把它们与上下的网格分开，
+ * 像仪表盘上嵌进去的读数窗——前两个对应「此刻」与「累计」，第三个上面是本机还剩多久、
+ * 下面一行备注关时写到期日、备注开时换成价格与计费周期。
  */
 function InfoBox({ children }: { children: ReactNode }) {
   return (
@@ -161,15 +185,21 @@ function trafficFoot(node: Node) {
     : `${bytes(monthUsage(node))} / ${FOREVER}`
 }
 
-export function NodeCard({ node, onOpen, latencyLines, cardStyle }: {
+export function NodeCard({ node, onOpen, latencyLines, cardStyle, notes }: {
   node: Node
   onOpen: () => void
   latencyLines: string
   cardStyle: "classic" | "latency" | "detailed"
+  /** 「详细」形态的服务器备注清单（每行 `服务器名=备注`）；空串 = 关闭。 */
+  notes: string
 }) {
   const m = node.metrics
   // 详细档：图标、元信息行与三枚读数盒都只在它里面出现；配色仍与另外两档同一套灰。
   const detailed = cardStyle === "detailed"
+  // 备注只在「详细」档生效，且清单非空才算开——留空即关闭，这一档保持 1.5.0 的样子。
+  const remark = detailed && hasNotes(notes)
+  const price = priceText(node)
+  const cycle = cycleText(node)
 
   return (
     <Card
@@ -197,7 +227,7 @@ export function NodeCard({ node, onOpen, latencyLines, cardStyle }: {
           the live figures blank beats a stretched card with one line in it. */}
       {deployed(node) ? (
         <>
-          {detailed && <MetaRow node={node} />}
+          {detailed && <MetaRow node={node} notes={notes} remark={remark} />}
 
           <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4">
             {/* The core count belongs beside the word CPU: it is what the
@@ -275,9 +305,9 @@ export function NodeCard({ node, onOpen, latencyLines, cardStyle }: {
             </>
           ) : (
             <>
-              {/* 详细形态：网速、总量、到期三枚读数盒并排。速率与总量各按上下行分两行，
-                  到期一盒写剩余天数与到期日；配色与另外两档同一套灰。下面照旧挂三网延迟
-                  （与延迟档同一个灰阶块）。 */}
+              {/* 详细形态：网速、总量，加第三枚读数盒并排。第三枚上面一直是「剩余时间」，
+                  下面一行备注关时写到期日、备注开时换成「价格 / 周期」（到期日不再显示）。
+                  速率与总量各按上下行分两行；配色与另外两档同一套灰。下面照旧挂三网延迟。 */}
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <InfoBox>
                   <Stat icon={ArrowDown}>{m ? rate(m.net_rx) : "—"}</Stat>
@@ -289,9 +319,22 @@ export function NodeCard({ node, onOpen, latencyLines, cardStyle }: {
                 </InfoBox>
                 <InfoBox>
                   <Stat icon={CalendarClock}>{expiryText(node) ?? "无期限"}</Stat>
-                  {node.expires_at && (
-                    <span className="block truncate pl-[18px] text-muted-foreground">{node.expires_at}</span>
-                  )}
+                  {remark
+                    ? price && (
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {/* 货币符号单独占一列，和上面「剩余时间」前那枚时钟图标同宽同位——
+                            两行的左边缘才对得齐（符号缺位时这一列留空，数字仍从这里起）。
+                            颜色不降级：这一排三格讲的都是读数，上一格写剩余时间、这一格写计费，
+                            都该是前景色（弱化灰留给真正的附注）。 */}
+                        <span className="w-3 shrink-0 text-center">{currencySymbol(node.currency)}</span>
+                        <span className="tnum truncate">
+                          {moneyAmount(node.price, node.currency)}{cycle ? ` / ${cycle}` : ""}
+                        </span>
+                      </span>
+                    )
+                    : node.expires_at && (
+                      <span className="block truncate pl-[18px] text-muted-foreground">{node.expires_at}</span>
+                    )}
                 </InfoBox>
               </div>
               <LatencyPanel node={node} lines={latencyLines} />

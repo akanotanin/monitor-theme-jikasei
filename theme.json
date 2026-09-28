@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -18,22 +18,28 @@
       "help": "站名左边那枚圆形图标，也是浏览器标签页与书签的图标。"
     },
     {
-      "type": "boolean",
-      "key": "showFarmEntry",
-      "label": "显示养鸡场入口",
-      "default": true,
-      "help": "顶栏那枚「养鸡场」图标的开关。"
-    },
-    {
       "type": "string",
       "key": "farmUrl",
-      "label": "养鸡场地址",
+      "label": "养鸡场入口",
       "default": "",
-      "help": "留空 = 自动认本站 /chicken/，也可填别处地址。"
+      "help": "留空＝自动探测本站 /chicken/；填 off＝不显示入口；填地址＝指向别处（同域路径或完整网址）。"
     },
     {
       "type": "title",
       "label": "列表与卡片"
+    },
+    {
+      "type": "select",
+      "key": "listTop",
+      "label": "列表页顶部",
+      "default": "none",
+      "options": [
+        { "value": "none", "label": "都不显示" },
+        { "value": "groups", "label": "只显示分组标签" },
+        { "value": "summary", "label": "只显示概览卡片" },
+        { "value": "both", "label": "两个都显示" }
+      ],
+      "help": "分组标签 = 全部 / 各组那一行；概览卡片 = 四张统计卡片。"
     },
     {
       "type": "select",
@@ -48,17 +54,11 @@
       "help": "经典最紧凑；延迟合一行并挂三网延迟；详细再加时长与计费。"
     },
     {
-      "type": "select",
-      "key": "listTop",
-      "label": "列表页顶部",
-      "default": "none",
-      "options": [
-        { "value": "none", "label": "都不显示" },
-        { "value": "groups", "label": "只显示分组标签" },
-        { "value": "summary", "label": "只显示概览卡片" },
-        { "value": "both", "label": "两个都显示" }
-      ],
-      "help": "分组标签 = 全部 / 各组那一行；概览卡片 = 四张统计卡片。"
+      "type": "text",
+      "key": "serverNotes",
+      "label": "服务器备注",
+      "default": "",
+      "help": "每行一台，写成「服务器名=备注」，名字要和卡片上的一致；留空＝关闭，开启后卡片会多一枚备注标签，仅对详细形态起效。"
     },
     {
       "type": "title",

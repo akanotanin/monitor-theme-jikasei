@@ -26,7 +26,7 @@ const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
 // 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行——名字与 theme.json 的 label 逐字对应。
-const WANTED = ['站点图标', '显示养鸡场入口', '养鸡场地址', '卡片形态', '列表页顶部', '显示的延迟线路'];
+const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '服务器备注', '显示的延迟线路'];
 const PORT = 9780 + Math.floor(Math.random() * 20);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe']
   .find((p) => existsSync(p)) || 'chrome';
@@ -171,7 +171,7 @@ for (const label of WANTED) {
 // 改了 theme.json 的 help / default 却在面板上没生效（或残留旧句子）就等于没改。
 // 「养鸡场地址」的说明曾经带一个跨站示例（会指向一个具体站点），那是要脱敏掉的。
 const helpText = (entries.find((e) => e.key === 'farmUrl') || {}).help || '';
-check('「养鸡场地址」的说明不再带跨站示例', helpText !== '' && !/例如|跨站的会在新标签页打开/.test(helpText), `help=${helpText}`);
+check('「养鸡场入口」的说明不再带跨站示例', helpText !== '' && !/例如|跨站的会在新标签页打开/.test(helpText), `help=${helpText}`);
 check('对话框里也没有残留的旧示例句子', !everyText.includes('例如想直接进公开的养鸡场') && !/komari\.im\/chicken/.test(everyText));
 
 // 开关初值 = `saved[key] ?? default`（站点配置喂的是 `{}`，所以看到的就是主题自带的默认值）。
@@ -239,9 +239,12 @@ for (const field of entries.filter((e) => e.type !== 'title' && e.help)) {
   const owner = groups.find((g) => g.fields.includes(field))
   await openGroup(owner?.label ?? '')
   const n = await helpLines(field.help)
-  if (n !== 1) wrapped.push(`${field.label}=${n < 0 ? '没找到' : n + ' 行'}`)
+  if (n > 2 || n < 1) wrapped.push(`${field.label}=${n < 0 ? '没找到' : n + ' 行'}`)
 }
-check('排版：每项说明都只占一行（没有折成四五行的）', wrapped.length === 0, wrapped.join('、') || '全部 1 行')
+// 病根是**两列半宽**下的四五行，不是「说明必须恰好一行」：单列 462px 里说明折成两行是正常的，
+// 1.6.0 的「养鸡场入口」要讲清留空 / off / 地址三种状态、「服务器备注」要给出 `名字=备注` 的写法，
+// 压成一行就只能删掉站长唯一的说明书。所以门槛定在 ≤2 行——四五行的退化（半宽那份）照样报错。
+check('排版：每项说明至多两行（没有折成四五行的）', wrapped.length === 0, wrapped.join('、') || '全部 ≤2 行')
 
 // 留档截图前回到第一组：上面的检查会一组组点过去，停在哪一组取决于断言顺序，
 // 截图要的是「稳定可复现的那一屏」而不是「最后一个被点到的那一屏」。

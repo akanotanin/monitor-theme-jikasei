@@ -1,13 +1,14 @@
 // 站点设置的取值与迁移：旧版本存过的值必须还能读出来。
 // 跑法同另外几个：`npm test`（Node 自己剥类型，不需要 runner）。没有任何东西 import 它，不进 bundle。
 //
-// 重点在两处容易静默出错的迁移：
+// 重点在三处容易静默出错的迁移：
 //   1. cardStyle：≤1.2.9 的 "detail" 现在叫 "latency"；
-//   2. listTop：≤1.4.0 是两个布尔开关（showSummary / showGroupTabs），1.5.0 合成四选一。
+//   2. listTop：≤1.4.0 是两个布尔开关（showSummary / showGroupTabs），1.5.0 合成四选一；
+//   3. farmUrl：≤1.5.0 是两个键（showFarmEntry + farmUrl），1.6.0 并成一个三态键。
 // 读不出来的表现不是报错，而是「站长开着的那一项自己关了」。
 import { readFileSync } from "node:fs"
 
-import { DEFAULTS, cardStyleOf, hasGroupTabs, hasSummary, listTopOf, normalizeConfig } from "./site-settings.ts"
+import { DEFAULTS, FARM_OFF, cardStyleOf, hasGroupTabs, hasNotes, hasSummary, listTopOf, normalizeConfig, noteFor } from "./site-settings.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -53,14 +54,35 @@ eq(sorted(normalizeConfig({})), sorted(DEFAULTS), "空对象 → 全默认")
 eq(normalizeConfig({ siteIcon: "   " }).siteIcon, DEFAULTS.siteIcon, "站点图标只有空白 → 回落默认")
 eq(normalizeConfig({ siteIcon: " https://x/i.png " }).siteIcon, "https://x/i.png", "站点图标去首尾空白")
 // farmUrl / pingLines 的空串是「有意义的值」（自动探测 / 自动取前三条），不能被顶成默认。
-eq(normalizeConfig({ farmUrl: "" }).farmUrl, "", "养鸡场地址空串保留")
-eq(normalizeConfig({ pingLines: "" }).pingLines, "", "延迟线路空串保留")
+eq(normalizeConfig({ farmUrl: "" }).farmUrl, "", "养鸡场入口空串保留（自动探测）")
 eq(normalizeConfig({ farmUrl: "  /chicken/  " }).farmUrl, "/chicken/", "养鸡场地址去首尾空白")
-eq(normalizeConfig({ showFarmEntry: false }).showFarmEntry, false, "关掉养鸡场入口要保留 false")
-eq(normalizeConfig({ showFarmEntry: "no" }).showFarmEntry, true, "类型不对回落默认（真）")
+eq(normalizeConfig({ farmUrl: "off" }).farmUrl, FARM_OFF, "养鸡场入口的 off 值保留")
+// ── 养鸡场入口：1.5.0 的两个键并入一个（showFarmEntry / farmUrl → farmUrl） ──
+// 老站点把入口关了而地址键从没动过：必须落成 off，否则会静默又冒出一枚它关掉的图标。
+eq(normalizeConfig({ showFarmEntry: false }).farmUrl, FARM_OFF, "老配置：关掉入口 → off")
+// 地址键一旦存在就按它来（哪怕是空串）——这是站长明确定过的值，
+// 也覆盖「并入之后重新填了地址」的情形（那时旧键 showFarmEntry 可能还是 false）。
+eq(normalizeConfig({ showFarmEntry: false, farmUrl: "" }).farmUrl, "", "地址键存在时按地址来（空串＝自动）")
+eq(normalizeConfig({ showFarmEntry: false, farmUrl: "/farm/" }).farmUrl, "/farm/", "地址键存在时优先于旧开关")
+eq(normalizeConfig({ showFarmEntry: true }).farmUrl, "", "老配置：开着入口（没填地址）→ 自动探测")
+eq(normalizeConfig({ showFarmEntry: "no" }).farmUrl, "", "旧开关类型不对 → 当作没存过，自动探测")
+eq(normalizeConfig({ pingLines: "" }).pingLines, "", "延迟线路空串保留")
+eq(normalizeConfig({ serverNotes: "" }).serverNotes, "", "备注清单空串保留（＝关闭）")
 eq(normalizeConfig({ cardStyle: "detail" }).cardStyle, "latency", "normalizeConfig 也走 cardStyle 迁移")
 eq(normalizeConfig({ showSummary: true }).listTop, "summary", "normalizeConfig 也走 listTop 迁移")
 eq(normalizeConfig({ listTop: "both" }).listTop, "both", "新值优先")
+
+// ── 备注清单的解析 ────────────────────────────────────────────────
+const NOTES = "# 注释行\n东京机=三网优化\nKirino San Jose = 主力\n东京机=覆盖旧值\n坏行没有等号\n=\n"
+eq(noteFor(NOTES, "东京机"), "覆盖旧值", "同一台多行时后一行覆盖前一行")
+eq(noteFor(NOTES, "Kirino San Jose"), "主力", "名字两侧空白会被削掉")
+eq(noteFor(NOTES, "没这台"), null, "没有匹配的机器返回 null")
+eq(noteFor(NOTES, ""), null, "空名字不会误匹配空值行")
+eq(noteFor("", "任一台"), null, "空清单返回 null")
+eq(noteFor("东京机=\n", "东京机"), null, "备注内容为空算没有")
+eq(hasNotes(""), false, "空清单＝关闭")
+eq(hasNotes("   \n"), false, "只有空白也算关闭")
+eq(hasNotes("东京机=三网优化"), true, "有内容即开启")
 
 // ── 护栏：设置项别超过 6 个 ──────────────────────────────────────────
 // Hub 1.3.0 的「主题设置」对话框在非标题字段 > 6 时会把布局从左导航 + 单列换成两列 + 分组导航，

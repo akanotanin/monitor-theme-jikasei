@@ -131,9 +131,14 @@ const SCENARIOS = [
   // 站长自己填了地址：以他填的为准，这时不再探测。
   { name: '站长填了跨站地址', config: { farmUrl: 'https://farm.example.com/play' }, farm: false, visible: true, href: 'https://farm.example.com/play', blank: true, probes: 0 },
   { name: '站长填了同域路径', config: { farmUrl: '/chicken/' }, farm: false, visible: true, href: '/chicken/', blank: false, probes: 0 },
-  // 开关：即便有养鸡场、即便填了地址，一律不出现。
-  { name: '开关关掉（有养鸡场也不显示）', config: { showFarmEntry: false }, farm: true, visible: false, probes: 0 },
-  { name: '开关关掉（填了地址也不显示）', config: { showFarmEntry: false, farmUrl: '/chicken/' }, farm: false, visible: false, probes: 0 },
+  // 「不显示」现在用 farmUrl 自己的 off 值表达（1.6.0 把旧的两个键并进这一格）。
+  { name: 'off：即便本站有养鸡场也不显示', config: { farmUrl: 'off' }, farm: true, visible: false, probes: 0 },
+  // ── 1.5.0 两个键的迁移（showFarmEntry 开关 + farmUrl 地址 → farmUrl 一格） ──
+  // 老站点关了开关而地址键从没动过 → 落成 off，入口不许自己冒出来。
+  { name: '老配置：1.5.0 关了入口、没填地址（→ off，不显示）', config: { showFarmEntry: false }, farm: true, visible: false, probes: 0 },
+  // 但地址键一旦存在就按它来：后台那个输入框的初值就是 saved.farmUrl，
+  // 若让孤儿开关压过它，这批站点在面板里填什么都不会生效（永久点了没反应）。
+  { name: '老配置：关了开关但填过地址（地址键优先 → 按地址显示）', config: { showFarmEntry: false, farmUrl: '/chicken/' }, farm: false, visible: true, href: '/chicken/', blank: false, probes: 0 },
 ]
 
 let pass = 0, fail = 0

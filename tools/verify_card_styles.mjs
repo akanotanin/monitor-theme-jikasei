@@ -263,6 +263,57 @@ const check = (name, ok, detail) => { results.push({ name, ok, detail }); consol
   check('详细：经典那格不在', dom.classicNet === 0, `找到 ${dom.classicNet} 个`)
 }
 
+/* 3b) 详细 + 服务器备注（备注开启）：到期位换价格、在线位让给备注标签 */
+{
+  const notes = '节点一=东京 · 三网优化\n节点二=备用机'
+  const { dom, ping } = await render({ cardStyle: 'detailed', serverNotes: notes }, 'detailed-notes')
+  check('详细+备注：备注标签渲染在第一行下方', dom.text.includes('东京 · 三网优化'), dom.text)
+  check('详细+备注：在线时长仍在（移到右侧）', /在线 /.test(dom.text), dom.text)
+  // 第三格拆成两行来断，别拿整卡文本去匹配 `¥12.50` ——符号被拆成单独一列之后，
+  // innerText 在符号与数字之间会多出一个换行（实测 `剩余 95 天 | ¥ | 12.50 / 月付`），
+  // 看着像布局坏了、其实是断言写死了「符号紧贴数字」这个旧排版。
+  const box3 = JSON.parse(await evalJS(`(() => {
+    const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
+    const box = [...card.querySelectorAll('[class*="bg-muted/60"]')][2]
+    return JSON.stringify({ lines: box ? box.innerText.split('\\n').map((s) => s.trim()).filter(Boolean) : [] })
+  })()`))
+  check('详细+备注：第三枚读数盒＝上面剩余时间、下面价格 / 周期',
+    box3.lines.length === 3 && box3.lines[0] === '剩余 95 天' && box3.lines[1] === '¥' && box3.lines[2] === '12.50 / 月付',
+    box3.lines.join(' | '))
+  check('详细+备注：到期日（日期那一行）不再显示', !/2027-01-01/.test(dom.text), dom.text)
+  check('详细+备注：三枚读数盒与三网延迟照旧', dom.infoBox === 3 && dom.polylines === 3 * dom.cards,
+    `盒 ${dom.infoBox} / polyline ${dom.polylines}`)
+  check('详细+备注：每节点恰好 1 次延迟请求', ping === 2, `实测 ${ping} 次`)
+  // 货币符号单独占一列（不缩进在数字里），左边缘要和上面「剩余时间」前的时钟图标对齐。
+  const align = JSON.parse(await evalJS(`(() => {
+    const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
+    const box = [...card.querySelectorAll('[class*="bg-muted/60"]')][2]
+    const clock = box.querySelector('svg')
+    const sym = [...box.querySelectorAll('span')].find((s) => s.children.length === 0 && s.textContent.trim() === '¥')
+    if (!clock || !sym) return JSON.stringify({ ok: false })
+    return JSON.stringify({ ok: true, d: Math.round(sym.getBoundingClientRect().left - clock.getBoundingClientRect().left) })
+  })()`))
+  check('详细+备注：货币符号单独一列、与时钟图标左对齐', !!align.ok && Math.abs(align.d) <= 2, `左边缘差 ${align?.d}px`)
+  // 第三格两行同色：价格行是读数，不该被压成弱化灰（其余两格的第二行都是前景色）。
+  const colors = JSON.parse(await evalJS(`(() => {
+    const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
+    const boxes = [...card.querySelectorAll('[class*="bg-muted/60"]')]
+    const top = boxes[2].children[0].querySelector('span.tnum')
+    const amt = boxes[2].children[1].querySelector('span.tnum')
+    const ref = boxes[0].children[0].querySelector('span.tnum')
+    const col = (el) => el ? getComputedStyle(el).color : null
+    return JSON.stringify({ top: col(top), amt: col(amt), ref: col(ref) })
+  })()`))
+  check('详细+备注：第三格两行同色（价格行不再是弱化灰）',
+    !!colors.top && colors.top === colors.amt && colors.amt === colors.ref, JSON.stringify(colors))
+}
+{
+  // 备注只影响「详细」档：切到经典/延迟时清单存在也不改卡片形状。
+  const { dom } = await render({ cardStyle: 'classic', serverNotes: '节点一=东京 · 三网优化' }, 'classic-notes')
+  check('备注不影响经典档（不冒出读数盒与标签）',
+    dom.classicNet === 1 && dom.infoBox === 0 && !dom.text.includes('东京 · 三网优化'), dom.text)
+}
+
 /* 4) 旧值 detail 必须迁到延迟，不能掉回经典 */
 {
   const { dom, ping } = await render({ cardStyle: 'detail' }, 'detail-old')

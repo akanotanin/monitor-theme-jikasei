@@ -80,8 +80,21 @@ export const FOREVER = "∞"
 
 const SYMBOLS: Record<string, string> = { USD: "$", CNY: "¥", EUR: "€", GBP: "£", JPY: "¥" }
 
+/** 币种对应的符号；表里没有的币种返回空串（金额那一半会退化成后缀的 ISO 代码）。 */
+export function currencySymbol(currency: string): string {
+  return SYMBOLS[currency] ?? ""
+}
+
+/**
+ * 金额里去掉符号的那半段。有符号时只给数字，没符号时把代码缀在后面——和 money() 同一套规则。
+ * 分开是为了「符号单独占一列」的排版：符号进下面那枚读数盒的图标位，数字留在文字位。
+ */
+export function moneyAmount(amount: number, currency: string): string {
+  return SYMBOLS[currency] ? amount.toFixed(2) : `${amount.toFixed(2)} ${currency}`.trim()
+}
+
 export function money(amount: number, currency: string): string {
-  return `${SYMBOLS[currency] ?? ""}${amount.toFixed(2)}${SYMBOLS[currency] ? "" : ` ${currency}`}`
+  return `${currencySymbol(currency)}${moneyAmount(amount, currency)}`
 }
 
 export const CYCLES: Record<string, string> = {
