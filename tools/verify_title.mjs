@@ -5,6 +5,9 @@
 //   不给 baseUrl：本机起一个静态+桩接口的服务器（不经隧道），跑三种情况。
 //   给了 baseUrl：直接打在真 hub 上（只做「刷新一次到位」与「详情页」两项，仍需你告知站名）。
 //
+// 环境变量 TITLE_PROBE_FILE_MS（默认 150）：人为拖慢 /title-probe.js 这个独立文件的响应，
+// 模拟线上「访客要多等一次往返才轮到它改标题」——内联那一段有没有真的顶上，就靠它验。
+//
 // 为什么能这么录：标题的三次写入发生在三个地方（静态 HTML、App 的 effect、缓存里的旧值），
 // headless 里靠 Page.addScriptToEvaluateOnNewDocument 在文档刚建好时挂一个 5ms 的轮询，
 // 记下每一次真的变了的时间点——肉眼看到的那几跳，就是这几条记录。
@@ -33,6 +36,20 @@ const NODES = { nodes: [node(1, '节点一', '东京'), node(2, '节点二', '')
 // 让 App 先写好「节点名 · 站名」、内联那条随后才回来，就能稳定地造出「迟到的响应」竞态。
 let titleProbeDelay = 0
 let titleProbeHits = 0            // 内联那条请求真发出去几次（防止这一项空跑）
+// /title-probe.js 是**独立文件**，线上实测访客要多等一次往返（164ms）才轮到它改标题，
+// 那段时间标签页上就是占位值。本机是毫秒级、量不出这个差，所以按线上量级人为拖慢它——
+// 「缓存那一段有没有走内联」这件事只有这样才验得出来。
+const PROBE_FILE_DELAY = Number(process.env.TITLE_PROBE_FILE_MS || 150)
+let probeFileHits = 0
+const serveFile = (res, path) => {
+  const file = join('dist', normalize(path === '/' ? '/index.html' : path).replace(/^(\.\.[/\\])+/, ''))
+  if (!existsSync(file) || statSync(file).isDirectory()) {
+    res.writeHead(200, { 'Content-Type': TYPES['.html'] })
+    return res.end(readFileSync('dist/index.html'))
+  }
+  res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-store' })
+  res.end(readFileSync(file))
+}
 const server = createServer((req, res) => {
   const path = new URL(req.url, `http://127.0.0.1:${PORT}`).pathname
   if (path.startsWith('/api/')) {
@@ -51,13 +68,8 @@ const server = createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     return res.end(JSON.stringify(body))
   }
-  const file = join('dist', normalize(path === '/' ? '/index.html' : path).replace(/^(\.[/\\])+/, ''))
-  if (!existsSync(file) || statSync(file).isDirectory()) {
-    res.writeHead(200, { 'Content-Type': TYPES['.html'] })
-    return res.end(readFileSync('dist/index.html'))
-  }
-  res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-store' })
-  res.end(readFileSync(file))
+  if (path === '/title-probe.js') { probeFileHits++; if (PROBE_FILE_DELAY) return void setTimeout(() => serveFile(res, path), PROBE_FILE_DELAY) }
+  serveFile(res, path)
 })
 const BASE = process.argv[3] || `http://127.0.0.1:${PORT}`
 // 打在真 hub 上时：桩服务器的计数和假节点名都不适用，只留「刷新一次到位」这几项。
@@ -139,6 +151,15 @@ lines = await log()
 owned = await ownedAt()
 console.log(`\n刷新（有缓存）:\n${show(lines)}` + `\n    App 接手=${owned || '—'}ms`)
 check('刷新后末值 = 站名', lines.at(-1)?.[1] === SITE, `末值=${lines.at(-1)?.[1]}`)
+// 站长反馈的正是这一条：刷新时标签页先亮出占位值（"Monitor"），几百毫秒后才跳成自己设的站名。
+// 根因不是那三跳本身，而是缓存那一段写在**独立文件**里，要多等一次往返（线上实测 164ms）——
+// 占位值就先被画上去了。判据：第一条记录直接就是站名，且来源是内联那一段。
+check('刷新时第一条记录就是站名（占位值一次都没被画出来）',
+  lines[0]?.[1] === SITE, `首帧=${lines[0]?.[1]}（共 ${lines.length} 条：${lines.map(([, t]) => t).join(' → ')}）`)
+const titleSource = await js('window.__titleProbeSource || "(未设)"')
+check('刷新时是内联那一段贴上的（不等那次额外往返）', titleSource === 'inline', `来源=${titleSource}`)
+check('那一项不是空跑：被拖慢的 /title-probe.js 确实被请求过（模拟线上的额外往返）',
+  REAL_HUB || probeFileHits >= 1, `${probeFileHits} 次`)
 check('刷新时站名也是 App 接手之前就贴上的（没在等那个大包）',
   owned > 0 && (lines.at(-1)?.[0] ?? 0) <= owned, `落定 ${lines.at(-1)?.[0]}ms vs App 接手 ${owned}ms`)
 if (!REAL_HUB) check('刷新时没有再多问一次（缓存命中就不发那条请求了）',

@@ -11,6 +11,14 @@ import { DEFAULTS, normalizeConfig, type ThemeConfig } from "@/lib/site-settings
  */
 const SHORT = "jikasei"
 
+/**
+ * 顶栏那张站标最终加载成功的地址，缓存在访客浏览器里（本站自己的来源，不涉及隐私）。
+ * 下次刷新时 `public/icon-probe.js` 会在文档最早就把它贴上——浏览器那条 favicon 请求
+ * 因此直接就是自定图，标签页不会再先闪主题自带那张娃娃头（站长报过的 BUG）。
+ * **必须与 public/icon-probe.js 里的 KEY 一致。**
+ */
+export const ICON_CACHE_KEY = "jikasei:site_icon"
+
 // 类型、默认值、收窄与迁移都在 site-settings.ts；这里只留取数据与页面侧的钩子，
 // 顺手再导出一遍，页面统一从 `@/lib/theme-config` 拿。
 export { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary } from "@/lib/site-settings"
@@ -48,7 +56,18 @@ export function useSiteFavicon(icon: string | null) {
       touch.href = href
     }
 
+    // 验收用（tools/verify_icons.mjs）：顶栏那张出结果的时刻——早跑脚本贴上的图标
+    // 应当早于它，否则就还是「等入口包 + <img> onLoad」那条老路。
+    ;(window as unknown as { __iconSettledAt?: number }).__iconSettledAt = Math.round(performance.now())
     setIcons(icon)
+    // 记下这次真的加载成功的那张：下次刷新时 public/icon-probe.js 先把它贴上，标签页
+    // 就不会再闪主题自带那张（站长报过这个 BUG）。取不到时这里是兜底那张（= DEFAULTS），
+    // 下一趟照旧；两级都取不到则进不来（调用处传的是 null），缓存维持上一次的值不动。
+    try {
+      localStorage.setItem(ICON_CACHE_KEY, icon)
+    } catch {
+      // 隐私模式 / 存储被禁用：不缓存，图标照常按设置显示。
+    }
   }, [icon])
 }
 
@@ -96,7 +115,14 @@ export function useThemeConfig(): { config: ThemeConfig; loaded: boolean } {
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
     let active = true
-    api<Partial<ThemeConfig>>(`/themes/${SHORT}/config`)
+    // public/icon-probe.js 在文档最早就问过同一份设置了（标签页图标要赶在浏览器发 favicon
+    // 请求之前决定贴哪张），它把 promise 挂在 window 上转交过来：这里直接复用，同一次加载
+    // 因此只发一条设置请求。它没起来（老包 / CSP）或没拿到（返回 null）时，这里自己再问一次。
+    const early = (window as unknown as { __iconProbeConfigPromise?: Promise<Partial<ThemeConfig> | null> }).__iconProbeConfigPromise
+    const request = early
+      ? early.then((prefetched) => prefetched ?? api<Partial<ThemeConfig>>(`/themes/${SHORT}/config`))
+      : api<Partial<ThemeConfig>>(`/themes/${SHORT}/config`)
+    request
       .then((saved) => {
         if (!active) return
         // 逐项收窄 + 旧值迁移都在 site-settings.ts（那里能单测）。

@@ -35,3 +35,32 @@ for (const key of Object.keys(declared)) {
 }
 if (problems.length) throw new Error(`设置项默认值两边不一致：\n  ${problems.join('\n  ')}`)
 console.log(`设置项默认值一致：${fields.map((f) => `${f.key}=${f.default}`).join('、')}`)
+
+// 站名 / 站点图标这两个缓存的键散在好几处（App 一处、早跑脚本一处，站名那份还在 index.html 的
+// 内联脚本里）——它们必须逐字一致。不一致的症状很阴：缓存有人写、没人读（或反过来），页面照常、
+// 后台照常，只是刷新时先闪一次占位值，谁也不报错。这里一次比清，顺带保住两条早跑脚本没被删。
+const CACHES = [
+  { what: '站名', key: 'jikasei:site_name', places: [
+    ['src/App.tsx', /TITLE_CACHE_KEY\s*=\s*"([^"]+)"/g],
+    ['public/title-probe.js', /var KEY\s*=\s*"([^"]+)"/g],
+    ['index.html', /localStorage\.getItem\("([^"]+)"\)/g],
+  ] },
+  { what: '站点图标', key: 'jikasei:site_icon', places: [
+    ['src/lib/theme-config.ts', /ICON_CACHE_KEY\s*=\s*"([^"]+)"/g],
+    ['public/icon-probe.js', /var KEY\s*=\s*"([^"]+)"/g],
+  ] },
+]
+const bad = []
+for (const cache of CACHES) {
+  for (const [file, pattern] of cache.places) {
+    const found = [...readFileSync(file, 'utf8').matchAll(pattern)].map((m) => m[1])
+    if (!found.length) bad.push(`${cache.what}：${file} 里找不到缓存键（护栏的锚点没了，别当通过）`)
+    for (const value of found) if (value !== cache.key) bad.push(`${cache.what}：${file} 里是 ${value}，应为 ${cache.key}`)
+  }
+}
+const html = readFileSync('index.html', 'utf8')
+for (const probe of ['/title-probe.js', '/icon-probe.js']) {
+  if (!html.includes(`<script src="${probe}">`)) bad.push(`index.html 里没有引入 ${probe}（标签页的占位值/默认图标就没法早点换掉）`)
+}
+if (bad.length) throw new Error(`缓存键或早跑脚本对不上：\n  ${bad.join('\n  ')}`)
+console.log(`缓存键一致：${CACHES.map((c) => `${c.what} ${c.key}（${c.places.length} 处）`).join('、')}；两条早跑脚本都在 index.html 里`)

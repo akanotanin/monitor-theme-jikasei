@@ -1,5 +1,12 @@
-// 标签页标题的头一步：站名是站长在后台改的，静态 HTML 不可能知道，所以这里
-// 1) 先把上一次的站名（localStorage，本站自己的来源）贴上——刷新时首帧就是真站名，全程不变；
+// 标签页标题的头一步。
+//
+// 站长把站名改了之后，静态 HTML 里那句 <title>Monitor</title> 只是占位值，真站名原本要等
+// 入口包跑完（App 取到 /api/me）才有——刷新时标签页会先亮出「Monitor」再跳成站名。
+//
+// 所以这里补两步（缓存那一步的**主力在 index.html 的内联脚本里**，本文件是它的兜底与替补）：
+// 1) 先把上一次的站名（localStorage，本站自己的来源）贴上——这一条的「即时版」是内联那段，
+//    因为它省掉一次往返：本文件是独立文件，线上实测访客要多等 164ms 才轮到它执行，那段时间
+//    占位值已经被画上标签页了。内联那段被 CSP 挡掉时，这里就是唯一能顶上的人；
 // 2) 没有缓存（首次访问）时自己问一次 /api/me —— 它通常比入口包先回来，标题就能早点贴对，
 //    而不是等入口包执行完才从那句兜底值跳过去。
 //
@@ -10,6 +17,8 @@
 // 缓存键必须与 src/App.tsx 里的 TITLE_CACHE_KEY 一致。
 ;(function () {
   var KEY = "jikasei:site_name"
+  // 谁贴上的：inline（index.html 那段）/ cache（本文件用缓存）/ fetch（本文件早问回来的）。
+  var mark = function (source) { if (!window.__titleProbeSource) window.__titleProbeSource = source }
   var cached = null
   try {
     cached = localStorage.getItem(KEY)
@@ -18,6 +27,7 @@
   }
   if (cached) {
     document.title = cached
+    mark("cache")
     return
   }
   if (!window.fetch) return
@@ -28,6 +38,7 @@
     .then(function (d) {
       if (!d || !d.site_name || window.__titleOwned) return
       document.title = d.site_name
+      mark("fetch")
       try {
         localStorage.setItem(KEY, d.site_name)
       } catch {}

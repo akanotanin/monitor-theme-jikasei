@@ -6,12 +6,34 @@
     <!-- 标签页图标：与顶栏那枚站标同一个地址（站长在「主题设置」里改一次，两处一起变）。
          这里是 JS 起来之前的静态值，运行时会按设置项改写 <link rel="icon"> 与 apple-touch-icon。 -->
     <link rel="icon" href="/site-icon.png" />
+    <!-- 图标的头一步（用缓存里的那张 / 冷启动时早问一次设置）：public/icon-probe.js。
+         必须紧跟上面那行、且在入口包之前——它要赶在浏览器发出 favicon 请求之前改掉 <link>，
+         否则站长换过图标的站，标签页会先闪主题自带那张娃娃头。 -->
+    <script src="/icon-probe.js"></script>
     <!-- 标签页标题的占位值：静态 HTML 不可能知道站长把站名改成了什么，真站名要到 JS 里才有。
          上游这里就是 "Monitor"，保持原样——换成本主题的名字只会让刷新时多闪一跳。 -->
     <title>Monitor</title>
-    <!-- 标题的头一步（用缓存里的站名 / 冷启动时早问一次 /api/me）：public/title-probe.js，
-         与 src/App.tsx 里的 TITLE_CACHE_KEY 共用一个键。独立文件而不是内联脚本——
-         站点前面若有 CSP，内联脚本会被挡掉。 -->
+    <!-- 缓存里的站名：**必须内联**。public/title-probe.js 是独立文件，访客要多等一次往返
+         （线上实测 164ms：740ms 发出、1161ms 才到）才轮到它改标题，那段时间标签页上就是上面
+         那行占位值——站长报的「先出来 Monitor 再出来站名」就是这个。这一段就地读 localStorage，
+         标签页第一帧就是站名。站点前面若有 CSP 会挡掉内联脚本，下面那条外部文件照旧补上
+         （退回原来的表现，不会坏）。键与 src/App.tsx 的 TITLE_CACHE_KEY 一致。 -->
+    <script>
+      ;(function () {
+        var name = null
+        try {
+          name = localStorage.getItem("jikasei:site_name")
+        } catch (e) {
+          // 隐私模式 / 存储被禁用：没有缓存可用，占位值等下面那条外部文件。
+        }
+        if (name) {
+          document.title = name
+          window.__titleProbeSource = "inline"
+        }
+      })()
+    </script>
+    <!-- 标题的头一步（冷启动时早问一次 /api/me，兼内联被 CSP 挡掉时的兜底）：public/title-probe.js，
+         与 src/App.tsx 里的 TITLE_CACHE_KEY 共用一个键。 -->
     <script src="/title-probe.js"></script>
   </head>
   <body>
