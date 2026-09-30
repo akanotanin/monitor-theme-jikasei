@@ -184,6 +184,44 @@ check('「服务器备注」的说明给了多标签写法', notesHelp.includes(
 check('对话框里的备注说明也是新的（旧写法已无）',
   everyText.includes('服务器名=备注1,备注2,备注3') && !everyText.includes('写成「服务器名=备注」，'), '');
 
+// ── 下拉框（type: select）的选项文案 ──────────────────────────────────
+// 面板对 select 画的是「真 <select> 一份 + Radix combobox 一份」，两侧的选项文案都来自 manifest.config。
+// 之前这里只断过「字段名画出来了」——选项文案是盲区：改了 theme.json 里某个 option 的 label，
+// 面板上没变（或改错一处）照样全绿。所以按「打开那个下拉、读 [role=option]」的路径断，
+// 且逐字**同序**对照 theme.json 的 options：顺序换了也是站长看得见的改动，不该漏。
+async function openSelect(field) {
+  const owner = groups.find((g) => g.fields.includes(field))
+  await openGroup(owner?.label ?? '')
+  return await js(`(() => {
+    const dlg = document.querySelector('[role="dialog"]')
+    const lab = [...dlg.querySelectorAll('*')].find((el) => el.children.length === 0 && el.textContent.trim() === ${JSON.stringify(field.label)})
+    if (!lab) return 'no-label'
+    let box = lab
+    for (let i = 0; i < 4 && box && box !== dlg; i++) {
+      const c = box.querySelector('[data-slot="select-trigger"], button[role="combobox"]')
+      if (c) { c.click(); return 'clicked' }
+      box = box.parentElement
+    }
+    return 'no-control'
+  })()`)
+}
+const esc = async () => {
+  for (const type of ['keyDown', 'keyUp'])
+    await send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await sleep(300)
+}
+for (const field of entries.filter((e) => e.type === 'select' && Array.isArray(e.options))) {
+  const where = groups.find((g) => g.fields.includes(field))?.label ?? ''
+  const how = await openSelect(field)
+  await sleep(600)
+  const seen = (await js(`[...document.querySelectorAll('[role="option"]')].map((o) => o.innerText.trim())`)) || []
+  const want = field.options.map((o) => o.label)
+  check(`${where ? `「${where}」组里` : ''}「${field.label}」的选项文案与 theme.json 逐字同序一致`,
+    how === 'clicked' && seen.length === want.length && seen.every((t, i) => t === want[i]),
+    `${how}｜面板 ${JSON.stringify(seen)} ｜manifest ${JSON.stringify(want)}`)
+  await esc()
+}
+
 // 开关初值 = `saved[key] ?? default`（站点配置喂的是 `{}`，所以看到的就是主题自带的默认值）。
 // 面板对 boolean 用的是 Radix Switch：`button[role=switch][aria-checked]`，所以按开关读状态，
 // 别去猜它内部的 DOM 结构。找不到开关要报 FAIL，不能静默通过。
