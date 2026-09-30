@@ -21,7 +21,7 @@ export const ICON_CACHE_KEY = "jikasei:site_icon"
 
 // 类型、默认值、收窄与迁移都在 site-settings.ts；这里只留取数据与页面侧的钩子，
 // 顺手再导出一遍，页面统一从 `@/lib/theme-config` 拿。
-export { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary } from "@/lib/site-settings"
+export { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, isBudgetLayout } from "@/lib/site-settings"
 export type { ThemeConfig } from "@/lib/site-settings"
 
 /**

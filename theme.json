@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.9.3",
+  "version": "1.10.0",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -36,10 +36,12 @@
       "options": [
         { "value": "none", "label": "都不显示" },
         { "value": "groups", "label": "只显示分组标签" },
-        { "value": "summary", "label": "只显示概览卡片" },
-        { "value": "both", "label": "两个都显示" }
+        { "value": "summary", "label": "概览卡片·原版" },
+        { "value": "budget", "label": "概览卡片·月度预算剩余价值版" },
+        { "value": "both", "label": "两个都显示·原版" },
+        { "value": "bothBudget", "label": "两个都显示·月度预算剩余价值版" }
       ],
-      "help": "分组标签 = 全部 / 各组那一行；概览卡片 = 四张统计卡片。"
+      "help": "分组标签 = 全部 / 各组那一行；概览卡片 = 那行统计卡片，分原版与月度预算剩余价值版两种排法。"
     },
     {
       "type": "select",

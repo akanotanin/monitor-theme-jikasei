@@ -8,7 +8,7 @@
 // 读不出来的表现不是报错，而是「站长开着的那一项自己关了」。
 import { readFileSync } from "node:fs"
 
-import { DEFAULTS, FARM_OFF, cardStyleOf, hasGroupTabs, hasNotes, hasSummary, listTopOf, normalizeConfig, tagsFor } from "./site-settings.ts"
+import { DEFAULTS, FARM_OFF, cardStyleOf, hasGroupTabs, hasNotes, hasSummary, isBudgetLayout, listTopOf, normalizeConfig, tagsFor } from "./site-settings.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -25,8 +25,8 @@ for (const v of ["classic", "latency", "detailed", "compact"]) eq(cardStyleOf(v)
 eq(cardStyleOf("nope"), "classic", "cardStyle 认不出的值回落经典")
 eq(cardStyleOf(undefined), "classic", "cardStyle 没存过回落经典")
 
-// ── listTop：四选一本身就认 ───────────────────────────────────────────
-const TOPS = ["none", "groups", "summary", "both"] as const
+// ── listTop：六选一本身就认 ───────────────────────────────────────────
+const TOPS = ["none", "groups", "summary", "budget", "both", "bothBudget"] as const
 for (const v of TOPS) eq(listTopOf(v), v, `listTop 保留 ${v}`)
 
 // ── listTop：老的两个布尔开关按组合迁过来 ─────────────────────────────
@@ -41,10 +41,12 @@ eq(listTopOf(undefined, { showGroupTabs: true }), "groups", "只存了分组标�
 // 不认识的 listTop（手改、别的版本）当没存过，继续按老开关迁，而不是直接掉回默认。
 eq(listTopOf("weird", { showSummary: true }), "summary", "listTop 认不出时仍按老开关迁")
 
-// ── 两个布尔是四选一的投影 ───────────────────────────────────────────
-eq(TOPS.map((t) => [t, hasSummary(t), hasGroupTabs(t)]),
-  [["none", false, false], ["groups", false, true], ["summary", true, false], ["both", true, true]],
-  "四档 → 两个布尔")
+// ── 三个布尔是六选一的投影 ───────────────────────────────────────────
+// 1.10.0 多出的 budget / bothBudget 只在「概览卡片长什么样」上有别：前两个布尔与 summary / both 一致。
+eq(TOPS.map((t) => [t, hasSummary(t), hasGroupTabs(t), isBudgetLayout(t)]),
+  [["none", false, false, false], ["groups", false, true, false], ["summary", true, false, false],
+    ["budget", true, false, true], ["both", true, true, false], ["bothBudget", true, true, true]],
+  "六档 → 三个布尔")
 
 // ── normalizeConfig：逐项收窄 ────────────────────────────────────────
 // 整对象比较按 key 排序，免得属性书写顺序不同被当成不一致。

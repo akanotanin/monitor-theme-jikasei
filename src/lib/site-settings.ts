@@ -29,8 +29,12 @@ export type ThemeConfig = {
    * 价格与到期；compact = 一行一台的表格（列随屏宽收放，密度最高）。
    */
   cardStyle: "classic" | "latency" | "detailed" | "compact"
-  /** 列表页顶部显示什么：none = 都不显示；groups = 分组标签行；summary = 概览卡片行；both = 两个都显示。 */
-  listTop: "none" | "groups" | "summary" | "both"
+  /**
+   * 列表页顶部显示什么：none = 都不显示；groups = 分组标签行；summary = 概览卡片行（原版）；
+   * budget = 概览卡片行（月度预算剩余价值版）；both = 分组标签行 + 原版概览卡片；
+   * bothBudget = 分组标签行 + 预算版概览卡片。
+   */
+  listTop: "none" | "groups" | "summary" | "budget" | "both" | "bothBudget"
   /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */
   pingLines: string
   /**
@@ -79,10 +83,14 @@ export function cardStyleOf(v: unknown): ThemeConfig["cardStyle"] {
  * 说明文字挤成四五行、并排的两项高矮不齐、每组最后一行还空半格。回到 6 个字段最省事，
  * 这两个开关本来就问的是同一件事（列表页顶部那两行显示什么），四档把它们四个组合都留着。
  *
+ * 1.10.0 又多了一层「概览卡片长什么样」（原版 / 月度预算剩余价值版），但仍然并在这一个键里：
+ * 再开一个设置项就是第 7 个字段，对话框又回到那个两列的排版。六档＝分组标签行开关（开关）
+ * × 概览卡片三态（不显示 / 原版 / 预算版）里真的用得上的组合。
+ *
  * 读到没有 `listTop` 的旧配置就按两个开关的组合迁过来：不迁的话，站长开着的那一行会静默消失。
  */
 export function listTopOf(v: unknown, saved: { showSummary?: unknown; showGroupTabs?: unknown } = {}): ThemeConfig["listTop"] {
-  if (v === "none" || v === "groups" || v === "summary" || v === "both") return v
+  if (v === "none" || v === "groups" || v === "summary" || v === "budget" || v === "both" || v === "bothBudget") return v
   // 旧版（≤1.4.0）：两个布尔开关，四种组合正好对应这一档的四个取值。
   const summary = saved.showSummary === true
   const tabs = saved.showGroupTabs === true
@@ -92,13 +100,21 @@ export function listTopOf(v: unknown, saved: { showSummary?: unknown; showGroupT
   return DEFAULTS.listTop
 }
 
-/** 表单是四选一，页面只关心两个布尔：列表页顶部那行分组标签、那行概览卡片。 */
+/** 表单是六选一，页面只关心这三个布尔：分组标签行、概览卡片行、那行是不是预算版。 */
 export function hasGroupTabs(top: ThemeConfig["listTop"]): boolean {
-  return top === "groups" || top === "both"
+  return top === "groups" || top === "both" || top === "bothBudget"
 }
 
 export function hasSummary(top: ThemeConfig["listTop"]): boolean {
-  return top === "summary" || top === "both"
+  return top === "summary" || top === "budget" || top === "both" || top === "bothBudget"
+}
+
+/**
+ * 概览卡片排成「月度预算剩余价值版」：第一张卡是月度预算 + 剩余价值，第二张卡是节点 + 最忙节点
+ * （照站长给的参考图，后一张的两块读数分居卡片两端）。原版则是四张各一块读数。
+ */
+export function isBudgetLayout(top: ThemeConfig["listTop"]): boolean {
+  return top === "budget" || top === "bothBudget"
 }
 
 /**

@@ -7,7 +7,7 @@ import { SummaryCards } from "@/components/Summary"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupsOf, useNodes, type Node } from "@/lib/api"
-import { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
+import { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, isBudgetLayout, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
 import { FarmIcon } from "@/components/FarmIcon"
 
 type Me = { authed: boolean; github: boolean; site_name: string; public_page: boolean }
@@ -345,8 +345,9 @@ export default function App() {
           )
         ) : (
           <>
-            {/* 概览卡片行：设置里没选它时整个不挂载（不是藏起来），首屏与没有这个功能时一致。 */}
-            {hasSummary(config.listTop) && <SummaryCards nodes={sorted} />}
+            {/* 概览卡片行：设置里没选它时整个不挂载（不是藏起来），首屏与没有这个功能时一致。
+                「月度预算剩余价值版」只是同一行换一副面孔，组件另收一个 finance 开关。 */}
+            {hasSummary(config.listTop) && <SummaryCards nodes={sorted} finance={isBudgetLayout(config.listTop)} />}
             <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail} showTabs={hasGroupTabs(config.listTop)}
               latencyLines={config.pingLines}
               cardStyle={config.cardStyle}
