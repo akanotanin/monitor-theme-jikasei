@@ -1,6 +1,10 @@
 // 拍「概览卡片」两副面孔的对照图：原版 / 月度预算剩余价值版，桌面 + 手机 + 暗色。
 //
-// 用法：node tools/shot_summary.mjs [输出前缀=shots/summary] [端口=5333]
+// 用法：node tools/shot_summary.mjs [输出前缀=shots/summary] [端口=5333] [注入的 CSS]
+//
+// 第 4 个参数是**只给候选图用**的 CSS 覆盖：它把一堆规则塞进 <style> 再截图，用来在同一份
+// 真实标记 + 真实样式表上比较几种排法（挑定之后再落回 Summary.tsx 的类名）。
+//   例：node tools/shot_summary.mjs shots/v1 5333 '[data-slot="card"] > div:nth-child(2){width:50% !important}'
 //   产物：<前缀>-classic.png（原版行，2× 裁切）
 //         <前缀>-budget.png（预算版行，2× 裁切）
 //         <前缀>-budget-dark.png（预算版行，暗色）
@@ -18,6 +22,8 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 const PREFIX = process.argv[2] || 'shots/summary'
 const PORT = Number(process.argv[3] || 5333)
+// 候选图用的 CSS 覆盖（见文件头）；留空就是主题当前的排法。
+const VARIANT_CSS = process.argv[4] || ''
 const CDP_PORT = PORT + 4000
 
 const TYPES = {
@@ -150,6 +156,11 @@ async function shot(out, { listTop, width, height, dpr = 2, mobile = false, dark
       return digits.length >= 4 && getComputedStyle(document.body).backgroundColor !== 'rgba(0, 0, 0, 0)'
     })()`)
     if (ok) break
+  }
+  // 候选图：把覆盖规则塞进来再量再拍（同一份真实标记与样式表，只多一层 <style>）。
+  if (VARIANT_CSS) {
+    await js(`(() => { const s = document.createElement('style'); s.textContent = ${JSON.stringify(VARIANT_CSS)}; document.head.append(s); return true })()`)
+    await sleep(250)
   }
   let box = null
   if (clip === 'row') {

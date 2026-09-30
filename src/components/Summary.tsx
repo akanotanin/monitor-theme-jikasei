@@ -66,18 +66,19 @@ function Tile({ children }: { children: ReactNode }) {
 }
 
 /**
- * 一张卡片里两块读数：**同一列**左右各一块——左块贴卡片左沿（内容多宽就多宽），右块从卡片的
- * 55% 处起（固定占 45%），所以两张卡里的第二块读数落在同一条竖线上。
+ * 一张卡片里两块读数：**两块平分**（`grid-cols-2` + 同一个 `gap-x-3`），所以两张卡里的第二块
+ * 读数落在同一条竖线上，而且与「今日流量 / 实时网速」两张卡里那张两列小栅格的第二列同一落点
+ * —— 整行四张卡读起来是一个栅格（站长挑的排法：最素、不要分隔线）。
  *
- * 只靠 `justify-between` 是不够的：块宽按内容走时，剩余价值（≈¥191.94）比最忙节点（51.0%）
- * 宽，两块起点会差十几像素（实测 4 列下 196 vs 214、手机上 272 vs 289）——红框圈出来就是
- * 「这一列没对齐」。固定列宽之后两块都起于同一条线，右块仍然贴卡片右沿。
+ * 早先试过 `justify-between`（块宽按内容走）：剩余价值（≈¥191.94）比最忙节点（51.0%）宽，
+ * 两张卡的右列起点差 18px（1440）/17px（390），被框出来报过；也试过固定 45% 的右列，列对齐了
+ * 但与前两张卡不是一个节奏。护栏里两条都钉着（同一列 + 同一落点）。
  *
- * 下沿对齐靠 `items-stretch`（块撑满卡片高度）+ Block 里的 `mt-auto`。
+ * 下沿对齐靠 `items-stretch`（块撑满卡片高度，grid 的默认值）+ Block 里的 `mt-auto`。
  */
 function Pair({ children }: { children: ReactNode }) {
   return (
-    <Card className="flex min-w-0 flex-row items-stretch gap-3 p-4 [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1 [&>*:last-child]:w-[45%] [&>*:last-child]:min-w-0 [&>*:last-child]:shrink-0">
+    <Card className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-0 p-4">
       {children}
     </Card>
   )

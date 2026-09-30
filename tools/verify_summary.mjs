@@ -208,11 +208,15 @@ const PROBE = `JSON.stringify((() => {
       const num = b.children[1] || null
       const foot = b.children[2] || null
       const fr = foot ? foot.getBoundingClientRect() : null
+      // 单块读数的卡片（今日流量 / 实时网速）里，第二行是一张两列的小栅格：取它第二列的
+      // 起点，用来断「预算版那两张卡的右列与它们同一节奏」（都是 50/50 + 同一个 gap）。
+      const inner = num && num.children.length === 2 ? num.children[1] : null
       return {
         title: first(b),
         text: b.innerText.replace(/\\n/g, ' | '),
         x: Math.round(br.left), right: Math.round(br.right), w: Math.round(br.width),
         hint: b.getAttribute('title') || '',
+        innerCol: inner ? Math.round(inner.getBoundingClientRect().left) : null,
         // 主数字那个盒子带 truncate：真装不下时 scrollWidth 会大于 clientWidth。
         clip: num ? num.scrollWidth - num.clientWidth : 0,
         foot: fr ? Math.round(fr.bottom) : null,
@@ -295,8 +299,8 @@ function checkPair(where, t, cardPad = 16) {
   check(`${where}：左边那块贴卡片左沿、右边那块贴卡片右沿`,
     Math.abs(a.x - t.x - cardPad) <= 2 && Math.abs(t.right - b.right - cardPad) <= 2,
     `左 ${a.x - t.x}px / 右 ${t.right - b.right}px（卡片内边距应为 ${cardPad}px）`)
-  check(`${where}：右边那块落在卡片右半边（往右让位，不是一起挤在左边）`,
-    b.x > t.x + (t.right - t.x) / 2 && b.x >= a.right,
+  check(`${where}：右边那块落在卡片右半边（两块不在同一半）`,
+    b.x - t.x >= (t.right - t.x) / 2 - 2 && b.x >= a.right,
     `右块起点 ${Math.round(b.x - t.x)}px / 卡片半宽 ${Math.round((t.right - t.x) / 2)}px（左块宽 ${a.w} / 右块宽 ${b.w}）`)
   check(`${where}：两块的下沿对齐（同一条基线）`, a.foot === b.foot && a.foot !== null, `左 ${a.foot} / 右 ${b.foot}`)
   check(`${where}：两块里的数字都没被截断`, a.clip <= 0 && b.clip <= 0, `裁掉 ${a.clip}/${b.clip}px`)
@@ -312,6 +316,21 @@ function checkColumn(where, cards) {
   const spread = Math.max(...rel) - Math.min(...rel)
   check(`${where}：两张卡的第二块读数起于同一条竖线（同一列）`, spread <= 1,
     `距各自卡片左沿 ${rel.join(' / ')}px（相差 ${spread}px）`)
+}
+
+/**
+ * 「和谐的节奏」：预算版那两张卡的右列，与「今日流量」「实时网速」两张卡里那张两列小栅格的
+ * 第二列，落点应当相同（都是 50/50 拆分 + 同一个 gap-x-3）。差几像素说明前两张卡自成一个
+ * 节奏，整行读起来就不是一个栅格（站长要的就是这个）。
+ */
+function checkRhythm(where, dom) {
+  const pair = tile(dom, '月度预算').blocks[1].x - tile(dom, '月度预算').x
+  const day = tile(dom, '今日流量').blocks[0].innerCol
+  const net = tile(dom, '实时网速').blocks[0].innerCol
+  const ok = day !== null && net !== null && Math.abs(pair - (day - tile(dom, '今日流量').x)) <= 1 &&
+    Math.abs(pair - (net - tile(dom, '实时网速').x)) <= 1
+  check(`${where}：预算版右列与今日流量 / 实时网速的第二列同一落点（整行一个栅格）`, ok,
+    `右列 ${pair}px ／ 今日流量第二列 ${day === null ? '—' : day - tile(dom, '今日流量').x}px ／ 实时网速第二列 ${net === null ? '—' : net - tile(dom, '实时网速').x}px`)
 }
 
 /* 1) 默认（后台没存过：GET config 回 {}）→ 概览行整个不挂载 */
@@ -371,10 +390,12 @@ let classicNet = null
   check('预算版：概览行排在节点卡片之前', dom.above === true, String(dom.above))
   check('预算版：四张卡片等高（下沿对齐）', dom.tileHeights.length === 1, `高度 ${JSON.stringify(dom.tileHeights)}`)
 
-  // 几何：两张卡片里各两块读数，一左一右；两张卡的第二块还要在同一条竖线上（同一列）
+  // 几何：两张卡片里各两块读数，一左一右；两张卡的第二块还要在同一条竖线上（同一列），
+  // 且与「今日流量 / 实时网速」那两张卡的第二列同一落点（整行一个栅格）。
   checkPair('预算版·第一张卡', tile(dom, '月度预算'))
   checkPair('预算版·第二张卡', tile(dom, '节点'))
   checkColumn('预算版', [tile(dom, '月度预算'), tile(dom, '节点')])
+  checkRhythm('预算版', dom)
 
   // 悬停提示：口径与汇率都得写清（面板上看不出「≈」是怎么来的）
   const budgetHint = tile(dom, '月度预算').blocks[0].hint
@@ -465,6 +486,7 @@ let classicNet = null
   checkPair('预算版 @1440（四列）', tile(wide, '月度预算'))
   checkPair('预算版 @1440（四列，第二张）', tile(wide, '节点'))
   checkColumn('预算版 @1440（四列）', [tile(wide, '月度预算'), tile(wide, '节点')])
+  checkRhythm('预算版 @1440（四列）', wide)
 
   await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1000, deviceScaleFactor: 1, mobile: false })
   const mid = await render({ listTop: 'budget' }, 'mid')
@@ -477,6 +499,7 @@ let classicNet = null
   check('预算版 @390：四张卡片仍都在', narrow.tiles.length === 4, `概览 ${narrow.tiles.length} 张`)
   checkPair('预算版 @390（手机）', tile(narrow, '月度预算'))
   checkColumn('预算版 @390（手机）', [tile(narrow, '月度预算'), tile(narrow, '节点')])
+  checkRhythm('预算版 @390（手机）', narrow)
 
   const narrowClassic = await render({ listTop: 'both', cardStyle: 'detailed' }, 'narrow-classic')
   check('原版 @390（详细形态）：无横向滚动', narrowClassic.scroll[0] <= narrowClassic.scroll[1],
