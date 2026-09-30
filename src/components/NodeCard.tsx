@@ -197,9 +197,11 @@ function trafficFoot(node: Node) {
     : `${bytes(monthUsage(node))} / ${FOREVER}`
 }
 
-export function NodeCard({ node, onOpen, latencyLines, cardStyle, notes }: {
+export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes }: {
   node: Node
   onOpen: () => void
+  /** 指针或键盘刚落到这张卡片上：先把手头这块 chunk（详情页的图表那 391KB）取回来。 */
+  onWarm?: () => void
   latencyLines: string
   cardStyle: "classic" | "latency" | "detailed"
   /** 「详细」形态的服务器备注清单（每行 `服务器名=备注`）；空串 = 关闭。 */
@@ -216,6 +218,11 @@ export function NodeCard({ node, onOpen, latencyLines, cardStyle, notes }: {
   return (
     <Card
       onClick={onOpen}
+      // 摸到卡片（悬停 / 键盘 Tab 到它 / 手指按下）就先取详情那块 chunk：真要打开的人，
+      // 鼠标按下去之前多半已经碰过这张卡了。见 App 的 warmDetail。
+      onPointerOver={onWarm}
+      onFocus={onWarm}
+      onTouchStart={onWarm}
       // min-w-0: a grid item sizes to its content unless told otherwise, and the
       // name line below does not wrap, so on a phone the card would grow past its
       // column and scroll the page sideways. The truncate inside only takes effect

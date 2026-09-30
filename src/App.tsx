@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react"
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { Moon, Sun, Wrench } from "lucide-react"
 
 import { NodeCard } from "@/components/NodeCard"
@@ -18,9 +18,58 @@ const TITLE_CACHE_KEY = "jikasei:site_name"
 
 // Split out because recharts is most of this bundle and the list page draws no
 // chart. The landing page is 242 kB rather than 629 kB (77 kB gzipped against
-// 188 kB), with the rest fetched immediately after it paints.
+// 188 kB). 取它的时机见 App 里的 warmDetail：列表画完之后空闲时取、指针落到卡片上时立刻取、
+// 开页就在详情页时立刻取 —— 不再和首屏的入口包与第一批数据抢带宽。
 const loadDetail = () => import("@/components/NodeDetail").then((m) => ({ default: m.NodeDetail }))
 const NodeDetail = lazy(loadDetail)
+
+/**
+ * 详情页的骨架：按详情页真实的那几块摆（标题行 + 规格格 + 页签行 + 四张图），
+ * 不是一枚 `h-96`。它露面的场景只有一个 —— 点开时图表 chunk 还没到（见下面 warmDetail），
+ * 所以它的高度必须跟加载完的内容一样，否则那一下会「先塌再撑」。
+ *
+ * 尺寸不另立一套，全跟着详情页自己那几块的类走：`dt` text-xs(16) + `dd` text-sm(20)、
+ * 页签 py-1 + text-xs = 24、图块 = 小标题 mb-2 + `h-40`、四张图之间 space-y-5、
+ * 规格格那层用同一套 grid 断点。于是手机上（一列六行）与桌面上（三列两行）都自动对上。
+ */
+function DetailSkeleton() {
+  return (
+    <div className="detail-skeleton space-y-4" aria-busy="true">
+      <div className="flex items-center gap-2">
+        <Skeleton className="size-6 shrink-0 rounded-[3px]" />
+        <Skeleton className="h-7 w-44" />
+      </div>
+      <div className="grid gap-x-6 gap-y-3 md:grid-cols-2 lg:grid-cols-3">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="min-w-0">
+            <Skeleton className="h-4 w-12" />
+            <Skeleton className="h-5 w-28" />
+          </div>
+        ))}
+      </div>
+      <div className="space-y-2 border-t pt-4">
+        <div className="flex gap-1">
+          <Skeleton className="h-6 w-12" />
+          <Skeleton className="h-6 w-16" />
+        </div>
+        <div className="flex gap-1">
+          <Skeleton className="h-6 w-16" />
+          <Skeleton className="h-6 w-16" />
+          <Skeleton className="h-6 w-16" />
+        </div>
+        {/* 四张资源图：整页详情的默认页签就是它，所以骨架照它的高度来。 */}
+        <div className="space-y-5">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i}>
+              <Skeleton className="mb-2 h-4 w-16" />
+              <Skeleton className="h-40 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // `/node/{id}` is a real page: it survives a reload, can be linked to, and back
 // leaves the detail view rather than the site. The hub serves index.html for any
@@ -129,12 +178,49 @@ export default function App() {
 
   useEffect(() => {
     loadMe()
-    // Warmed here rather than left to Suspense, which requests the chunk only
-    // once a render reaches the detail view, itself waiting on /me. Without this
-    // the split trades its first paint for a full-page skeleton over the first
-    // node opened: 2.6s click-to-chart on 4G against 1.4s unsplit, 1.7s warm.
-    void loadDetail()
   }, [loadMe])
+
+  /**
+   * 图表 chunk（recharts 那 391KB，见上面 loadDetail）什么时候取：三条路，谁先到听谁的。
+   *
+   *   ① 开页就在详情页（书签、刷新、别人分享的链接）：立刻取 —— 它就是要画的那一块。
+   *   ② 列表画出来之后：交给浏览器挑空闲时机取。放在这里而不是挂载时取，是因为挂载那一刻
+   *      入口包、样式、`/api/me`、`/api/nodes` 都还在路上（实测 391KB 的图表 chunk 在
+   *      157ms 就起跑，和它们抢同一条链路）；列表已经在眼前了，它才没有别的事可挤。
+   *   ③ 指针或键盘落到某张卡片上（悬停、聚焦、触摸）：立刻取。真要打开一台机器的人，
+   *      鼠标按下去之前通常已经摸过那张卡片了，所以点开时它多半已经在本地。
+   *
+   * 代价写在明面上：列表出来不到一秒就点开的那一下，看到的会是骨架屏而不是空白 ——
+   * 换来的是**每个访客（包括从不点开任何一台机器的人）不再为一块用不上的图表代码付首屏带宽**。
+   */
+  const warmed = useRef(false)
+  const warmDetail = useCallback(() => {
+    warmed.current = true
+    void loadDetail()
+  }, [])
+  const listReady = nodes !== null
+  useEffect(() => {
+    if (warmed.current) return
+    if (open !== null) { warmDetail(); return }
+    if (!listReady) return
+    // 列表那一帧真的画出去之后才轮到这块 chunk：先连等两帧（第一帧的 rAF 回调还跑在
+    // 「列表即将上屏」之前，第二帧才是它已经在屏幕上了），再交给浏览器的空闲回调。
+    // 标签页不在前台时 rAF 会停住，切回来才补上——那时也正没人在点开任何一台机器。
+    let idle = 0
+    let second = 0
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        // Safari 到 18 才补上 requestIdleCallback：没有它就直接取，效果一样。
+        if (typeof requestIdleCallback === "function") idle = requestIdleCallback(warmDetail, { timeout: 2000 })
+        else warmDetail()
+      })
+    })
+    return () => {
+      cancelAnimationFrame(first)
+      cancelAnimationFrame(second)
+      if (idle) cancelIdleCallback(idle)
+    }
+  }, [open, listReady, warmDetail])
 
   // The status page was closed while this tab was open. `me` holds whatever it
   // reported at load, so it is re-queried; the effect below then directs an
@@ -232,9 +318,9 @@ export default function App() {
 
         {open !== null ? (
           !nodes ? (
-            <Skeleton className="h-96" />
+            <DetailSkeleton />
           ) : selected ? (
-            <Suspense fallback={<Skeleton className="h-96" />}>
+            <Suspense fallback={<DetailSkeleton />}>
               <NodeDetail node={selected} />
             </Suspense>
           ) : (
@@ -261,7 +347,7 @@ export default function App() {
           <>
             {/* 概览卡片行：设置里没选它时整个不挂载（不是藏起来），首屏与没有这个功能时一致。 */}
             {hasSummary(config.listTop) && <SummaryCards nodes={sorted} />}
-            <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} showTabs={hasGroupTabs(config.listTop)}
+            <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail} showTabs={hasGroupTabs(config.listTop)}
               latencyLines={config.pingLines}
               cardStyle={config.cardStyle}
               notes={config.serverNotes} />
@@ -303,12 +389,14 @@ function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | nu
 // without groups keeps the page it always had. The operator can also keep the
 // row off outright (theme setting `listTop`), which leaves the page as one
 // flat list.
-function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardStyle, notes }: {
+function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLines, cardStyle, notes }: {
   nodes: Node[]
   /** null is every node, "" the ungrouped. */
   group: string | null
   onGroup: (group: string | null) => void
   onOpen: (id: number) => void
+  /** 指针/键盘刚落到某一张卡片上：把详情那块 chunk 先取回来（见 App 的 warmDetail）。 */
+  onWarm: () => void
   showTabs: boolean
   /** 卡片延迟块要显示哪几条线路（ping 任务名，换行分隔）；空串 = 自动。 */
   latencyLines: string
@@ -358,11 +446,11 @@ function NodeList({ nodes, group, onGroup, onOpen, showTabs, latencyLines, cardS
       {nodes.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
       ) : cardStyle === "compact" ? (
-        <CompactList nodes={shown} onOpen={onOpen} />
+        <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} />
       ) : (
         <div className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
           {shown.map((n) => (
-            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} latencyLines={latencyLines} cardStyle={cardStyle} notes={notes} />
+            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} latencyLines={latencyLines} cardStyle={cardStyle} notes={notes} />
           ))}
         </div>
       )}

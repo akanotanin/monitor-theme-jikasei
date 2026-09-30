@@ -147,12 +147,14 @@ function Expanded({ node, span, onOpenDetail }: { node: Node; span: number; onOp
   )
 }
 
-function Row({ node, span, open, onToggle, onOpenDetail }: {
+function Row({ node, span, open, onToggle, onOpenDetail, onWarm }: {
   node: Node
   span: number
   open: boolean
   onToggle: () => void
   onOpenDetail: () => void
+  /** 摸到这一行就先取详情那块 chunk（与卡片同一个回调，见 App 的 warmDetail）。 */
+  onWarm?: () => void
 }) {
   const m = node.metrics
   // CPU 是 hub 直接给的百分比；内存、硬盘、流量都要自己按 used/total 算。流量按套餐口径
@@ -175,6 +177,9 @@ function Row({ node, span, open, onToggle, onOpenDetail }: {
         tabIndex={0}
         onClick={onToggle}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onToggle())}
+        onPointerOver={onWarm}
+        onFocus={onWarm}
+        onTouchStart={onWarm}
         className={`cursor-pointer outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 ${open ? "bg-muted/30" : ""}`}
       >
         {/* 名称列不写宽度、也不居中：定宽表把余量全给它，机器名长短不一时其余列纹丝不动。
@@ -236,7 +241,7 @@ function Row({ node, span, open, onToggle, onOpenDetail }: {
 }
 
 /** 紧凑形态的外壳：一张带边框的表，表头一行。展开的行由 CompactList 统一管开合。 */
-export function CompactList({ nodes, onOpen }: { nodes: Node[]; onOpen: (id: number) => void }) {
+export function CompactList({ nodes, onOpen, onWarm }: { nodes: Node[]; onOpen: (id: number) => void; onWarm?: () => void }) {
   const span = useSpan()
   // 一次只摊开一行：表格本来就密，同时摊开两块会把上下文冲散。
   const [open, setOpen] = useState<number | null>(null)
@@ -268,6 +273,7 @@ export function CompactList({ nodes, onOpen }: { nodes: Node[]; onOpen: (id: num
               open={open === n.id}
               onToggle={() => setOpen((cur) => (cur === n.id ? null : n.id))}
               onOpenDetail={() => onOpen(n.id)}
+              onWarm={onWarm}
             />
           ))}
         </tbody>
