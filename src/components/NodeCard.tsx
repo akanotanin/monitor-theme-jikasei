@@ -136,7 +136,7 @@ function MetaRow({ node }: { node: Node }) {
 /**
  * 详细档那三枚读数盒：实时速率 / 累计总量 / 剩余时间。一层浅底把它们与上下的网格分开，
  * 像仪表盘上嵌进去的读数窗——前两个对应「此刻」与「累计」，第三个上面是本机还剩多久、
- * 下面一行备注关时写到期日、备注开时换成价格与计费周期。
+ * 下面一行写到期日（备注改到标题行右端后，这里不再被价格顶掉）。
  */
 function InfoBox({ children }: { children: ReactNode }) {
   return (
@@ -173,7 +173,7 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
   onWarm?: () => void
   latencyLines: string
   cardStyle: "classic" | "latency" | "detailed" | "plain"
-  /** 「详细」形态的服务器备注清单（每行 `服务器名=备注`）；空串 = 关闭。 */
+  /** 服务器备注清单（每行 `服务器名=备注`）；空串 = 关闭。三种形态共用这一份。 */
   notes: string
 }) {
   const m = node.metrics
@@ -404,7 +404,7 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
           ) : (
             <>
               {/* 详细形态：网速、总量，加第三枚读数盒并排。第三枚上面一直是「剩余时间」，
-                  下面一行备注关时写到期日、备注开时换成「价格 / 周期」（到期日不再显示）。
+                  下面一行写到期日。
                   速率与总量各按上下行分两行；配色与另外两档同一套灰。下面照旧挂三网延迟。 */}
               <div className="mt-4 grid grid-cols-3 gap-2">
                 <InfoBox>
