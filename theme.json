@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.11.2",
+  "version": "1.12.0",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -62,7 +62,7 @@
       "key": "serverNotes",
       "label": "服务器备注",
       "default": "",
-      "help": "每行一台，写成「服务器名=备注1,备注2,备注3」，名字要和卡片上的一致；留空＝关闭，开启后卡片会多出备注标签，仅对详细形态起效。"
+      "help": "每行一台，写成「服务器名=备注1,备注2,备注3」（名字要和卡片上的一致）；留空＝关闭。详细卡片挂在名字下一行，延迟卡片挂在名字右侧。"
     },
     {
       "type": "title",

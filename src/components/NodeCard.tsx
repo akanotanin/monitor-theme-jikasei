@@ -213,8 +213,16 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
   // 简约档：结构、内容、位置与经典档完全一致，只换一套视觉处理——标签改用前景色、
   // 进度条压到 4px、底注降到 11px、名字加粗一档、格子间距收紧（见下方各处 plain 分支）。
   const plain = cardStyle === "plain"
-  // 备注只在「详细」档生效，且清单非空才算开——留空即关闭，这一档保持 1.5.0 的样子。
+  // 备注在「详细」与「延迟」两档生效，且清单非空才算开——留空即关闭，两档都保持原样。
   const remark = detailed && hasNotes(notes)
+  /**
+   * 「延迟」档的服务器备注：排在**标题行右侧**（首枚胶囊 + 「+N」，完整清单挂 title 悬停）。
+   * 这一档卡片最高，所以不给备注新开一行——用的就是标题行右边那片留白，实测卡片总高与
+   * 读数格上沿都与不开备注时逐像素相同（见 `tools/verify_card_styles.mjs` 的「延迟+备注」一组）。
+   */
+  const myTags = cardStyle === "latency" && hasNotes(notes) ? tagsFor(notes, node.name) : []
+  // 「+N」点开后展开完整清单：关闭时不占位（卡片与没有备注时逐像素相同），点开才长高。
+  const [tagsOpen, setTagsOpen] = useState(false)
   const price = priceText(node)
   const cycle = cycleText(node)
 
@@ -275,7 +283,51 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
         <Country node={node} />
         {/* 简约档只把名字加粗一档（参考站是 600），文字与位置照旧。 */}
         <h3 className={`truncate ${plain ? "font-semibold" : "font-medium"}`}>{node.name}</h3>
+        {/* 延迟档的备注：排在名字右边那片留白里——首枚胶囊 + 「+N」。
+            关闭时**零占位**（卡片总高与读数格上沿都与没有备注时逐像素相同）；点「+N」才把
+            完整清单摊在下面，悬停也能从 title 里看全。只有一个标签时没什么可展开的，就不挂控件。 */}
+        {myTags.length > 1 ? (
+          <button
+            type="button"
+            data-note-toggle=""
+            aria-expanded={tagsOpen}
+            title={myTags.join(" · ")}
+            // 卡片自己就是 role=button：Enter / 空格冒泡上去会被它当成「打开详情页」，
+            // 这里必须拦住，否则用键盘展开备注会顺手跳到详情页。
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") setTagsOpen(false) }}
+            onClick={(e) => { e.stopPropagation(); setTagsOpen((v) => !v) }}
+            className="ml-auto flex shrink-0 items-center gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <Badge variant="secondary" className="min-w-0 max-w-[9rem] shrink font-normal text-muted-foreground">
+              <span className="min-w-0 truncate">{myTags[0]}</span>
+            </Badge>
+            <span className="shrink-0 rounded-full px-1 text-[11px] text-muted-foreground">{tagsOpen ? "−" : `+${myTags.length - 1}`}</span>
+          </button>
+        ) : myTags.length === 1 ? (
+          <Badge
+            variant="secondary"
+            className="ml-auto min-w-0 max-w-[9rem] shrink font-normal text-muted-foreground"
+            title={myTags[0]}
+          >
+            <span className="min-w-0 truncate">{myTags[0]}</span>
+          </Badge>
+        ) : null}
       </div>
+      {/* 点开后摊出来的完整清单：写法与「详细」档那一行同一套，关闭时不渲染、不占位。 */}
+      {tagsOpen && myTags.length > 1 && (
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1">
+          {myTags.map((tag, i) => (
+            <Badge
+              key={`${i}-${tag}`}
+              variant="secondary"
+              className="min-w-0 max-w-full shrink font-normal"
+              title={tag}
+            >
+              <span className="min-w-0 truncate">{tag}</span>
+            </Badge>
+          ))}
+        </div>
+      )}
 
       {/* One layout for both states: a disconnected node still knows its
           cores, memory, disk size and traffic totals, and showing those with
