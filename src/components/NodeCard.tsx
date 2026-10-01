@@ -218,6 +218,21 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
   const price = priceText(node)
   const cycle = cycleText(node)
 
+  // 卡片底部那一行网络：经典、简约、延迟三档共用**同一个节点**——一行两段，
+  // 左边实时速率（前景色）、右边累计总量（弱化灰），上面一条分隔线；箭头用文字
+  // ↓ ↑ 而不是图标，这样整段能原样复制成「↓ 88 B/s ↑ 312 B/s」。
+  // 延迟档原本是「上下行各一组、组内用分隔点连起来」的两端式，按要求与经典/简约
+  // 看齐后改成这条；三档同一个节点也是护栏里「逐项相同」那条等价断言的前提。
+  // `data-net` 是给护栏认这一行的锚点（原来的判据按 2×2 那格的类名找，改版后会失配）。
+  const netRow = (
+    <div data-net="row" className="tnum mt-3 flex items-center justify-between gap-2 border-t pt-2.5 text-xs">
+      <span className="truncate">{m ? `↓ ${rate(m.net_rx)} ↑ ${rate(m.net_tx)}` : "—"}</span>
+      <span className="truncate text-muted-foreground">
+        {`↓ ${bytes(node.total_rx)} ↑ ${bytes(node.total_tx)}`}
+      </span>
+    </div>
+  )
+
   return (
     <Card
       onClick={onOpen}
@@ -289,37 +304,12 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
           </div>
 
           {cardStyle === "classic" || cardStyle === "plain" ? (
-            /* 网络这一块照参考站：**一行**——实时速率在左（前景色）、累计总量在右（弱化灰），
-               上面一条分隔线；箭头用文字（↓ ↑）而不是图标，跟参考站一致，也才能整段复制成
-               「↓ 88 B/s ↑ 312 B/s」。不含延迟，也就不发延迟请求。
-               `data-net` 是给护栏认这一行的锚点（原来的判据按 2×2 那格的类名找，改版后会失配）。 */
-            <div data-net="row" className="tnum mt-3 flex items-center justify-between gap-2 border-t pt-2.5 text-xs">
-              <span className="truncate">{m ? `↓ ${rate(m.net_rx)} ↑ ${rate(m.net_tx)}` : "—"}</span>
-              <span className="truncate text-muted-foreground">
-                {`↓ ${bytes(node.total_rx)} ↑ ${bytes(node.total_tx)}`}
-              </span>
-            </div>
+            netRow
           ) : cardStyle === "latency" ? (
             <>
-              {/* 两个方向各一组、左右各占一端（下行在左、上行在右，与经典形态的读法一致），
-                  组内「实时速率 · 累计总量」用一枚分隔点连起来；颜色沿用原本一套：实时速率用
-                  前景色，累计总量与箭头、分隔点都用弱化灰。 */}
-              {/* 这一组紧接在上面的用量格之后，横线挪到它下面（见 Latency 的边框），
-                  由那条线把「速率 · 总量」与下面的三网延迟分开。 */}
-              <div className="mt-4 flex items-center justify-between gap-x-3 text-xs">
-                <span className="tnum inline-flex items-center gap-1.5 whitespace-nowrap">
-                  <ArrowDown className="size-3 shrink-0 text-muted-foreground" />
-                  {m ? rate(m.net_rx) : "—"}
-                  <span className="text-muted-foreground">·</span>
-                  <span className="text-muted-foreground">{bytes(node.total_rx)}</span>
-                </span>
-                <span className="tnum inline-flex items-center gap-1.5 whitespace-nowrap">
-                  <ArrowUp className="size-3 shrink-0 text-muted-foreground" />
-                  {m ? rate(m.net_tx) : "—"}
-                  <span className="text-muted-foreground">·</span>
-                  <span className="text-muted-foreground">{bytes(node.total_tx)}</span>
-                </span>
-              </div>
+              {/* 延迟档底部与经典/简约同一行版式（就是上面那同一个 netRow 节点），
+                  分隔线由它自己的 border-t 画在上面，三网延迟再从下面那条线开始。 */}
+              {netRow}
               {/* 三网延迟：每条线路一行，数据来自 hub 的 ping 历史（详见 Latency.tsx）。 */}
               <LatencyPanel node={node} lines={latencyLines} />
             </>
