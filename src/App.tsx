@@ -321,7 +321,9 @@ export default function App() {
             <DetailSkeleton />
           ) : selected ? (
             <Suspense fallback={<DetailSkeleton />}>
-              <NodeDetail node={selected} />
+              {/* 整页详情与紧凑展开里是同一个组件：备注清单也要一起给它，
+                  否则「展开里有、点进去没有」会显得不一致。 */}
+              <NodeDetail node={selected} notes={config.serverNotes} />
             </Suspense>
           ) : (
             <p className="py-16 text-center text-sm text-muted-foreground">
@@ -447,7 +449,7 @@ function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLine
       {nodes.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
       ) : cardStyle === "compact" ? (
-        <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} />
+        <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} notes={notes} />
       ) : (
         <div className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
           {shown.map((n) => (

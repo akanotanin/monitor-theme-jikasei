@@ -1,16 +1,20 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts"
 
+import { Info } from "lucide-react"
+
 import { ChartTooltip, PingTooltip } from "@/components/ChartTooltip"
+import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Country, deployed } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, osName, rate, timeTicks, uptime,
 } from "@/lib/format"
+import { hasNotes, tagsFor } from "@/lib/site-settings"
 
 type Point = {
   ts: number
@@ -147,13 +151,31 @@ function Fact({ label, value }: { label: string; value?: string | number | null 
   )
 }
 
-export function NodeDetail({ node, embedded = false, onOpenDetail }: {
+export function NodeDetail({ node, embedded = false, onOpenDetail, notes = "" }: {
   node: Node
   /** 紧凑形态点开一行时的就地渲染：省掉身份行与规格，直接落在延迟上，高度写死。 */
   embedded?: boolean
   /** 就地展开时通往整页详情的口子。不传就不画那个链接。 */
   onOpenDetail?: () => void
+  /** 服务器备注清单（与卡片形态同一份站点配置）；空串 = 关闭。 */
+  notes?: string
 }) {
+  // 备注收在这一行右端那枚小图标里（浮层）。清单为空 = 关闭：整行与没有备注时逐像素相同。
+  const noteTags = hasNotes(notes) ? tagsFor(notes, node.name) : []
+  const [peekOpen, setPeekOpen] = useState(false)
+  const peekRef = useRef<HTMLSpanElement | null>(null)
+  // 摊开时点别处 / Esc 收起（与「延迟」档那枚同一个做法）。
+  useEffect(() => {
+    if (!peekOpen) return
+    const onDown = (e: PointerEvent) => {
+      const el = e.target
+      if (!(el instanceof HTMLElement) || !peekRef.current?.contains(el)) setPeekOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPeekOpen(false) }
+    document.addEventListener("pointerdown", onDown)
+    document.addEventListener("keydown", onKey)
+    return () => { document.removeEventListener("pointerdown", onDown); document.removeEventListener("keydown", onKey) }
+  }, [peekOpen])
   // 就地展开只讲延迟（那一格点开就是为了看延迟），所以页签默认落在延迟而不是资源。
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>(embedded ? "latency" : "resources")
   // Each tab keeps its own range: a 7-day trend and a 1-hour trace answer
@@ -409,11 +431,57 @@ export function NodeDetail({ node, embedded = false, onOpenDetail }: {
               削峰
             </label>
           )}
-          {/* 就地展开时，通往整页详情的口子仍在：延迟是这一格的主角，规格与四张资源图在那边。 */}
-          {embedded && onOpenDetail && (
-            <button onClick={onOpenDetail} className="ml-auto text-xs text-muted-foreground transition-colors hover:text-foreground">
-              完整详情 ›
-            </button>
+          {/* 备注收在这一行右端的一枚小图标里（悬停或点一下摊开，点别处 / Esc 收起）——
+              与「延迟」档同一套语言，不摊开时这一行与没有备注时逐像素相同。
+              「完整详情 ›」紧跟在它右边：两个入口同处行右端，视线一个落点。 */}
+          {(noteTags.length > 0 || (embedded && onOpenDetail)) && (
+            <span className="ml-auto flex min-w-0 items-center gap-x-4 gap-y-1">
+              {noteTags.length > 0 && (
+                <span
+                  ref={peekRef}
+                  className="relative inline-flex items-center"
+                  onPointerEnter={() => setPeekOpen(true)}
+                  onPointerLeave={() => setPeekOpen(false)}
+                >
+                  <button
+                    data-note-popover
+                    aria-expanded={peekOpen}
+                    aria-label={`服务器备注：${noteTags.join("、")}`}
+                    onClick={(e) => {
+                      // 这一块本身在展开行里，点它不该连带开合那一行。
+                      e.stopPropagation()
+                      setPeekOpen((open) => !open)
+                    }}
+                    // 只拦「激活键」的冒泡（别让 Enter 顺带开合这一行、跳详情页）；
+                    // ★Esc 必须放它上去——早先这里是无条件 stopPropagation，焦点在图标上按 Esc
+                    // 关不掉浮层（护栏「Esc：收起」当场报红，是真问题不是测试问题）。
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation() }}
+                    className="inline-flex text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Info className="size-3.5" />
+                  </button>
+                  {peekOpen && (
+                    <span
+                      data-note-panel
+                      role="tooltip"
+                      // 宽度上限用固定 px：这一组是内容尺寸容器，百分比上限会被解析成很小的值（手机上标签会被压成一个字）。
+                      className="absolute top-5 right-0 z-20 flex w-max max-w-[16rem] flex-wrap gap-1 rounded-md border bg-card px-2 py-1.5 shadow-md"
+                    >
+                      {noteTags.map((tag, i) => (
+                        <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
+                          <span className="min-w-0 truncate">{tag}</span>
+                        </Badge>
+                      ))}
+                    </span>
+                  )}
+                </span>
+              )}
+              {embedded && onOpenDetail && (
+                <button onClick={onOpenDetail} className="text-xs text-muted-foreground transition-colors hover:text-foreground">
+                  完整详情 ›
+                </button>
+              )}
+            </span>
           )}
         </div>
       </div>

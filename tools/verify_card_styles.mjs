@@ -486,9 +486,11 @@ const moveAway = async () => hover(4, 4)
     JSON.stringify(closed.btn) + ' / 浮层 ' + (closed.panel ? '在' : '不在'))
   // ★两个坐标别混用：btn.mid 是视口坐标，gridTop 是「相对卡片上沿」的偏移 —— 直接比会得出
   // 「控件在读数格下面」这种假红（第一版就是这么写的）。要么都换成视口坐标，要么都换相对值。
+  // 判的是「贴着右上角」，不是「与内边距分毫不差」：卡片内边距 16px，两套皮肤实测 17 / 18px
+  // （皮肤自带描边与位移类），所以给到 3px 容差，别为这两像素去改代码。
   check('延迟+浮层：控件贴在卡片右上角、且在读数格之上',
-    closed.btn !== null && Math.abs(closed.cardRight - closed.btn.r - 16) <= 1 && closed.btn.mid < closed.cardTop + closed.gridTop,
-    `卡右 ${closed.cardRight} / 控件右 ${closed.btn?.r} / 控件中线 ${closed.btn?.mid} vs 读数格上沿 ${closed.cardTop + closed.gridTop}`)
+    closed.btn !== null && Math.abs(closed.cardRight - closed.btn.r - 16) <= 3 && closed.btn.mid < closed.cardTop + closed.gridTop,
+    `卡右 ${closed.cardRight} / 控件右 ${closed.btn?.r}（差 ${closed.cardRight - (closed.btn?.r ?? 0)}px）/ 控件中线 ${closed.btn?.mid} vs 读数格上沿 ${closed.cardTop + closed.gridTop}`)
   check('延迟+浮层：标题行不再挂备注胶囊（备注只在浮层里）', closed.badges === 0, `胶囊 ${closed.badges} 枚`)
   check('延迟+浮层：默认状态与「没有备注」时逐像素相同（浮层不占位）',
     closed.cardH === base.cardH && closed.gridTop === base.gridTop && closed.rowH === base.rowH,
@@ -593,117 +595,163 @@ const moveAway = async () => hover(4, 4)
   check('详细：经典的四格不在', dom.netRow === 0 && dom.netGrid === 0, `一行 ${dom.netRow} / 四格 ${dom.netGrid}`)
 }
 
-/* 3b) 详细 + 服务器备注（备注开启）：到期位换价格、在线位让给备注标签 */
-{
-  const notes = '节点一=东京 · 三网优化\n节点二=备用机'
-  const { dom, ping } = await render({ cardStyle: 'detailed', serverNotes: notes }, 'detailed-notes')
-  check('详细+备注：备注标签渲染在第一行下方', dom.text.includes('东京 · 三网优化'), dom.text)
-  check('详细+备注：在线时长仍在（移到右侧）', /在线 /.test(dom.text), dom.text)
-  // 第三格拆成两行来断，别拿整卡文本去匹配 `¥12.50` ——符号被拆成单独一列之后，
-  // innerText 在符号与数字之间会多出一个换行（实测 `剩余 95 天 | ¥ | 12.50 / 月付`），
-  // 看着像布局坏了、其实是断言写死了「符号紧贴数字」这个旧排版。
-  const box3 = JSON.parse(await evalJS(`(() => {
-    const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
-    const box = [...card.querySelectorAll('[class*="bg-muted/60"]')][2]
-    return JSON.stringify({ lines: box ? box.innerText.split('\\n').map((s) => s.trim()).filter(Boolean) : [] })
-  })()`))
-  check('详细+备注：第三枚读数盒＝上面剩余时间、下面价格 / 周期',
-    box3.lines.length === 3 && box3.lines[0] === '剩余 95 天' && box3.lines[1] === '¥' && box3.lines[2] === '12.50 / 月付',
-    box3.lines.join(' | '))
-  check('详细+备注：到期日（日期那一行）不再显示', !/2027-01-01/.test(dom.text), dom.text)
-  check('详细+备注：三枚读数盒与三网延迟照旧', dom.infoBox === 3 && dom.polylines === 3 * dom.cards,
-    `盒 ${dom.infoBox} / polyline ${dom.polylines}`)
-  check('详细+备注：每节点恰好 1 次延迟请求', ping === 2, `实测 ${ping} 次`)
-  // 货币符号单独占一列（不缩进在数字里），左边缘要和上面「剩余时间」前的时钟图标对齐。
-  const align = JSON.parse(await evalJS(`(() => {
-    const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
-    const box = [...card.querySelectorAll('[class*="bg-muted/60"]')][2]
-    const clock = box.querySelector('svg')
-    const sym = [...box.querySelectorAll('span')].find((s) => s.children.length === 0 && s.textContent.trim() === '¥')
-    if (!clock || !sym) return JSON.stringify({ ok: false })
-    return JSON.stringify({ ok: true, d: Math.round(sym.getBoundingClientRect().left - clock.getBoundingClientRect().left) })
-  })()`))
-  check('详细+备注：货币符号单独一列、与时钟图标左对齐', !!align.ok && Math.abs(align.d) <= 2, `左边缘差 ${align?.d}px`)
-  // 第三格两行同色：价格行是读数，不该被压成弱化灰（其余两格的第二行都是前景色）。
-  const colors = JSON.parse(await evalJS(`(() => {
-    const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
-    const boxes = [...card.querySelectorAll('[class*="bg-muted/60"]')]
-    const top = boxes[2].children[0].querySelector('span.tnum')
-    const amt = boxes[2].children[1].querySelector('span.tnum')
-    const ref = boxes[0].children[0].querySelector('span.tnum')
-    const col = (el) => el ? getComputedStyle(el).color : null
-    return JSON.stringify({ top: col(top), amt: col(amt), ref: col(ref) })
-  })()`))
-  check('详细+备注：第三格两行同色（价格行不再是弱化灰）',
-    !!colors.top && colors.top === colors.amt && colors.amt === colors.ref, JSON.stringify(colors))
-}
-{
-  // 备注只影响「详细」档：切到经典/延迟时清单存在也不改卡片形状。
-  const { dom } = await render({ cardStyle: 'classic', serverNotes: '节点一=东京 · 三网优化' }, 'classic-notes')
-  check('备注不影响经典档（仍是四格、不冒出读数盒与标签）',
-    dom.netGrid === 1 && dom.netRow === 0 && dom.infoBox === 0 && !dom.text.includes('东京 · 三网优化'), dom.text)
-}
-
-/* 3c) 详细 + 多枚标签：备注里用逗号分隔＝多枚独立胶囊（写法 `节点一=测试测试,222,333`）。
-   这一块的病根是「一枚胶囊里塞着带逗号的整串」——只看文本在不在抓不到，必须数胶囊。 */
-const TAGS_PROBE = `(() => {
+/* 3b) 「详细」档 + 服务器备注：备注挂在**标题行右端**（2026-10-02 起的落点）。
+   这一版的关键判据是「**不重排**」：以前备注开启会把价格挤进第三枚读数盒、把到期日藏起来，
+   现在这些位置一个都不许动 —— 在线时长仍在第二行左、价格仍在右、第三枚读数盒下面仍是到期日。 */
+const TITLE_PROBE = `JSON.stringify((() => {
   const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
-  const first = card ? card.querySelector('[data-slot="badge"]') : null
-  const wrap = first ? first.parentElement : null
-  const row = wrap ? wrap.parentElement : null
-  const list = wrap ? [...wrap.querySelectorAll('[data-slot="badge"]')] : []
-  const box = (el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.left), r: Math.round(r.right), y: Math.round(r.top) } }
-  const online = row ? [...row.querySelectorAll('span')].find((s) => /^在线 /.test(s.textContent.trim())) : null
-  return JSON.stringify({
-    n: list.length,
-    texts: list.map((b) => b.innerText.trim()),
-    boxes: list.map(box),
-    rowLeft: row ? Math.round(row.getBoundingClientRect().left) : null,
-    rowRight: row ? Math.round(row.getBoundingClientRect().right) : null,
-    onlineRight: online ? Math.round(online.getBoundingClientRect().right) : null,
-    onlineText: online ? online.textContent.trim() : null,
-  })
-})()`
+  if (!card) return { missing: true }
+  const h3 = card.querySelector('h3')
+  const row = h3 ? h3.parentElement : null
+  const badges = row ? [...row.querySelectorAll('[data-slot="badge"]')] : []
+  const rect = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left), r: Math.round(b.right), mid: Math.round(b.top + b.height / 2), w: Math.round(b.width) } }
+  const cRect = card.getBoundingClientRect()
+  const grid = card.querySelector('.grid.grid-cols-2')
+  const boxes = [...card.querySelectorAll('[class*="bg-muted/60"]')]
+  const row2 = card.querySelector('.grid.grid-cols-2')?.previousElementSibling ?? null
+  // ★别用「货币符号正则」去这一行里找价格：模板字面量里写的反斜杠美元会被吞成裸的美元号，
+  // 而美元号在正则里是「行尾」锚点，整个正则就退化成「匹配任何字符串」—— 第一版就这样拿到了
+  // 「在线时长」那一枚，报出「价格没贴右」的假红。直接取这一行的最后一枚 span（就是价格那截）。
+  // （注意：这段注释是写在页面侧的探针里的，别在这里写反引号 —— 会把外层模板字面量截断。）
+  const spans = row2 ? [...row2.querySelectorAll('span')] : []
+  const price = spans.length > 0 ? spans[spans.length - 1] : null
+  return {
+    cardH: Math.round(cRect.height),
+    cardTop: Math.round(cRect.top),
+    cardRight: Math.round(cRect.right),
+    rowH: row ? Math.round(row.getBoundingClientRect().height) : null,
+    name: h3 ? h3.innerText.trim() : null,
+    nameBox: h3 ? rect(h3) : null,
+    nameClipped: h3 ? h3.scrollWidth > h3.clientWidth + 1 : null,
+    badges: badges.map((b) => ({ text: b.innerText.trim(), ...rect(b) })),
+    gridTop: grid ? Math.round(grid.getBoundingClientRect().top - cRect.top) : null,
+    row2Text: row2 ? row2.innerText.replace(/\\n/g, ' | ') : null,
+    priceRight: price ? Math.round(price.getBoundingClientRect().right) : null,
+    priceText: price ? price.textContent.trim() : null,
+    row2Right: row2 ? Math.round(row2.getBoundingClientRect().right) : null,
+    box3: boxes[2] ? boxes[2].innerText.split('\\n').map((t) => t.trim()).filter(Boolean) : null,
+    boxes: boxes.length,
+    overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    text: card.innerText.replace(/\\n/g, ' | '),
+  }
+})())`
+
+let detailedBase = null
 {
-  const notes = '节点一=测试测试,222,333'
-  const { dom } = await render({ cardStyle: 'detailed', serverNotes: notes }, 'tags-three')
-  const b = JSON.parse(await evalJS(TAGS_PROBE))
-  const tops = [...new Set(b.boxes.map((x) => x.y))]
-  check('多标签：逗号分隔的备注挂成 3 枚独立胶囊', b.n === 3, `${b.n} 枚：${b.texts.join(' / ')}`)
-  check('多标签：每枚只装自己那一段（逗号不再糊进胶囊里）',
-    b.texts.join('|') === '测试测试|222|333' && !b.texts.some((t) => t.includes(',')), b.texts.join('|'))
-  check('多标签：三枚在同一行、互不重叠、间距一致',
-    tops.length === 1 && b.boxes.every((x, i) => i === 0 || x.x - b.boxes[i - 1].r === 4),
-    JSON.stringify(b.boxes))
-  check('多标签：末尾那枚没撞上右侧「在线时长」',
-    b.onlineRight !== null && b.boxes.at(-1).r <= b.onlineRight, `末枚右 ${b.boxes.at(-1)?.r} / 在线右 ${b.onlineRight}（${b.onlineText}）`)
-  check('多标签：「在线时长」仍贴右（与备注关时同一位置）',
-    b.onlineRight !== null && Math.abs(b.onlineRight - b.rowRight) <= 1, `在线右 ${b.onlineRight} / 行右 ${b.rowRight}`)
-  check('多标签：胶囊没越出卡片左边', b.boxes[0].x >= b.rowLeft, `${b.boxes[0].x} vs ${b.rowLeft}`)
-  check('多标签：卡片文本里仍是三段（不是带逗号的整串）', !dom.text.includes('测试测试,222,333'), dom.text)
+  await render({ cardStyle: 'detailed' }, 'detailed-base')
+  detailedBase = JSON.parse(await evalJS(TITLE_PROBE))
+  const { dom } = await render({ cardStyle: 'detailed', serverNotes: '节点一=测试测试,222,333' }, 'detailed-notes-title')
+  const b = JSON.parse(await evalJS(TITLE_PROBE))
+  // 空壳兜底 + **每条都带 length 判据**：拿不到标签时 `[].every(...)` 会恒真、`[0].x` 会抛，
+  // 两种毛病都要避掉（本文件里「反向自测时看不出一共该报几条」的坑复发过一次）。
+  const fb = b.badges?.[0] ?? { x: 0, r: 0, mid: null, w: 0, text: '' }
+  const fl = b.badges?.at(-1) ?? fb
+  const nm = b.nameBox ?? { x: 0, r: 0, mid: null, w: 0 }
+  check('详细+备注：三枚标签都挂在标题行右端（同一行、跟着名字）',
+    b.badges?.length === 3 && b.badges.map((x) => x.text).join('|') === '测试测试|222|333',
+    b.badges?.map((x) => x.text).join('|') || '(没有标签)')
+  check('详细+备注：标签与名字在同一水平线上',
+    b.badges?.length > 0 && b.badges.every((x) => Math.abs(x.mid - nm.mid) <= 1),
+    `名字中线 ${nm.mid} / 标签 ${b.badges?.map((x) => x.mid).join(',')}`)
+  check('详细+备注：标签排在名字右边、贴卡片右沿（不与名字重叠）',
+    b.badges?.length === 3 && fb.x >= nm.r && Math.abs(b.cardRight - fl.r - 16) <= 3,
+    `名字右 ${nm.r} / 首枚左 ${fb.x} / 末枚右 ${fl.r} / 卡右 ${b.cardRight}`)
+  check('详细+备注：卡片总高与标题行高都与不开备注时逐像素相同（这一版不重排、不加高）',
+    b.cardH === detailedBase.cardH && b.rowH === detailedBase.rowH && b.gridTop === detailedBase.gridTop,
+    `高 ${b.cardH}/${detailedBase.cardH} 行高 ${b.rowH}/${detailedBase.rowH} 格上沿 ${b.gridTop}/${detailedBase.gridTop}`)
+  // ★这条是这次改动的核心：老版会把价格挤进第三枚读数盒、把到期日藏起来。
+  check('详细+备注：在线时长仍在第二行左、价格仍在右（没有重排）',
+    /^在线 /.test(b.row2Text ?? '') && /¥12\.50 \/ 月付/.test(b.row2Text ?? '')
+      && (b.priceText ?? '').includes('¥12.50') && b.priceRight !== null && Math.abs(b.priceRight - b.row2Right) <= 1,
+    `第二行「${b.row2Text}」/ 末枚 span「${b.priceText}」右 ${b.priceRight} vs 行右 ${b.row2Right}`)
+  check('详细+备注：第三枚读数盒下面**仍是到期日**（不再是价格）',
+    Array.isArray(b.box3) && b.box3[0] === '剩余 95 天' && b.box3[1] === '2027-01-01',
+    (b.box3 ?? []).join(' | '))
+  check('详细+备注：三枚读数盒与三网延迟照旧', b.boxes === 3 && dom.polylines === 3 * dom.cards,
+    `盒 ${b.boxes} / polyline ${dom.polylines}`)
+  check('详细+备注：正文里没有把三枚标签糊成一串（逗号不再进正文）',
+    !b.text.includes('测试测试,222,333'), b.text)
 }
 {
-  // 排不下要折行，而不是把胶囊压扁或顶出卡片；折行时「在线时长」仍贴右。
+  // 单枚：一枚就是一枚。
+  const { dom } = await render({ cardStyle: 'detailed', serverNotes: '节点一=东京 · 三网优化' }, 'detailed-notes-one')
+  const b = JSON.parse(await evalJS(TITLE_PROBE))
+  check('详细+备注：单枚备注就一枚胶囊（不因为改功能多出来）',
+    b.badges.length === 1 && b.badges[0].text === '东京 · 三网优化', b.badges.map((x) => x.text).join('/'))
+  check('详细+备注：单枚时卡片高度也不变', b.cardH === detailedBase.cardH, `${b.cardH}/${detailedBase.cardH}`)
+  check('详细+备注：单枚时三网延迟与请求数照旧', dom.polylines === 3 * dom.cards, `polyline ${dom.polylines}`)
+}
+{
+  // 超长清单（六枚）：标题行是**不能换行**的，所以标签区要能被限宽/截断，
+  // 判据是「行高不变 + 不横向溢出 + 名字还在」——不能靠把标签压扁或把卡片撑宽来过关。
   const notes = `节点一=${Array.from({ length: 6 }, (_, i) => `标签${i + 1}号`).join(',')}`
-  const { dom } = await render({ cardStyle: 'detailed', serverNotes: notes }, 'tags-wrap')
-  const b = JSON.parse(await evalJS(TAGS_PROBE))
-  const tops = [...new Set(b.boxes.map((x) => x.y))]
-  check('多标签：排不下时折行（六枚都在、分了多行）', b.n === 6 && tops.length >= 2, `行 ${tops.length} / 枚 ${b.n}`)
-  check('多标签：折行后「在线时长」仍贴右', b.onlineRight !== null && Math.abs(b.onlineRight - b.rowRight) <= 1,
-    `在线右 ${b.onlineRight} / 行右 ${b.rowRight}`)
-  check('多标签：折行后没有横向溢出（每枚都在行内、不撞在线时长）',
-    b.boxes.every((x) => x.x >= b.rowLeft - 1 && x.r <= b.onlineRight + 1), JSON.stringify(b.boxes))
-  check('多标签：整体不超过卡片（备注区不撑破卡片）', b.boxes.every((x) => x.r <= b.rowRight + 1), JSON.stringify(b.boxes))
-  check('多标签：长清单下网速那两块都不在（只是多了标签）', dom.netRow === 0 && dom.netGrid === 0, `一行 ${dom.netRow} / 四格 ${dom.netGrid}`)
+  await render({ cardStyle: 'detailed', serverNotes: notes }, 'detailed-notes-many')
+  const b = JSON.parse(await evalJS(TITLE_PROBE))
+  check('详细+备注（六枚）：标题行不换行、卡片高度与标题行高都不变',
+    b.rowH === detailedBase.rowH && b.cardH === detailedBase.cardH,
+    `行高 ${b.rowH}/${detailedBase.rowH} 卡片 ${b.cardH}/${detailedBase.cardH}`)
+  check('详细+备注（六枚）：没有横向溢出、标签没越出卡片右沿',
+    b.overflowX === false && b.badges?.length > 0 && b.badges.every((x) => x.r <= b.cardRight + 1), `溢出 ${b.overflowX} / 枚 ${b.badges?.length}`)
+  check('详细+备注（六枚）：名字仍在（没被标签挤没）',
+    (b.nameBox?.w ?? 0) > 0 && (b.badges?.length ?? 0) > 0 && b.badges[0].x >= b.nameBox.r,
+    `名字宽 ${b.nameBox?.w} / 首枚左 ${b.badges?.[0]?.x}`)
 }
 {
-  // 没写逗号的单枚备注不许变成多枚，也不许换行。
-  const { dom } = await render({ cardStyle: 'detailed', serverNotes: '节点一=东京 · 三网优化' }, 'tags-one')
-  const b = JSON.parse(await evalJS(TAGS_PROBE))
-  check('单标签：一枚就是一枚（不因为改功能而多出胶囊）', b.n === 1 && b.texts[0] === '东京 · 三网优化', `${b.n} 枚：${b.texts.join('/')}`)
-  check('单标签：仍与左侧对齐、在线时长贴右', b.boxes[0].x >= b.rowLeft && Math.abs(b.onlineRight - b.rowRight) <= 1,
-    `X ${b.boxes[0].x}/${b.rowLeft} 在线右 ${b.onlineRight}/${b.rowRight}`)
-  check('单标签：卡片文本照旧（备注关这一档没被这次改动碰到）', /剩余 95 天/.test(dom.text), dom.text)
+  // 手机窄屏：同样要有、同样不许溢出。
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1200, deviceScaleFactor: 1, mobile: true })
+  await render({ cardStyle: 'detailed', serverNotes: '节点一=测试测试,222' }, 'detailed-notes-mobile')
+  const b = JSON.parse(await evalJS(TITLE_PROBE))
+  check('详细+备注（手机 390）：标签在标题行右端、两枚都在',
+    b.badges.length === 2 && b.badges.map((x) => x.text).join('|') === '测试测试|222', b.badges.map((x) => x.text).join('|'))
+  check('详细+备注（手机 390）：无横向溢出、卡片不高、名字仍在',
+    b.overflowX === false && b.rowH === 24 && b.nameBox !== null && b.nameBox.w > 0,
+    `溢出 ${b.overflowX} / 行高 ${b.rowH} / 名字宽 ${b.nameBox?.w}`)
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1200, deviceScaleFactor: 1, mobile: false })
+}
+{
+  // ★手机窄屏 + **长名字**：这条是现站真机验收抓出来的（本文件的桩原先只有短名字，手机那条用例恒过）。
+  // 判据不是「名字不许截断」（长名字本来就可能截断），而是**开备注不许让名字变短**：
+  // 名字占的宽度与截断状态，开备注 / 不开备注必须完全一样。
+  // 名字临时改长（英文长名与现站那几台同量级），不改桩数据——桩里多添一台会把别的「3 台」断言一起带红。
+  const LONG_NAME = 'Node Alpha Long Name'
+  const rename = () => evalJS(`(() => {
+    const c = [...document.querySelectorAll('[role=button]')].find((el) => /CPU/.test(el.innerText))
+    const h = c && c.querySelector('h3')
+    if (!h) return false
+    h.textContent = ${JSON.stringify(LONG_NAME)}
+    return true
+  })()`)
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1400, deviceScaleFactor: 1, mobile: true })
+  await render({ cardStyle: 'detailed' }, 'detailed-longname-base')
+  await rename(); await sleep(150)
+  const base = JSON.parse(await evalJS(TITLE_PROBE))
+  await render({ cardStyle: 'detailed', serverNotes: '节点一=三网优化,备用,流媒体解锁' }, 'detailed-longname-notes')
+  await rename(); await sleep(150)
+  const on = JSON.parse(await evalJS(TITLE_PROBE))
+  check('手机 390（长名字）：三枚标签都挂上了', on.badges?.length === 3, `${on.badges?.length ?? 0} 枚`)
+  // 宽度给 1px 容差：标签那格的上限是百分比（40% of 311px），字宽会有亚像素取整；
+  // 真正的判据是**截断状态一致**（名字没被挤断），以及差值不超过这 1px 的取整噪声。
+  check('手机 390（长名字）：开备注后名字没被挤短（宽度差 ≤1px 且截断状态相同）',
+    (base.nameBox?.w ?? 0) > 0 && Math.abs(base.nameBox.w - on.nameBox.w) <= 1 && base.nameClipped === on.nameClipped,
+    `关 ${base.nameBox?.w}px/截${base.nameClipped} vs 开 ${on.nameBox?.w}px/截${on.nameClipped}`)
+  check('手机 390（长名字）：卡片不高、标题行不换行、无横向溢出',
+    on.rowH === 24 && on.cardH === base.cardH && on.overflowX === false,
+    `行高 ${on.rowH} 卡片 ${on.cardH}/${base.cardH} 溢出 ${on.overflowX}`)
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1200, deviceScaleFactor: 1, mobile: false })
+}
+{
+  // 备注只影响「详细」档：经典/简约两档不冒出标签；「延迟」档的标签只在浮层里，正文里没有。
+  const classic = await render({ cardStyle: 'classic', serverNotes: '节点一=东京 · 三网优化' }, 'classic-notes')
+  check('备注不影响经典档（仍是四格、不冒出标签）',
+    classic.dom.netGrid === 1 && classic.dom.netRow === 0 && classic.dom.infoBox === 0 && !classic.dom.text.includes('东京 · 三网优化'),
+    classic.dom.text)
+  const plain = await render({ cardStyle: 'plain', serverNotes: '节点一=东京 · 三网优化' }, 'plain-notes')
+  check('备注不影响简约档（仍是那一行两段、不冒出标签）',
+    plain.dom.netRow === 1 && plain.dom.polylines === 0 && !plain.dom.text.includes('东京 · 三网优化'), plain.dom.text)
+  await render({ cardStyle: 'latency', serverNotes: '节点一=东京 · 三网优化' }, 'latency-notes-body')
+  const lat = JSON.parse(await evalJS(TITLE_PROBE))
+  check('「延迟」档的备注不进正文（只在右上角浮层里，标题行不挂胶囊）',
+    lat.badges.length === 0 && !lat.text.includes('东京 · 三网优化'), lat.badges.map((x) => x.text).join('/'))
 }
 
 /* 4) 旧值 detail 必须迁到延迟，不能掉回经典 */
