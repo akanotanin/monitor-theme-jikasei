@@ -25,9 +25,10 @@ export type ThemeConfig = {
    */
   farmUrl: string
   /**
-   * 卡片形态：classic = 网络两行、不含延迟；plain = 与 classic 同版式、只换一套「读数窗」
-   * 视觉处理（标签提亮、条压细、底注变小）；latency = 网络单行 + 三网延迟；detailed = 再加
-   * 在线时长、价格与到期；compact = 一行一台的表格（列随屏宽收放，密度最高）。
+   * 卡片形态：classic = 速率与总量各一行（2×2 四格）、不含延迟；plain = 网络合成一行，
+   * 读数窗另换一套视觉处理（标签提亮、条压细、底注变小）、不含延迟；latency = 网络一行 +
+   * 三网延迟；detailed = 再加在线时长、价格与到期；compact = 一行一台的表格（密度最高）。
+   * 默认是 plain（站长的选择，2026-10-01 起）。
    */
   cardStyle: "classic" | "latency" | "detailed" | "plain" | "compact"
   /**
@@ -52,7 +53,7 @@ export const DEFAULTS: ThemeConfig = {
   // 想固定指向别处（包括别人的公开那座）就填地址，想一律不显示就填 `off`。
   farmUrl: "",
   // 默认「经典」：紧凑、不发延迟请求；想带三网延迟的在后台切「延迟」，机器多想一屏看全的切「紧凑」。
-  cardStyle: "classic",
+  cardStyle: "plain",
   // 默认「都不显示」：这两行都是「一眼看全站」的补充，站点本来就有每台机器的卡片；
   // 关着时它们整个不挂载，首屏与没有这个功能时一模一样。
   listTop: "none",

@@ -22,8 +22,8 @@ function eq(got: unknown, want: unknown, what: string) {
 // ── cardStyle：旧名迁移 ───────────────────────────────────────────────
 eq(cardStyleOf("detail"), "latency", '旧值 "detail" 迁到 "latency"')
 for (const v of ["classic", "latency", "detailed", "plain", "compact"]) eq(cardStyleOf(v), v, `cardStyle 保留 ${v}`)
-eq(cardStyleOf("nope"), "classic", "cardStyle 认不出的值回落经典")
-eq(cardStyleOf(undefined), "classic", "cardStyle 没存过回落经典")
+eq(cardStyleOf("nope"), "plain", "cardStyle 认不出的值回落「简约」（默认档）")
+eq(cardStyleOf(undefined), "plain", "cardStyle 没存过回落「简约」（默认档）")
 
 // ── listTop：六选一本身就认 ───────────────────────────────────────────
 const TOPS = ["none", "groups", "summary", "budget", "both", "bothBudget"] as const

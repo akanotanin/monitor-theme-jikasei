@@ -187,6 +187,27 @@ const PROBE = `JSON.stringify((() => {
     allCards: all.length,
     grid: document.querySelector('.grid')?.className ?? '',
     netRow: q('[data-net="row"]'),
+    netGrid: q('[data-net="grid"]'),
+    // 经典档底部那 2×2 四格：格子数 / 栅格列数 / 有没有 svg（箭头应该是文字）/ 两端配色。
+    // 找不到时返回**空壳**而不是 null：否则旧构建上第一条断言就抛 TypeError，
+    // 把后面几十条一起带走，反向自测时看不出到底该报哪些（这条踩过）。
+    netG: (() => {
+      const g = first ? first.querySelector('[data-net="grid"]') : null
+      const empty = { cells: 0, cols: 0, svg: 0, text: '', mt: '', pt: '', fs: '', border: '', rateColor: null, arrowColor: null, totalColor: null }
+      if (!g) return empty
+      const cs = (el) => el ? getComputedStyle(el) : null
+      const cells = [...g.children]
+      return {
+        cells: cells.length,
+        cols: cs(g).gridTemplateColumns.split(' ').filter(Boolean).length,
+        svg: g.querySelectorAll('svg').length,
+        text: g.innerText.replace(/\\n/g, ' | '),
+        mt: cs(g).marginTop, pt: cs(g).paddingTop, fs: cs(g).fontSize, border: cs(g).borderTopWidth,
+        rateColor: cells[0] ? cs(cells[0]).color : null,
+        arrowColor: cells[0] && cells[0].children[0] ? cs(cells[0].children[0]).color : null,
+        totalColor: cells[2] ? cs(cells[2]).color : null,
+      }
+    })(),
     // 卡片底部那一行网络（经典/简约档）：子元素数、有没有 svg 图标、左右两端的配色与间距。
     net: (() => {
       const row = first ? first.querySelector('[data-net="row"]') : null
@@ -312,10 +333,8 @@ const check = (name, ok, detail) => { results.push({ name, ok, detail }); consol
 
 /* 1) 经典（顺带量一遍它的四项视觉值，作为简约档那几条的对照——两边都钉住才叫「只换了这一套」） */
 let classicStyle = null
-let classicText = ''
 {
   const { dom, ping } = await render({ cardStyle: 'classic' }, 'classic')
-  classicText = dom.text
   classicStyle = JSON.parse(await evalJS(PLAIN_PROBE))
   check('卡片壳：圆角 10px（rounded-lg；参考站是这个，不是 rounded-xl 的 14px）',
     classicStyle.radius === '10px', classicStyle.radius)
@@ -328,20 +347,21 @@ let classicText = ''
   check('桩数据已落到卡片（CPU 13% / 内存 1.00 / 2.00 GB / 总量 1.00 TB 与 256 GB）',
     /1[23]%/.test(dom.text) && /1\.00 \/ 2\.00 GB/.test(dom.text) && /1\.00 TB/.test(dom.text) && /256 GB/.test(dom.text),
     dom.text)
-  check('经典：底部网络那一行在', dom.netRow === 1, `找到 ${dom.netRow} 个`)
-  // ── 底部上传下载照参考站：一行两段（左实时速率 / 右累计总量）、文字箭头、一条分隔线。
-  check('经典：底部网络收成一行两段（不再是原来的 2×2 四格）',
-    dom.net !== null && dom.net.children === 2 && dom.net.justify === 'space-between',
-    `子元素 ${dom.net?.children} / 对齐 ${dom.net?.justify}`)
-  check('经典：底部用文字箭头 ↓↑（不再是 svg 图标）',
-    dom.net !== null && dom.net.svg === 0 && /^↓ /.test(dom.net.text),
-    `svg ${dom.net?.svg} ／ 文本 ${dom.net?.text}`)
-  check('经典：左边实时速率是前景色、右边累计是弱化灰',
-    dom.net !== null && dom.net.leftColor !== dom.net.rightColor,
-    `${dom.net?.leftColor} vs ${dom.net?.rightColor}`)
-  check('经典：分隔线与间距照参考站（mt 12px / pt 10px / 12px 字号）',
-    dom.net !== null && dom.net.marginTop === '12px' && dom.net.paddingTop === '10px' && dom.net.font === '12px',
-    JSON.stringify(dom.net && { mt: dom.net.marginTop, pt: dom.net.paddingTop, fs: dom.net.font }))
+  // ── 经典档底部 = **原本的 2×2 四格**（速率一行、总量一行），与「简约」那条一行两段不是一回事。
+  check('经典：底部是 2×2 四格，不是简约那条一行两段',
+    dom.netGrid === 1 && dom.netRow === 0, `四格 ${dom.netGrid} / 一行 ${dom.netRow}`)
+  check('经典：两列四格、箭头是文字不是图标',
+    dom.netG.cells === 4 && dom.netG.cols === 2 && dom.netG.svg === 0,
+    JSON.stringify({ cells: dom.netG.cells, cols: dom.netG.cols, svg: dom.netG.svg }))
+  // 归一化要连单位一起吃掉（KB/s、GB、TB 会随数据变），只留「箭头 + 数值」的次序与空格。
+  check('经典：四格文案＝↓ 速率 / ↑ 速率 / ↓ 总量 / ↑ 总量（箭头与数值之间有空格）',
+    dom.netG.text.replace(/[0-9][0-9.,]*(\s*[A-Za-z/]+)?/g, '#') === '↓ # | ↑ # | ↓ # | ↑ #', dom.netG.text)
+  check('经典：速率那行是前景色、箭头弱化；总量那行整格弱化',
+    dom.netG.arrowColor !== dom.netG.rateColor && dom.netG.totalColor === dom.netG.arrowColor,
+    JSON.stringify({ arrow: dom.netG.arrowColor, rate: dom.netG.rateColor, total: dom.netG.totalColor }))
+  check('经典：四格的分隔线与间距（mt 16px / pt 16px / 12px 字号 / 一道分隔线）',
+    dom.netG.mt === '16px' && dom.netG.pt === '16px' && dom.netG.fs === '12px' && dom.netG.border === '1px',
+    JSON.stringify({ mt: dom.netG.mt, pt: dom.netG.pt, fs: dom.netG.fs, border: dom.netG.border }))
   check('经典：没有延迟块', dom.polylines === 0, `polyline ${dom.polylines}`)
   check('经典：不发延迟请求', ping === 0, `实测 ${ping} 次`)
   check('经典：无状态点、无读数盒', dom.dots === 0 && dom.infoBox === 0, `点 ${dom.dots} / 盒 ${dom.infoBox}`)
@@ -357,10 +377,14 @@ let classicText = ''
 {
   const { dom, ping } = await render({ cardStyle: 'plain' }, 'plain')
   const s = JSON.parse(await evalJS(PLAIN_PROBE))
-  check('简约：结构与经典一致（底部网络一行在、无延迟块、无读数盒）',
-    dom.netRow === 1 && dom.polylines === 0 && dom.infoBox === 0,
-    `网络行 ${dom.netRow} / 盒 ${dom.infoBox} / polyline ${dom.polylines}`)
-  check('简约：卡片文本与经典逐字相同（只换视觉、内容一个字没动）', dom.text === classicText, dom.text)
+  check('简约：底部是一行两段、无延迟块、无读数盒',
+    dom.netRow === 1 && dom.netGrid === 0 && dom.polylines === 0 && dom.infoBox === 0,
+    `网络行 ${dom.netRow} / 四格 ${dom.netGrid} / 盒 ${dom.infoBox} / polyline ${dom.polylines}`)
+  // 经典档恢复成 2×2 四格之后，两档**不再是同版式**，所以这里不再比「文本逐字相同」——
+  // 改成断简约自己那条一行两段的形状（上面那条）＋下面几条视觉尺子。
+  check('简约：一行两段是「左实时速率 + 右累计总量」（与经典的四格不同形状）',
+    dom.net !== null && dom.net.children === 2 && dom.net.justify === 'space-between' && dom.net.svg === 0,
+    `子元素 ${dom.net?.children} / 对齐 ${dom.net?.justify} / svg ${dom.net?.svg}`)
   check('简约：不发延迟请求（这一档与经典一样不含三网延迟）', ping === 0, `实测 ${ping} 次`)
   check('简约：网格保留 xl 四列（版式没被这一档改掉）', dom.grid.includes('xl:grid-cols-4'), dom.grid)
   check('简约：标签提亮成前景色（与底注那层弱化灰不同）',
@@ -377,19 +401,20 @@ let classicText = ''
 
 /* 2) 延迟（新名字） */
 {
-  // 对照组：经典档底部那一行的量值。延迟档这次改动的全部要求就是「与它看齐」，
-  // 所以判据写成**逐项等价**（结构 / 两端配色 / 间距 / 分隔线 / 两端对齐 + 文案形状），
+  // 对照组：**简约**档底部那一行的量值（经典档已恢复成 2×2 四格，不再是这一档的参照）。
+  // 判据写成**逐项等价**（结构 / 两端配色 / 间距 / 分隔线 / 两端对齐 + 文案形状），
   // 而不是「形状差不多」——只断自己等于没证明「看齐了」。
-  const classic = await render({ cardStyle: 'classic' }, 'latency-vs-classic')
+  const base = await render({ cardStyle: 'plain' }, 'latency-vs-plain')
   const { dom, ping } = await render({ cardStyle: 'latency' }, 'latency')
   const geom = (n) => JSON.stringify({
     seg: n.children, svg: n.svg, left: n.leftColor, right: n.rightColor,
     mt: n.marginTop, pt: n.paddingTop, border: n.borderTop, fs: n.font, justify: n.justify,
     text: n.text.replace(/[0-9][0-9.,]*/g, '#'),
   })
-  check('延迟：底部那行与经典/简约逐项相同（结构 · 配色 · 间距 · 两端对齐 · 文案形状）',
-    dom.net !== null && classic.dom.net !== null && geom(dom.net) === geom(classic.dom.net),
-    `延迟 ${geom(dom.net)} / 经典 ${geom(classic.dom.net)}`)
+  check('延迟：底部那行与「简约」逐项相同（结构 · 配色 · 间距 · 两端对齐 · 文案形状）',
+    dom.net !== null && base.dom.net !== null && geom(dom.net) === geom(base.dom.net),
+    `延迟 ${geom(dom.net)} / 简约 ${geom(base.dom.net)}`)
+  check('延迟：不是经典档那 2×2 四格', dom.netGrid === 0, `四格 ${dom.netGrid}`)
   check('延迟：那行是「实时速率在左、累计总量在右」两段，两端配色不同',
     dom.net.children === 2 && dom.net.leftColor !== dom.net.rightColor,
     `${dom.net.children} 段 / ${dom.net.leftColor} vs ${dom.net.rightColor}`)
@@ -425,7 +450,7 @@ let classicText = ''
   check('详细：三网延迟块也照旧', dom.polylines === 3 * dom.cards, `polyline ${dom.polylines} / 卡 ${dom.cards}`)
   check('详细：每节点恰好 1 次延迟请求', ping === 2, `实测 ${ping} 次`)
   check('详细：网格不再有四列（卡片更宽）', !dom.grid.includes('xl:grid-cols-4'), dom.grid)
-  check('详细：经典那格不在', dom.netRow === 0, `找到 ${dom.netRow} 个`)
+  check('详细：经典的四格不在', dom.netRow === 0 && dom.netGrid === 0, `一行 ${dom.netRow} / 四格 ${dom.netGrid}`)
 }
 
 /* 3b) 详细 + 服务器备注（备注开启）：到期位换价格、在线位让给备注标签 */
@@ -475,8 +500,8 @@ let classicText = ''
 {
   // 备注只影响「详细」档：切到经典/延迟时清单存在也不改卡片形状。
   const { dom } = await render({ cardStyle: 'classic', serverNotes: '节点一=东京 · 三网优化' }, 'classic-notes')
-  check('备注不影响经典档（不冒出读数盒与标签）',
-    dom.netRow === 1 && dom.infoBox === 0 && !dom.text.includes('东京 · 三网优化'), dom.text)
+  check('备注不影响经典档（仍是四格、不冒出读数盒与标签）',
+    dom.netGrid === 1 && dom.netRow === 0 && dom.infoBox === 0 && !dom.text.includes('东京 · 三网优化'), dom.text)
 }
 
 /* 3c) 详细 + 多枚标签：备注里用逗号分隔＝多枚独立胶囊（写法 `节点一=测试测试,222,333`）。
@@ -529,7 +554,7 @@ const TAGS_PROBE = `(() => {
   check('多标签：折行后没有横向溢出（每枚都在行内、不撞在线时长）',
     b.boxes.every((x) => x.x >= b.rowLeft - 1 && x.r <= b.onlineRight + 1), JSON.stringify(b.boxes))
   check('多标签：整体不超过卡片（备注区不撑破卡片）', b.boxes.every((x) => x.r <= b.rowRight + 1), JSON.stringify(b.boxes))
-  check('多标签：长清单下经典那格仍不在（只是多了标签）', dom.netRow === 0, `${dom.netRow}`)
+  check('多标签：长清单下网速那两块都不在（只是多了标签）', dom.netRow === 0 && dom.netGrid === 0, `一行 ${dom.netRow} / 四格 ${dom.netGrid}`)
 }
 {
   // 没写逗号的单枚备注不许变成多枚，也不许换行。
@@ -554,9 +579,9 @@ const TAGS_PROBE = `(() => {
 /* 5) 完全没有配置 / 非法值 → 回落经典 */
 for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
   const { dom, ping } = await render(cfg, tag)
-  check(`非法值 ${tag} → 回落经典（含不发延迟请求）`,
-    dom.netRow === 1 && dom.polylines === 0 && dom.infoBox === 0 && ping === 0,
-    `网络行 ${dom.netRow} / polyline ${dom.polylines} / 盒 ${dom.infoBox} / 请求 ${ping}`)
+  check(`非法值 ${tag} → 回落「简约」这一档（含不发延迟请求）`,
+    dom.netRow === 1 && dom.netGrid === 0 && dom.polylines === 0 && dom.infoBox === 0 && ping === 0,
+    `网络行 ${dom.netRow} / 四格 ${dom.netGrid} / polyline ${dom.polylines} / 盒 ${dom.infoBox} / 请求 ${ping}`)
 }
 
 /* 6) 紧凑形态：一行一台的表格 */

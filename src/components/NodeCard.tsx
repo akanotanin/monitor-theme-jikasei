@@ -224,12 +224,29 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
   // 延迟档原本是「上下行各一组、组内用分隔点连起来」的两端式，按要求与经典/简约
   // 看齐后改成这条；三档同一个节点也是护栏里「逐项相同」那条等价断言的前提。
   // `data-net` 是给护栏认这一行的锚点（原来的判据按 2×2 那格的类名找，改版后会失配）。
+  // 这一行归**简约 / 延迟**两档（它们共用同一个节点，「看齐」因此在结构上恒成立）。
   const netRow = (
     <div data-net="row" className="tnum mt-3 flex items-center justify-between gap-2 border-t pt-2.5 text-xs">
       <span className="truncate">{m ? `↓ ${rate(m.net_rx)} ↑ ${rate(m.net_tx)}` : "—"}</span>
       <span className="truncate text-muted-foreground">
         {`↓ ${bytes(node.total_rx)} ↑ ${bytes(node.total_tx)}`}
       </span>
+    </div>
+  )
+
+  // 经典档底部＝**原本的 2×2 四格**：速率一行、总量一行（与上面读数格同两条列），
+  // 箭头是文字 ↓ ↑（不是图标，整段可原样复制），第一行的数值用前景色、箭头与整行总量弱化。
+  // 它和上面那条一行两段不是一回事——经典恢复原样后，这两档已经不再同版式。
+  const netGrid = (
+    <div data-net="grid" className="tnum mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-4 text-xs">
+      <span>
+        <span className="text-muted-foreground">↓</span> {m ? rate(m.net_rx) : "—"}
+      </span>
+      <span>
+        <span className="text-muted-foreground">↑</span> {m ? rate(m.net_tx) : "—"}
+      </span>
+      <span className="text-muted-foreground">↓ {bytes(node.total_rx)}</span>
+      <span className="text-muted-foreground">↑ {bytes(node.total_tx)}</span>
     </div>
   )
 
@@ -303,11 +320,13 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
             />
           </div>
 
-          {cardStyle === "classic" || cardStyle === "plain" ? (
+          {cardStyle === "classic" ? (
+            netGrid
+          ) : cardStyle === "plain" ? (
             netRow
           ) : cardStyle === "latency" ? (
             <>
-              {/* 延迟档底部与经典/简约同一行版式（就是上面那同一个 netRow 节点），
+              {/* 延迟档底部与「简约」同一行版式（就是上面那同一个 netRow 节点），
                   分隔线由它自己的 border-t 画在上面，三网延迟再从下面那条线开始。 */}
               {netRow}
               {/* 三网延迟：每条线路一行，数据来自 hub 的 ping 历史（详见 Latency.tsx）。 */}
