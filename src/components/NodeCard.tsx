@@ -203,13 +203,16 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
   /** 指针或键盘刚落到这张卡片上：先把手头这块 chunk（详情页的图表那 391KB）取回来。 */
   onWarm?: () => void
   latencyLines: string
-  cardStyle: "classic" | "latency" | "detailed"
+  cardStyle: "classic" | "latency" | "detailed" | "plain"
   /** 「详细」形态的服务器备注清单（每行 `服务器名=备注`）；空串 = 关闭。 */
   notes: string
 }) {
   const m = node.metrics
   // 详细档：图标、元信息行与三枚读数盒都只在它里面出现；配色仍与另外两档同一套灰。
   const detailed = cardStyle === "detailed"
+  // 简约档：结构、内容、位置与经典档完全一致，只换一套视觉处理——标签改用前景色、
+  // 进度条压到 4px、底注降到 11px、名字加粗一档、格子间距收紧（见下方各处 plain 分支）。
+  const plain = cardStyle === "plain"
   // 备注只在「详细」档生效，且清单非空才算开——留空即关闭，这一档保持 1.5.0 的样子。
   const remark = detailed && hasNotes(notes)
   const price = priceText(node)
@@ -227,7 +230,7 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
       // name line below does not wrap, so on a phone the card would grow past its
       // column and scroll the page sideways. The truncate inside only takes effect
       // once the card is allowed to be narrower.
-      className="min-w-0 cursor-pointer gap-0 p-4 transition-colors hover:border-ring"
+      className="min-w-0 cursor-pointer gap-0 p-4 transition-colors hover:border-foreground/25"
       role="button"
       tabIndex={0}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
@@ -238,7 +241,8 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
           名字推到省略号。 */}
       <div className="flex min-w-0 items-center gap-2">
         <Country node={node} />
-        <h3 className="truncate font-medium">{node.name}</h3>
+        {/* 简约档只把名字加粗一档（参考站是 600），文字与位置照旧。 */}
+        <h3 className={`truncate ${plain ? "font-semibold" : "font-medium"}`}>{node.name}</h3>
       </div>
 
       {/* One layout for both states: a disconnected node still knows its
@@ -248,28 +252,34 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
         <>
           {detailed && <MetaRow node={node} notes={notes} remark={remark} />}
 
-          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4">
+          <div className={`mt-4 grid grid-cols-2 gap-x-4 ${plain ? "gap-y-3" : "gap-y-4"}`}>
             {/* The core count belongs beside the word CPU: it is what the
                 percentage and the load averages are both measured against. */}
             <Meter
+              plain={plain}
               icon={detailed ? Cpu : undefined}
-              label={`CPU ${node.cpu_cores} 核`}
+              label={plain
+                ? <>CPU <span className="text-muted-foreground">{node.cpu_cores} 核</span></>
+                : `CPU ${node.cpu_cores} 核`}
               pct={m ? m.cpu : null}
               foot={m ? m.load.map((n) => n.toFixed(2)).join(" ") : "—"}
             />
             <Meter
+              plain={plain}
               icon={detailed ? MemoryStick : undefined}
               label="内存"
               pct={m ? percent(m.mem_used, m.mem_total) : null}
               foot={m ? pair(m.mem_used, m.mem_total) : bytes(node.mem_total)}
             />
             <Meter
+              plain={plain}
               icon={detailed ? HardDrive : undefined}
               label="硬盘"
               pct={m ? percent(m.disk_used, m.disk_total) : null}
               foot={m ? pair(m.disk_used, m.disk_total) : bytes(node.disk_total)}
             />
             <Meter
+              plain={plain}
               icon={detailed ? ArrowDownUp : undefined}
               label="流量"
               pct={node.traffic_limit > 0 ? percent(monthUsage(node), node.traffic_limit) : null}
@@ -278,24 +288,15 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
             />
           </div>
 
-          {cardStyle === "classic" ? (
-            /* 经典形态：速率一行、总量一行，2×2；不含延迟，也就不发延迟请求。 */
-            <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t pt-4 text-xs">
-              <span className="tnum inline-flex items-center gap-1.5">
-                <ArrowDown className="size-3 text-muted-foreground" />
-                {m ? rate(m.net_rx) : "—"}
-              </span>
-              <span className="tnum inline-flex items-center gap-1.5">
-                <ArrowUp className="size-3 text-muted-foreground" />
-                {m ? rate(m.net_tx) : "—"}
-              </span>
-              <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
-                <ArrowDown className="size-3" />
-                {bytes(node.total_rx)}
-              </span>
-              <span className="tnum inline-flex items-center gap-1.5 text-muted-foreground">
-                <ArrowUp className="size-3" />
-                {bytes(node.total_tx)}
+          {cardStyle === "classic" || cardStyle === "plain" ? (
+            /* 网络这一块照参考站：**一行**——实时速率在左（前景色）、累计总量在右（弱化灰），
+               上面一条分隔线；箭头用文字（↓ ↑）而不是图标，跟参考站一致，也才能整段复制成
+               「↓ 88 B/s ↑ 312 B/s」。不含延迟，也就不发延迟请求。
+               `data-net` 是给护栏认这一行的锚点（原来的判据按 2×2 那格的类名找，改版后会失配）。 */
+            <div data-net="row" className="tnum mt-3 flex items-center justify-between gap-2 border-t pt-2.5 text-xs">
+              <span className="truncate">{m ? `↓ ${rate(m.net_rx)} ↑ ${rate(m.net_tx)}` : "—"}</span>
+              <span className="truncate text-muted-foreground">
+                {`↓ ${bytes(node.total_rx)} ↑ ${bytes(node.total_tx)}`}
               </span>
             </div>
           ) : cardStyle === "latency" ? (

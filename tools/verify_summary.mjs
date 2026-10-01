@@ -219,6 +219,13 @@ const PROBE = `JSON.stringify((() => {
         innerCol: inner ? Math.round(inner.getBoundingClientRect().left) : null,
         // 主数字那个盒子带 truncate：真装不下时 scrollWidth 会大于 clientWidth。
         clip: num ? num.scrollWidth - num.clientWidth : 0,
+        // 主数字那行是两列小栅格时，两个格子里各自的截断量——栅格自己不溢出，格子里的
+        // truncate 会静默把「40.1 MB/s」变省略号，只看上面那个 clip 是看不见的。
+        cellClip: num && num.children.length === 2
+          ? [...num.children].map((v) => { const t = v.querySelector('.truncate') || v; return t.scrollWidth - t.clientWidth })
+          : null,
+        // 一块读数由几段组成：参考站那种「小标签 / 大数 / 一行小字」= 3 段。
+        parts: b.children.length,
         foot: fr ? Math.round(fr.bottom) : null,
       }
     })
@@ -360,6 +367,17 @@ let classicNet = null
     tile(dom, '今日流量').text === '今日流量 | 1.25 GB | 768 MB | 总流量 | 3.50 TB | 2.25 TB', tile(dom, '今日流量').text)
   check('原版：实时网速卡 = 在线且有指标的节点之和（20.5 MB/s ↓ / 40.1 MB/s ↑）',
     tile(dom, '实时网速').text === '实时网速 | 20.5 MB/s | 40.1 MB/s', tile(dom, '实时网速').text)
+  // ── 与参考站对齐的三条：每块读数都是「小标签 / 大数 / 一行小字」三段、四张卡等高、
+  //    24px 的主数字在两列栅格里不被截断（栅格自己不溢出，格子里的 truncate 是静默的）。
+  check('原版：每块读数都是三段（小标签 / 大数 / 一行小字，照参考站）',
+    dom.tiles.every((t) => t.blocks.every((b) => b.parts === 3)),
+    JSON.stringify(dom.tiles.map((t) => t.blocks.map((b) => b.parts))))
+  check('原版：四张卡片等高（同一行里没有谁比谁高）',
+    dom.tileHeights.length === 1, `高度 ${JSON.stringify(dom.tileHeights)}`)
+  check('原版：今日流量 / 实时网速两格里的大数没被截断（24px 数字放得下）',
+    ['今日流量', '实时网速'].every((n) =>
+      (tile(dom, n).blocks[0].cellClip ?? []).every((c) => c <= 0) && tile(dom, n).blocks[0].clip <= 0),
+    ['今日流量', '实时网速'].map((n) => `${n} 格子截断 ${JSON.stringify(tile(dom, n).blocks[0].cellClip)}`).join('；'))
   check('原版：页面上没有月度预算 / 剩余价值（新功能没被顺手带出来）',
     !dom.body.includes('月度预算') && !dom.body.includes('剩余价值'))
   classicDay = tile(dom, '今日流量').text

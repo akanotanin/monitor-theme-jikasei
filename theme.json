@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.10.1",
+  "version": "1.11.0",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -50,11 +50,12 @@
       "default": "classic",
       "options": [
         { "value": "classic", "label": "经典：网络速率与总量分两行，不含延迟" },
+        { "value": "plain", "label": "简约：版式同经典，标签提亮、进度条更细" },
         { "value": "latency", "label": "延迟：网络合成一行，下方带三网延迟" },
         { "value": "detailed", "label": "详细：在延迟之上再加在线时长、价格与到期" },
         { "value": "compact", "label": "紧凑：一行一台的表格，密度最高" }
       ],
-      "help": "经典＝网络两行；延迟＝网络一行加三网延迟；详细＝再加时长与计费；紧凑＝一行一台的表格，列随屏宽收放，一屏看全。"
+      "help": "经典＝网络两行；简约＝与经典同版式，只把标签提亮、进度条压细；延迟＝网络一行加三网延迟；详细＝再加时长与计费；紧凑＝一行一台的表格，列随屏宽收放，一屏看全。"
     },
     {
       "type": "text",

@@ -1,5 +1,5 @@
-import type { ComponentType, ReactNode } from "react"
-import { Activity, ArrowDown, ArrowDownUp, ArrowUp, Gauge, PiggyBank, Server, Wallet } from "lucide-react"
+import type { ReactNode } from "react"
+import { ArrowDown, ArrowUp } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
 import { speedHistory, type Node } from "@/lib/api"
@@ -27,13 +27,15 @@ import { summarize, type Fleet } from "@/lib/summary"
  */
 
 /**
- * 一块读数：一行标题（图标 + 名称）、一行大数字、一行小字。
+ * 一块读数：一行小标签、一行大数字、一行小字。
  *
  * 卡片是 flex、块是 flex-col，所以块里的 `mt-auto` 能把底部那行压到同排最高的那块的下沿，
- * 内容行数不同也对齐（例如「无在线节点」与「1 台离线」落在同一条基线上）。
+ * 内容行数不同也对齐（例如「无在线节点」与「1 台离线」落在同一条基线上）。它在块本身高度
+ * 有富余时才起作用；刚好装下时那行就紧跟在数字下面（`pt-1`）——也就是参考站那种三段式。
+ *
+ * 标签前不带图标：参考站的四张卡都没有，图标只是把标签挤窄、并把整行垫高。
  */
-function Block({ icon: Icon, title, hint, children }: {
-  icon: ComponentType<{ className?: string }>
+function Block({ title, hint, children }: {
   title: string
   /** 悬停提示：口径说明——月度预算与剩余价值那两个数不是一眼能看懂的，得写清楚。 */
   hint?: string
@@ -41,10 +43,7 @@ function Block({ icon: Icon, title, hint, children }: {
 }) {
   return (
     <div className="flex min-w-0 flex-col" title={hint}>
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icon className="size-3.5 shrink-0" />
-        {title}
-      </div>
+      <div className="truncate text-xs text-muted-foreground">{title}</div>
       {children}
     </div>
   )
@@ -52,12 +51,12 @@ function Block({ icon: Icon, title, hint, children }: {
 
 /** 一块读数里的主数字。`tnum` 让数字等宽：每两秒刷一次时不会左右抖。 */
 function Big({ children }: { children: ReactNode }) {
-  return <div className="tnum mt-2 truncate text-xl font-semibold">{children}</div>
+  return <div className="tnum mt-1 truncate text-2xl font-semibold tracking-tight">{children}</div>
 }
 
 /** 一块读数底下那行小字（卡片两端对齐时它落在下沿）。 */
 function Foot({ children }: { children: ReactNode }) {
-  return <div className="mt-auto truncate pt-6 text-xs text-muted-foreground">{children}</div>
+  return <div className="tnum mt-auto truncate pt-1 text-xs text-muted-foreground">{children}</div>
 }
 
 /** 一张卡片：里面就一块读数（今日流量 / 实时网速，以及原版的每一张）。 */
@@ -86,7 +85,7 @@ function Pair({ children }: { children: ReactNode }) {
 
 /** 一枚带方向箭头的读数。颜色随所在那一行（今日那行是前景色，累计那行是弱化灰）。 */
 function Val({ icon: Icon, children }: {
-  icon: ComponentType<{ className?: string }>
+  icon: typeof ArrowDown
   children: ReactNode
 }) {
   return (
@@ -121,7 +120,9 @@ function Sparkline({ series }: { series: { rx: number; tx: number }[] }) {
       .map((s, i) => `${((i / (series.length - 1)) * W).toFixed(2)},${(H - 1 - (pick(s) / max) * (H - 2)).toFixed(2)}`)
       .join(" ")
   return (
-    <div className="mt-auto h-7 pt-4">
+    /* 走势线的高度照着参考站那条来（那边约 22px）：这一格是卡片里唯一不是文字的东西，
+       高了整行四张卡就不再等高（护栏钉着「四张卡等高」）。 */
+    <div className="mt-1 h-5">
       {ready && (
         <svg className="h-full w-full" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
           {/* 下行用前景色、上行用弱化灰：与卡片网络区那两个方向的读法一致
@@ -138,10 +139,11 @@ function Sparkline({ series }: { series: { rx: number; tx: number }[] }) {
 function NodesBlock({ fleet }: { fleet: Fleet }) {
   const offline = fleet.total - fleet.online
   return (
-    <Block icon={Server} title="节点">
-      {/* 「在线 / 总数」：斜杠是纯文本，与数字同一色（照参考图），也省得读屏与复制时黏成一团。 */}
+    <Block title="节点">
+      {/* 斜杠与总数照参考站降一档（16px / 常规字重 / 弱化灰），只有在线数是那个大数。
+          空格照旧留着：抹掉它复制与读屏会得到「3/4」这种黏成一团的写法。 */}
       <Big>
-        {fleet.online} / {fleet.total}
+        {fleet.online} <span className="text-base font-normal text-muted-foreground">/ {fleet.total}</span>
       </Big>
       <Foot>
         {fleet.total === 0 ? "还没有节点" : offline === 0 ? "全部在线" : `${offline} 台离线`}
@@ -153,7 +155,7 @@ function NodesBlock({ fleet }: { fleet: Fleet }) {
 /** 「最忙节点」那块读数：CPU 占用最高的在线节点。 */
 function BusiestBlock({ fleet }: { fleet: Fleet }) {
   return (
-    <Block icon={Activity} title="最忙节点">
+    <Block title="最忙节点">
       {/* 一位小数，与卡片里 CPU 那格同一个口径。 */}
       <Big>{fleet.busiest ? `${fleet.busiest.cpu.toFixed(1)}%` : "—"}</Big>
       <Foot>
@@ -173,17 +175,20 @@ export function SummaryCards({ nodes, finance = false }: { nodes: Node[]; financ
   const note = fxNote(budget.used, budget.skipped)
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    /* 版式照参考站：`sm` 起两列、`lg` 起四列。**手机是一列而不是参考站的两列**——参考站每张
+       卡只有一个大数，两个数并排也放得下；本站的「今日流量 / 实时网速」一张卡里有两个方向，
+       390px 两列时每张卡只有 173px、两个数会各自截断（护栏量过）。 */
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {finance ? (
         <>
           {/* 第一张卡：月度预算 + 剩余价值。两个数都是把各站的账按固定汇率折成人民币后相加，
               所以写「≈」；口径与汇率清单放在悬停提示里（见 lib/money.ts）。 */}
           <Pair>
-            <Block icon={Wallet} title="月度预算" hint={`各节点的价格按计费周期摊到每个月后相加；一次性买断与没填价格的不计入。${note}`}>
+            <Block title="月度预算" hint={`各节点的价格按计费周期摊到每个月后相加；一次性买断与没填价格的不计入。${note}`}>
               <Big>{budget.monthly === null ? "—" : `≈${cny(budget.monthly)}`}</Big>
               <Foot>{budget.monthlyCount ? `${budget.monthlyCount} 台计费` : "未记录价格"}</Foot>
             </Block>
-            <Block icon={PiggyBank} title="剩余价值" hint={`已经付掉、还没用掉的那一段：价格 × 剩余天数 ÷ 周期天数；无到期日与一次性买断的不计入。${note}`}>
+            <Block title="剩余价值" hint={`已经付掉、还没用掉的那一段：价格 × 剩余天数 ÷ 周期天数；无到期日与一次性买断的不计入。${note}`}>
               <Big>{budget.remaining === null ? "—" : `≈${cny(budget.remaining)}`}</Big>
               <Foot>{budget.remainingCount ? `${budget.remainingCount} 台未到期` : "无预付到期"}</Foot>
             </Block>
@@ -208,22 +213,27 @@ export function SummaryCards({ nodes, finance = false }: { nodes: Node[]; financ
       )}
 
       <Tile>
-        <Block icon={ArrowDownUp} title="今日流量">
-          <div className="mt-2 grid grid-cols-2 gap-x-3 text-base font-semibold">
+        <Block title="今日流量">
+          {/* 大数一行（今日上下行），累计并成一行小字——参考站整张卡就是「小标签 / 大数 /
+              一行小字」三段，这样四张卡等高、整行才是一个节奏。四个数一个没少。
+              栅格间距沿用 `gap-x-3`：整行四张卡的第二列因此落在同一条竖线上（护栏钉着）。 */}
+          <div className="mt-1 grid grid-cols-2 gap-x-3 text-2xl font-semibold tracking-tight">
             <Val icon={ArrowDown}>{bytes(fleet.dayRx)}</Val>
             <Val icon={ArrowUp}>{bytes(fleet.dayTx)}</Val>
           </div>
-          <div className="mt-3 text-xs text-muted-foreground">总流量</div>
-          <div className="mt-1 grid grid-cols-2 gap-x-3 text-sm text-muted-foreground">
-            <Val icon={ArrowDown}>{bytes(fleet.totalRx)}</Val>
-            <Val icon={ArrowUp}>{bytes(fleet.totalTx)}</Val>
-          </div>
+          <Foot>
+            <span className="inline-flex items-center gap-1.5">
+              总流量
+              <Val icon={ArrowDown}>{bytes(fleet.totalRx)}</Val>
+              <Val icon={ArrowUp}>{bytes(fleet.totalTx)}</Val>
+            </span>
+          </Foot>
         </Block>
       </Tile>
 
       <Tile>
-        <Block icon={Gauge} title="实时网速">
-          <div className="mt-2 grid grid-cols-2 gap-x-3 text-base font-semibold">
+        <Block title="实时网速">
+          <div className="mt-1 grid grid-cols-2 gap-x-3 text-2xl font-semibold tracking-tight">
             <Val icon={ArrowDown}>{rate(fleet.netRx)}</Val>
             <Val icon={ArrowUp}>{rate(fleet.netTx)}</Val>
           </div>

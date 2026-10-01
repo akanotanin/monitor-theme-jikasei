@@ -1,4 +1,4 @@
-// 验「卡片形态」四档（经典 / 延迟 / 详细 / 紧凑）在真实渲染里各自的形状，以及旧值 detail → latency 的迁移。
+// 验「卡片形态」五档（经典 / 简约 / 延迟 / 详细 / 紧凑）在真实渲染里各自的形状，以及旧值 detail → latency 的迁移。
 //
 // 用法：node tools/verify_card_styles.mjs [port]
 //
@@ -6,7 +6,10 @@
 // （或让 classic 悄悄开始拉延迟数据）。这里用本机静态伺服 + 桩 /api/*（含带 ping 历史的
 // /api/nodes/{id}/metrics）跑真 React 组件，逐档断言 DOM 形状、访客端请求数与列表上的读数：
 //
-//   经典   —— 网络 2×2 那格在；不发任何 ping 请求
+//   经典   —— 底部网络收成一行（左实时速率 / 右累计，文字箭头 ↓↑）；不发任何 ping 请求；
+//             标签弱化灰 / 条 6px / 底注 12px / 名字 500
+//   简约   —— 与经典同结构、同文本，只换视觉：标签前景色 / 条 4px（上下 6px）/ 底注 11px /
+//             名字 600 / 格行距 12px；同样不发 ping 请求（两边都钉住，才叫「只换了这一套」）
 //   延迟   —— 网络合成一行 + 三网延迟块；每节点恰好 1 次 ping 请求；指定线路按填写顺序、名字对不上跳过
 //   详细   —— 元信息行 + 三枚读数盒 + 三网延迟块；标题行不再有状态点；网格不再有 xl 四列
 //   紧凑   —— 一张表、一行一台，表头与列随屏宽收放；不发 ping 请求
@@ -183,7 +186,26 @@ const PROBE = `JSON.stringify((() => {
     cards: cards.length,
     allCards: all.length,
     grid: document.querySelector('.grid')?.className ?? '',
-    classicNet: q('[class*="gap-y-2"][class*="border-t"]'),
+    classicNet: q('[data-net="row"]'),
+    // 卡片底部那一行网络（经典/简约档）：子元素数、有没有 svg 图标、左右两端的配色与间距。
+    net: (() => {
+      const row = first ? first.querySelector('[data-net="row"]') : null
+      if (!row) return null
+      const cs = (el) => el ? getComputedStyle(el) : null
+      const spans = [...row.children]
+      return {
+        children: row.children.length,
+        svg: row.querySelectorAll('svg').length,
+        text: row.innerText.replace(/\\n/g, ' | '),
+        leftColor: spans[0] ? cs(spans[0]).color : null,
+        rightColor: spans[1] ? cs(spans[1]).color : null,
+        marginTop: cs(row).marginTop,
+        paddingTop: cs(row).paddingTop,
+        borderTop: cs(row).borderTopWidth,
+        font: cs(row).fontSize,
+        justify: cs(row).justifyContent,
+      }
+    })(),
     latencyRow: q('[class*="gap-x-3"]'),
     infoBox: q('[class*="bg-muted/60"]'),
     infoGrid: q('[class*="grid-cols-3"]'),
@@ -192,6 +214,37 @@ const PROBE = `JSON.stringify((() => {
     polylines: document.querySelectorAll('svg polyline').length,
     rows: [...(first?.querySelectorAll('[class*="border-t"] span.w-16') ?? [])].map((s) => s.textContent.trim()),
     text: first ? first.innerText.replace(/\\n/g, ' | ') : '',
+  }
+})())`
+
+// 简约档专用探针：结构断言仍借 PROBE，这里量的是它换掉的那几把尺子。
+// 取数一律**按结构**（卡片第 2 个孩子 = 读数格，格里的第 1 块 = CPU），不认 Tailwind 类名。
+const PLAIN_PROBE = `JSON.stringify((() => {
+  const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
+  if (!card) return null
+  const grid = card.children[1]
+  const box = grid ? grid.children[0] : null
+  const label = box ? box.children[0].children[0].children[0] : null
+  const bar = box ? box.children[1] : null
+  const foot = box ? box.children[2] : null
+  const name = card.querySelector('h3')
+  const cs = (el) => el ? getComputedStyle(el) : null
+  return {
+    radius: cs(card).borderRadius,
+    shadow: cs(card).boxShadow,
+    cardBorder: cs(card).borderColor,
+    bodyBg: getComputedStyle(document.body).backgroundColor,
+    fillColor: bar && bar.firstElementChild ? cs(bar.firstElementChild).backgroundColor : null,
+    nameWeight: name ? cs(name).fontWeight : null,
+    labelColor: label ? cs(label).color : null,
+    pctColor: box ? cs(box.children[0].lastElementChild).color : null,
+    footColor: foot ? cs(foot).color : null,
+    barH: bar ? cs(bar).height : null,
+    barTop: bar ? cs(bar).marginTop : null,
+    barBottom: bar ? cs(bar).marginBottom : null,
+    footSize: foot ? cs(foot).fontSize : null,
+    rowGap: grid ? cs(grid).rowGap : null,
+    text: card.innerText.replace(/\\n/g, ' | '),
   }
 })())`
 
@@ -258,17 +311,69 @@ async function renderCompact(cfg, width, tag) {
 const results = []
 const check = (name, ok, detail) => { results.push({ name, ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`) }
 
-/* 1) 经典 */
+/* 1) 经典（顺带量一遍它的四项视觉值，作为简约档那几条的对照——两边都钉住才叫「只换了这一套」） */
+let classicStyle = null
+let classicText = ''
 {
   const { dom, ping } = await render({ cardStyle: 'classic' }, 'classic')
+  classicText = dom.text
+  classicStyle = JSON.parse(await evalJS(PLAIN_PROBE))
+  check('卡片壳：圆角 10px（rounded-lg；参考站是这个，不是 rounded-xl 的 14px）',
+    classicStyle.radius === '10px', classicStyle.radius)
+  check('卡片壳：无投影（参考站靠「浅灰页 + 白卡 + 一道描边」托出来，不用阴影）',
+    classicStyle.shadow === 'none', classicStyle.shadow)
+  check('卡片壳：页面底色是浅灰 oklch(0.985 0 0)（原来是纯白，卡片浮不出来）',
+    classicStyle.bodyBg === 'oklch(0.985 0 0)', classicStyle.bodyBg)
+  check('卡片壳：描边是那一档冷灰 oklch(0.92 0.004 286.32)',
+    classicStyle.cardBorder === 'oklch(0.92 0.004 286.32)', classicStyle.cardBorder)
   check('桩数据已落到卡片（CPU 13% / 内存 1.00 / 2.00 GB / 总量 1.00 TB 与 256 GB）',
     /1[23]%/.test(dom.text) && /1\.00 \/ 2\.00 GB/.test(dom.text) && /1\.00 TB/.test(dom.text) && /256 GB/.test(dom.text),
     dom.text)
-  check('经典：网络 2×2 那格在', dom.classicNet === 1, `找到 ${dom.classicNet} 个`)
+  check('经典：底部网络那一行在', dom.classicNet === 1, `找到 ${dom.classicNet} 个`)
+  // ── 底部上传下载照参考站：一行两段（左实时速率 / 右累计总量）、文字箭头、一条分隔线。
+  check('经典：底部网络收成一行两段（不再是原来的 2×2 四格）',
+    dom.net !== null && dom.net.children === 2 && dom.net.justify === 'space-between',
+    `子元素 ${dom.net?.children} / 对齐 ${dom.net?.justify}`)
+  check('经典：底部用文字箭头 ↓↑（不再是 svg 图标）',
+    dom.net !== null && dom.net.svg === 0 && /^↓ /.test(dom.net.text),
+    `svg ${dom.net?.svg} ／ 文本 ${dom.net?.text}`)
+  check('经典：左边实时速率是前景色、右边累计是弱化灰',
+    dom.net !== null && dom.net.leftColor !== dom.net.rightColor,
+    `${dom.net?.leftColor} vs ${dom.net?.rightColor}`)
+  check('经典：分隔线与间距照参考站（mt 12px / pt 10px / 12px 字号）',
+    dom.net !== null && dom.net.marginTop === '12px' && dom.net.paddingTop === '10px' && dom.net.font === '12px',
+    JSON.stringify(dom.net && { mt: dom.net.marginTop, pt: dom.net.paddingTop, fs: dom.net.font }))
   check('经典：没有延迟块', dom.latencyRow === 0 && dom.polylines === 0, `行 ${dom.latencyRow} / polyline ${dom.polylines}`)
   check('经典：不发延迟请求', ping === 0, `实测 ${ping} 次`)
   check('经典：无状态点、无读数盒', dom.dots === 0 && dom.infoBox === 0, `点 ${dom.dots} / 盒 ${dom.infoBox}`)
   check('经典：网格保留 xl 四列', dom.grid.includes('xl:grid-cols-4'), dom.grid)
+  check('经典：标签与底注同为弱化灰（标签没被提亮）',
+    classicStyle.labelColor === classicStyle.footColor, `${classicStyle.labelColor} vs ${classicStyle.footColor}`)
+  check('经典：条 6px、底注 12px、名字 500、格行距 16px',
+    classicStyle.barH === '6px' && classicStyle.footSize === '12px' && classicStyle.nameWeight === '500' && classicStyle.rowGap === '16px',
+    JSON.stringify({ barH: classicStyle.barH, footSize: classicStyle.footSize, nameWeight: classicStyle.nameWeight, rowGap: classicStyle.rowGap }))
+}
+
+/* 1b) 简约：与经典**同结构、同内容**，只换一套视觉处理（标签提亮 / 条压细 / 底注变小 / 名字加粗 / 行距收紧） */
+{
+  const { dom, ping } = await render({ cardStyle: 'plain' }, 'plain')
+  const s = JSON.parse(await evalJS(PLAIN_PROBE))
+  check('简约：结构与经典一致（底部网络一行在、无延迟块、无读数盒）',
+    dom.classicNet === 1 && dom.latencyRow === 0 && dom.polylines === 0 && dom.infoBox === 0,
+    `经典格 ${dom.classicNet} / 行 ${dom.latencyRow} / 盒 ${dom.infoBox} / polyline ${dom.polylines}`)
+  check('简约：卡片文本与经典逐字相同（只换视觉、内容一个字没动）', dom.text === classicText, dom.text)
+  check('简约：不发延迟请求（这一档与经典一样不含三网延迟）', ping === 0, `实测 ${ping} 次`)
+  check('简约：网格保留 xl 四列（版式没被这一档改掉）', dom.grid.includes('xl:grid-cols-4'), dom.grid)
+  check('简约：标签提亮成前景色（与底注那层弱化灰不同）',
+    s.labelColor !== s.footColor, `${s.labelColor} vs ${s.footColor}`)
+  check('简约：标签与百分比同色（同一行左右两截亮度一致）',
+    s.labelColor === s.pctColor, `${s.labelColor} vs ${s.pctColor}`)
+  check('简约：进度条压到 4px、上下各留 6px',
+    s.barH === '4px' && s.barTop === '6px' && s.barBottom === '6px',
+    JSON.stringify({ h: s.barH, top: s.barTop, bottom: s.barBottom }))
+  check('简约：底注降到 11px', s.footSize === '11px', s.footSize)
+  check('简约：名字加粗一档（600，经典是 500）', s.nameWeight === '600', s.nameWeight)
+  check('简约：读数格行距收紧到 12px（经典 16px）', s.rowGap === '12px', s.rowGap)
 }
 
 /* 2) 延迟（新名字） */

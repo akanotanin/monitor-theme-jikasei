@@ -68,8 +68,8 @@ const copy = (feats) => `<div class="copy">
   <div class="rule"></div>
   <div class="feats">${feats}</div>
 </div>`
-const FEATS2 = '四种卡片形态 · 三网延迟 · 分组筛选<br>明暗双色 · 备注标签 · 自定义站标'
-const FEATS1 = '四种卡片形态 · 三网延迟 · 分组筛选 · 明暗双色'
+const FEATS2 = '五种卡片形态 · 三网延迟 · 分组筛选<br>明暗双色 · 备注标签 · 自定义站标'
+const FEATS1 = '五种卡片形态 · 三网延迟 · 分组筛选 · 明暗双色'
 
 let html
 if (FORM === 'pure') {

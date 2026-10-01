@@ -401,8 +401,8 @@ function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLine
   showTabs: boolean
   /** 卡片延迟块要显示哪几条线路（ping 任务名，换行分隔）；空串 = 自动。 */
   latencyLines: string
-  /** 卡片形态：compact = 一行一台的表格；detailed = 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟。 */
-  cardStyle: "classic" | "latency" | "detailed" | "compact"
+  /** 卡片形态：compact = 一行一台的表格；detailed = 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟；plain 与 classic 版式相同、只换一套视觉处理。 */
+  cardStyle: "classic" | "latency" | "detailed" | "plain" | "compact"
   /** 「详细」形态的服务器备注清单（每行 `服务器名=备注`）；空串 = 关闭。 */
   notes: string
 }) {

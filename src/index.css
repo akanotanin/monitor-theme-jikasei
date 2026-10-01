@@ -14,7 +14,9 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  /* 页面底色：参考站是 oklch(0.985) 那一档浅灰，卡片才「浮」得出来。原来两面都是纯白，
+     卡片只能靠描边+阴影区分，整页看着发闷。 */
+  --background: oklch(0.985 0 0);
   --foreground: oklch(0.18 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.18 0 0);
@@ -24,13 +26,14 @@
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.96 0 0);
   --secondary-foreground: oklch(0.18 0 0);
-  --muted: oklch(0.955 0 0);
+  --muted: oklch(0.967 0.001 286.375);
   --muted-foreground: oklch(0.52 0 0);
   --accent: oklch(0.955 0 0);
   --accent-foreground: oklch(0.18 0 0);
   --destructive: oklch(0.3 0 0);
-  --border: oklch(0.9 0 0);
-  --input: oklch(0.9 0 0);
+  /* 描边：参考站是这一档冷灰（带一点点蓝），比纯中性灰更像「卡片的一道线」。 */
+  --border: oklch(0.92 0.004 286.32);
+  --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.62 0 0);
   /* 九色调色板：曲线要用几组同时可分辨的线，单色阶在三组以上就只剩深浅，
      于是给延迟曲线一份真正的色相环（1-9 依次是蓝 / 橙 / 青 / 紫 / 红 / 绿 /
