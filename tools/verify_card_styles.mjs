@@ -439,180 +439,144 @@ let classicStyle = null
   check('延迟：指定四条有效线路也只显示三条', dom.rows.join('/') === '北京电信/上海电信/广州电信', dom.rows.join('/'))
 }
 
-/* 2b) 延迟 + 服务器备注：备注在延迟档排在**标题行右侧**（首枚 + 「+N」，完整清单走悬停）。
-   这一档的判据是「零新增行高」——卡片总高与读数格上沿都必须与不开备注时逐像素相同，
-   所以每一步都带一个「同档、不开备注」的对照组，只断标签自身等于没证明不影响版式。 */
-const NOTE_PROBE = `JSON.stringify((() => {
+/* 2b) 延迟档右上角那枚「信息」控件：悬停 / 点击弹浮层，里面是备注 + 在线时间 + 价格 + 到期。
+   判据三件套：① 控件是原生 button + aria-expanded（不是静态文本，也不是装饰图标）；
+   ② 默认关闭时卡片与没有备注时**逐像素相同**（浮层不占位）；③ 悬停/点击/键盘都不会打开详情页
+   （卡片自己是 role=button），并带**对照组**证明这条判据不是恒真。 */
+const PEEK_PROBE = `JSON.stringify((() => {
   const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
   if (!card) return { missing: true }
-  const h3 = card.querySelector('h3')
-  const titleRow = h3 ? h3.parentElement : null
-  const badges = [...card.querySelectorAll('[data-slot="badge"]')]
-  const plus = titleRow ? [...titleRow.querySelectorAll('span')].find((s) => /^\\+[0-9]+$/.test(s.textContent.trim())) : null
-  const rect = (el) => {
-    const b = el.getBoundingClientRect()
-    return { x: Math.round(b.left), r: Math.round(b.right), mid: Math.round(b.top + b.height / 2), w: Math.round(b.width) }
-  }
+  const btn = card.querySelector('[data-note-popover]')
+  const panel = card.querySelector('[data-note-panel]')
+  const rect = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left), r: Math.round(b.right), mid: Math.round(b.top + b.height / 2), bottom: Math.round(b.bottom), w: Math.round(b.width), h: Math.round(b.height) } }
   const grid = card.querySelector('.grid.grid-cols-2')
   const cRect = card.getBoundingClientRect()
+  const h3 = card.querySelector('h3')
   return {
-    name: h3 ? h3.innerText.trim() : null,
-    nameClipped: h3 ? h3.scrollWidth > h3.clientWidth + 1 : null,
-    nameBox: h3 ? rect(h3) : null,
-    rowH: titleRow ? Math.round(titleRow.getBoundingClientRect().height) : null,
-    badges: badges.map((b) => ({ text: b.innerText.trim(), title: b.getAttribute('title'), ...rect(b) })),
-    plus: plus ? { text: plus.textContent.trim(), ...rect(plus) } : null,
     cardH: Math.round(cRect.height),
+    cardTop: Math.round(cRect.top),
     cardRight: Math.round(cRect.right),
+    cardBottom: Math.round(cRect.bottom),
     gridTop: grid ? Math.round(grid.getBoundingClientRect().top - cRect.top) : null,
-    // 「+N」那枚展开控件：存在的判据是按钮（不是静态文本）+ aria-expanded，光断文案抓不到它退化。
-    toggle: (() => {
-      const t = card.querySelector('[data-note-toggle]')
-      return t ? { tag: t.tagName, expanded: t.getAttribute('aria-expanded'), text: t.innerText.replace(/\\n/g, ' ').trim(), title: t.getAttribute('title') } : null
-    })(),
+    rowH: h3 ? Math.round(h3.parentElement.getBoundingClientRect().height) : null,
+    badges: card.querySelectorAll('[data-slot="badge"]').length,
+    nameClipped: h3 ? h3.scrollWidth > h3.clientWidth + 1 : null,
+    btn: btn ? { tag: btn.tagName, expanded: btn.getAttribute('aria-expanded'), ...rect(btn) } : null,
+    panel: panel ? { text: panel.innerText.replace(/\\n/g, ' | '), ...rect(panel) } : null,
     path: location.pathname,
     text: card.innerText.replace(/\\n/g, ' | '),
   }
 })())`
-let latencyGridTop = null
-{
-  await render({ cardStyle: 'latency' }, 'latency-notes-off')
-  const o = JSON.parse(await evalJS(NOTE_PROBE))
-  latencyGridTop = o.gridTop
-  const { dom, ping } = await render({ cardStyle: 'latency', serverNotes: '节点一=东京 · 三网优化,备用' }, 'latency-notes')
-  const b = JSON.parse(await evalJS(NOTE_PROBE))
-  // 拿不到胶囊时给**空壳**而不是让它抛：否则第一条断言就把后面的九条一起带走，
-  // 反向自测时看不出到底该报哪些（本文件的 PROBE 里有同一条教训）。
-  const fb = b.badges?.[0] ?? { text: '', title: null, mid: null, r: 0, x: 0, w: 0 }
-  const pl = b.plus ?? { text: '', mid: null, r: 0, x: 0 }
-  const nm = b.nameBox ?? { mid: null, w: 0 }
-  check('延迟+备注：标题行右端出现首枚胶囊 + 「+1」（其余枚数折成 +N）',
-    b.badges?.length === 1 && fb.text === '东京 · 三网优化' && pl.text === '+1',
-    `胶囊 ${b.badges?.map((x) => x.text).join('/') || '(无)'} / 尾标 ${b.plus?.text}`)
-  check('延迟+备注：胶囊与名字在同一水平线上（没有另起一行）',
-    Math.abs(nm.mid - fb.mid) <= 1 && Math.abs(pl.mid - fb.mid) <= 1,
-    `名字中线 ${nm.mid} / 胶囊 ${fb.mid} / 尾标 ${pl.mid}`)
-  check('延迟+备注：胶囊贴卡片右沿（与卡片自身内边距对齐，尾标在它右边）',
-    Math.abs(b.cardRight - pl.r - 16) <= 1 && fb.r <= pl.x,
-    `卡右 ${b.cardRight} / 尾标右 ${pl.r} / 胶囊右 ${fb.r}`)
-  check('延迟+备注：卡片总高与不开备注时逐像素相同（零新增行高）',
-    b.cardH === o.cardH, `开 ${b.cardH}px / 关 ${o.cardH}px`)
-  check('延迟+备注：读数格上沿与不开备注时相同（标题行没被撑高）',
-    b.gridTop === o.gridTop && b.rowH === o.rowH, `格上沿 ${b.gridTop}/${o.gridTop} 行高 ${b.rowH}/${o.rowH}`)
-  check('延迟+备注：名字没被标签挤到截断', b.nameClipped === false, `名字 ${nm.w}px 截断=${b.nameClipped}`)
-  check('延迟+备注：完整清单挂在 title 上（悬停看得到两枚）',
-    fb.title === '东京 · 三网优化 · 备用' || b.toggle?.title === '东京 · 三网优化 · 备用',
-    `胶囊 ${fb.title} / 控件 ${b.toggle?.title}`)
-  check('延迟+备注：卡片正文里只出现首枚（第二枚不占位）',
-    !b.text.includes('备用'), b.text)
-  check('延迟+备注：三网延迟与请求数照旧', dom.polylines === 3 * dom.cards && ping === 2,
-    `polyline ${dom.polylines} / 请求 ${ping}`)
-}
-{
-  // 三枚备注：仍是一枚胶囊 + 「+2」；名字长的机器由名字先让位（标签不缩）。
-  const { dom } = await render({ cardStyle: 'latency', serverNotes: '节点一=测试测试,222,333' }, 'latency-notes-three')
-  const b = JSON.parse(await evalJS(NOTE_PROBE))
-  check('延迟+备注：三枚备注＝首枚 + 「+2」，仍不新起一行',
-    b.badges?.length === 1 && b.badges?.[0]?.text === '测试测试' && b.plus?.text === '+2',
-    `胶囊 ${b.badges?.map((x) => x.text).join('/') || '(无)'} / 尾标 ${b.plus?.text}`)
-  check('延迟+备注：三枚时卡片高度仍不变（标签不换行、不撑高）',
-    b.gridTop === latencyGridTop, `格上沿 ${b.gridTop} / 无备注 ${latencyGridTop}`)
-  check('延迟+备注：三枚时也不出现多余的胶囊', dom.polylines === 3 * dom.cards, `polyline ${dom.polylines}`)
-}
-{
-  // 备注只影响「延迟」与「详细」两档：简约档清单存在也不改卡片形状。
-  const plain = await render({ cardStyle: 'plain', serverNotes: '节点一=东京 · 三网优化' }, 'plain-notes')
-  check('备注不影响简约档（仍是那一行两段、不冒出标签、不发延迟请求）',
-    plain.dom.netRow === 1 && plain.dom.polylines === 0 && plain.ping === 0 && !plain.dom.text.includes('东京 · 三网优化'),
-    plain.dom.text)
-}
 
-/* 2c) 「+N」那枚控件**可点展开**完整清单：关闭时零占位（与无备注逐像素相同），
-   展开时才长高；点它不许连带打开详情页（卡片本身就是 role=button，嵌套控件的点击必须拦住）。 */
+// 悬停那一步走真鼠标（CDP Input.dispatchMouseEvent）——比在页面里派发合成事件可信，
+// 也顺带证明 onPointerEnter/onPointerLeave 这套真的接上了。
+const hover = async (x, y) => {
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none', buttons: 0 })
+  await sleep(400)
+}
+const moveAway = async () => hover(4, 4)
+
 {
-  await render({ cardStyle: 'latency' }, 'latency-toggle-base')
-  const o = JSON.parse(await evalJS(NOTE_PROBE))
-  await render({ cardStyle: 'latency', serverNotes: '节点一=东京 · 三网优化,备用' }, 'latency-toggle')
-  const closed = JSON.parse(await evalJS(NOTE_PROBE))
-  check('可点展开：默认关闭时与无备注逐像素相同（零占位）',
-    closed.cardH === o.cardH && closed.gridTop === o.gridTop && closed.rowH === o.rowH,
-    `高 ${closed.cardH}/${o.cardH} 格上沿 ${closed.gridTop}/${o.gridTop}`)
-  check('可点展开：「+N」是一枚可点控件（button + aria-expanded=false），不是静态文本',
-    closed.toggle?.tag === 'BUTTON' && closed.toggle.expanded === 'false' && closed.toggle.text.includes('+1'),
-    JSON.stringify(closed.toggle))
-  // 点它。★同时记下点击那一刻的 pathname —— 「没跳详情页」这条必须与点击同批取证，
-  // 事后单独读一次 location 会把「点完又自己跳回去」这种情形漏掉。
-  const clickedPath = await evalJS(`(() => {
-    const b = document.querySelector('[data-note-toggle]')
-    if (!b) return 'no-toggle'
-    b.click()
+  await render({ cardStyle: 'latency' }, 'peek-base')
+  const base = JSON.parse(await evalJS(PEEK_PROBE))
+  await render({ cardStyle: 'latency', serverNotes: '节点一=东京 · 三网优化,备用' }, 'peek-closed')
+  const closed = JSON.parse(await evalJS(PEEK_PROBE))
+  check('延迟+浮层：右上角有一枚原生 button 控件（aria-expanded=false，浮层默认不渲染）',
+    closed.btn?.tag === 'BUTTON' && closed.btn.expanded === 'false' && closed.panel === null,
+    JSON.stringify(closed.btn) + ' / 浮层 ' + (closed.panel ? '在' : '不在'))
+  // ★两个坐标别混用：btn.mid 是视口坐标，gridTop 是「相对卡片上沿」的偏移 —— 直接比会得出
+  // 「控件在读数格下面」这种假红（第一版就是这么写的）。要么都换成视口坐标，要么都换相对值。
+  check('延迟+浮层：控件贴在卡片右上角、且在读数格之上',
+    closed.btn !== null && Math.abs(closed.cardRight - closed.btn.r - 16) <= 1 && closed.btn.mid < closed.cardTop + closed.gridTop,
+    `卡右 ${closed.cardRight} / 控件右 ${closed.btn?.r} / 控件中线 ${closed.btn?.mid} vs 读数格上沿 ${closed.cardTop + closed.gridTop}`)
+  check('延迟+浮层：标题行不再挂备注胶囊（备注只在浮层里）', closed.badges === 0, `胶囊 ${closed.badges} 枚`)
+  check('延迟+浮层：默认状态与「没有备注」时逐像素相同（浮层不占位）',
+    closed.cardH === base.cardH && closed.gridTop === base.gridTop && closed.rowH === base.rowH,
+    `高 ${closed.cardH}/${base.cardH} 格上沿 ${closed.gridTop}/${base.gridTop} 行高 ${closed.rowH}/${base.rowH}`)
+  check('延迟+浮层：卡片正文里没有备注文字（没填备注的站点看不到任何痕迹）',
+    !closed.text.includes('三网优化') && !closed.text.includes('备用'), closed.text)
+  check('延迟+浮层：名字没被控件挤到截断', closed.nameClipped === false, `截断=${closed.nameClipped}`)
+
+  if (closed.btn) await hover(closed.btn.x + closed.btn.w / 2, closed.btn.mid)
+  const hovered = JSON.parse(await evalJS(PEEK_PROBE))
+  check('延迟+浮层：悬停即弹出（aria-expanded=true，浮层渲染出来）',
+    hovered.btn?.expanded === 'true' && hovered.panel !== null, JSON.stringify(hovered.btn))
+  const t = hovered.panel?.text ?? ''
+  check('延迟+浮层：浮层里备注列全（两枚胶囊都在）', t.includes('东京 · 三网优化') && t.includes('备用'), t)
+  check('延迟+浮层：浮层里有在线时间（口径同「详细」档）', /在线 4 天/.test(t), t)
+  check('延迟+浮层：浮层里有价格与计费周期', t.includes('¥12.50 / 月付'), t)
+  check('延迟+浮层：浮层里有到期（按 hub 的 expires_in 算）', t.includes('剩余 95 天'), t)
+  check('延迟+浮层：悬停不会跳详情页（仍在列表页）', hovered.path === '/', hovered.path)
+
+  await moveAway()
+  const away = JSON.parse(await evalJS(PEEK_PROBE))
+  check('延迟+浮层：鼠标移开就收起（回到与关闭态一致）',
+    away.panel === null && away.btn?.expanded === 'false' && away.cardH === closed.cardH,
+    `浮层 ${away.panel ? '在' : '不在'} / 高 ${away.cardH}/${closed.cardH}`)
+
+  // 点击：手机端没有悬停，这条路必须能开；且点它**不许**连带打开详情页。
+  const clickedPath = await evalJS(`(() => { const b = document.querySelector('[data-note-popover]'); if (!b) return 'no-btn'; b.click(); return location.pathname })()`)
+  await sleep(300)
+  const clicked = JSON.parse(await evalJS(PEEK_PROBE))
+  check('延迟+浮层：点一下就开（手机端的唯一入口）', clicked.panel !== null && clicked.btn?.expanded === 'true', JSON.stringify(clicked.btn))
+  check('延迟+浮层：点这枚控件不会打开详情页（仍在列表页）', clickedPath === '/' && clicked.path === '/', `点击那一刻 ${clickedPath} / 复测 ${clicked.path}`)
+  check('延迟+浮层：浮层不越出卡片（右沿与下沿都在卡片内）',
+    clicked.panel !== null && clicked.panel.r <= clicked.cardRight + 1 && clicked.panel.x >= 0,
+    `浮层 ${clicked.panel?.x}~${clicked.panel?.r} / 卡右 ${clicked.cardRight}`)
+
+  // 键盘：Escape 收起；Enter 冒泡不许把详情页打开（卡片自己是 role=button）。
+  const esc = await evalJS(`(() => {
+    const b = document.querySelector('[data-note-popover]')
+    b.focus()
+    b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     return location.pathname
   })()`)
-  await sleep(400)
-  const open = JSON.parse(await evalJS(NOTE_PROBE))
-  check('可点展开：点一下完整清单就出现（两枚都在卡片正文里）',
-    open.text.includes('东京 · 三网优化') && open.text.includes('备用'), open.text)
-  check('可点展开：展开后才长高（关闭时不长）', open.cardH > closed.cardH, `开 ${open.cardH}px / 关 ${closed.cardH}px`)
-  check('可点展开：aria-expanded 跟着变 true', open.toggle?.expanded === 'true', JSON.stringify(open.toggle))
-  check('可点展开：点这枚控件不会打开详情页（仍在列表页）',
-    clickedPath === '/' && open.path === '/', `点击那一刻 ${clickedPath} / 复测 ${open.path}`)
-  // 再点一下收起：必须回到与关闭态**逐像素相同**的卡片，且第二枚从正文里消失。
-  await evalJS(`(() => { const b = document.querySelector('[data-note-toggle]'); if (b) b.click(); return true })()`)
-  await sleep(400)
-  const back = JSON.parse(await evalJS(NOTE_PROBE))
-  check('可点展开：再点一下收起，卡片回到与关闭态逐像素相同',
-    back.cardH === closed.cardH && back.gridTop === closed.gridTop && !back.text.includes('备用'),
-    `高 ${back.cardH}/${closed.cardH} / 正文 ${back.text.slice(0, 40)}`)
-}
-{
-  // 手机窄屏（390）也得点得开：控件在、展开后清单完整、名字没被挤断、没有横向溢出。
-  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1200, deviceScaleFactor: 1, mobile: true })
-  await render({ cardStyle: 'latency', serverNotes: '节点一=东京 · 三网优化,备用' }, 'latency-toggle-mobile')
-  const before = JSON.parse(await evalJS(NOTE_PROBE))
-  await evalJS(`(() => { const b = document.querySelector('[data-note-toggle]'); if (b) b.click(); return true })()`)
-  await sleep(400)
-  const after = JSON.parse(await evalJS(NOTE_PROBE))
-  const overflow = await evalJS(`document.documentElement.scrollWidth > document.documentElement.clientWidth`)
-  check('可点展开（手机 390）：控件在、点得开、两枚都出现、卡片长高',
-    before.toggle?.tag === 'BUTTON' && after.toggle?.expanded === 'true' && after.text.includes('备用') && after.cardH > before.cardH,
-    `控件 ${before.toggle?.tag} / 展开 ${after.toggle?.expanded} / 高 ${before.cardH}→${after.cardH}`)
-  check('可点展开（手机 390）：展开后无横向溢出、名字仍完整',
-    overflow === false && after.nameClipped === false, `溢出 ${overflow} / 截断 ${after.nameClipped}`)
-  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1200, deviceScaleFactor: 1, mobile: false })
-}
-
-{
-  // 键盘这条只断「可聚焦 + 原生 button + 冒泡不触发卡片」三件事：
-  //   · 原生 <button> 自带 Enter / 空格激活，所以「能被 Tab 聚焦 + 是 button」已经足够说明按得动
-  //     （headless 下用 CDP 合成 Enter 触发不了默认激活，实测 rawKeyDown / keyDown 都不行，
-  //      别为这条路写死断言）；
-  //   · 真正会出事的是**冒泡**：卡片自己是 role=button，Enter 冒到它头上就会被当成「打开详情页」。
-  //   · 对照组必测：同样的 Enter 打在卡片本体上**确实会跳详情页**，否则上面那条「仍在列表页」
-  //     是恒真的空跑（这条坑本项目踩过：断言没证明机制真的会坏）。
-  await render({ cardStyle: 'latency', serverNotes: '节点一=东京 · 三网优化,备用' }, 'latency-toggle-keyboard')
-  const focused = await evalJS(`(() => { const b = document.querySelector('[data-note-toggle]'); if (!b) return false; b.focus(); return document.activeElement === b })()`)
-  const before = JSON.parse(await evalJS(NOTE_PROBE))
-  const onToggle = await evalJS(`(() => {
-    const b = document.querySelector('[data-note-toggle]')
-    if (!b) return 'no-toggle'
+  await sleep(300)
+  const afterEsc = JSON.parse(await evalJS(PEEK_PROBE))
+  check('延迟+浮层：Escape 收起，且不跳详情页', afterEsc.panel === null && esc === '/' && afterEsc.path === '/', `浮层 ${afterEsc.panel ? '在' : '不在'} / ${esc}`)
+  const enterPath = await evalJS(`(() => {
+    const b = document.querySelector('[data-note-popover]')
     b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     return location.pathname
   })()`)
-  await sleep(400)
-  const after = JSON.parse(await evalJS(NOTE_PROBE))
-  const onCard = await evalJS(`(() => {
+  await sleep(300)
+  const afterEnter = JSON.parse(await evalJS(PEEK_PROBE))
+  check('延迟+浮层：Enter 冒泡到控件上不会打开详情页', enterPath === '/' && afterEnter.path === '/', `${enterPath} / ${afterEnter.path}`)
+  // 对照组：同样的点击/Enter 打在**卡片本体**上确实会跳详情页（证明上面两条不是恒真）。
+  const cardClick = await evalJS(`(() => {
     const c = [...document.querySelectorAll('[role=button]')].find((el) => /CPU/.test(el.innerText))
     if (!c) return 'no-card'
     c.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     return location.pathname
   })()`)
   await sleep(400)
-  check('可点展开（键盘）：控件是原生 button 且能被聚焦（Enter/空格激活由原生按钮提供）',
-    before.toggle?.tag === 'BUTTON' && focused === true, `控件 ${before.toggle?.tag} / 聚焦 ${focused}`)
-  check('可点展开（键盘）：Enter 冒泡到控件上不会打开详情页（仍在列表页）',
-    onToggle === '/' && after.path === '/', `那一刻 ${onToggle} / 复测 ${after.path}`)
-  check('可点展开（键盘）：对照组——同样的 Enter 打在卡片本体上确实会跳详情页（判据不是恒真）',
-    typeof onCard === 'string' && onCard.startsWith('/node'), `卡片上 ${onCard}`)
+  check('延迟+浮层：对照组——同样的 Enter 打在卡片本体上确实会跳详情页（判据不是恒真）',
+    typeof cardClick === 'string' && cardClick.startsWith('/node'), `卡片上 ${cardClick}`)
+}
+{
+  // 手机窄屏（390）：控件在、点得开、无横向溢出、浮层不越出卡片。
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 1200, deviceScaleFactor: 1, mobile: true })
+  await render({ cardStyle: 'latency', serverNotes: '节点一=东京 · 三网优化,备用' }, 'peek-mobile')
+  const before = JSON.parse(await evalJS(PEEK_PROBE))
+  await evalJS(`(() => { const b = document.querySelector('[data-note-popover]'); if (b) b.click(); return true })()`)
+  await sleep(300)
+  const after = JSON.parse(await evalJS(PEEK_PROBE))
+  const overflow = await evalJS(`document.documentElement.scrollWidth > document.documentElement.clientWidth`)
+  check('延迟+浮层（手机 390）：控件在、点得开、四段信息齐',
+    before.btn?.tag === 'BUTTON' && after.panel !== null && /在线 /.test(after.panel?.text ?? '') && (after.panel?.text ?? '').includes('剩余 95 天'),
+    after.panel?.text)
+  check('延迟+浮层（手机 390）：无横向溢出、浮层不越出卡片、名字不被挤断',
+    overflow === false && after.panel !== null && after.panel.r <= after.cardRight + 1 && after.nameClipped === false,
+    `溢出 ${overflow} / 浮层右 ${after.panel?.r} / 卡右 ${after.cardRight}`)
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1200, deviceScaleFactor: 1, mobile: false })
+}
+{
+  // 这枚控件只属于「延迟」档：详细档本来就有这些信息，经典/简约两档也不该冒出它。
+  for (const [cfg, tag] of [[{ cardStyle: 'detailed' }, 'peek-not-detailed'], [{ cardStyle: 'classic' }, 'peek-not-classic'], [{ cardStyle: 'plain' }, 'peek-not-plain']]) {
+    await render({ ...cfg, serverNotes: '节点一=东京 · 三网优化' }, tag)
+    const dom = JSON.parse(await evalJS(PEEK_PROBE))
+    check(`浮层控件只在延迟档：${cfg.cardStyle} 档上没有它`, dom.btn === null && dom.panel === null, JSON.stringify(dom.btn))
+  }
 }
 
 /* 3) 详细（新档） */

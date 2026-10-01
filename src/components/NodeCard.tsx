@@ -1,6 +1,6 @@
-import { useState, type ComponentType, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react"
 import {
-  ArrowDown, ArrowDownUp, ArrowUp, CalendarClock, Cpu, HardDrive, MemoryStick,
+  ArrowDown, ArrowDownUp, ArrowUp, CalendarClock, Cpu, HardDrive, Info, MemoryStick,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -216,13 +216,26 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
   // 备注在「详细」与「延迟」两档生效，且清单非空才算开——留空即关闭，两档都保持原样。
   const remark = detailed && hasNotes(notes)
   /**
-   * 「延迟」档的服务器备注：排在**标题行右侧**（首枚胶囊 + 「+N」，完整清单挂 title 悬停）。
-   * 这一档卡片最高，所以不给备注新开一行——用的就是标题行右边那片留白，实测卡片总高与
-   * 读数格上沿都与不开备注时逐像素相同（见 `tools/verify_card_styles.mjs` 的「延迟+备注」一组）。
+   * 「延迟」档右上角那枚信息控件：悬停或点击弹出浮层，里面是**备注 + 在线时间 + 价格 + 到期**。
+   * 「延迟」档本来不写这些（它们原来只有「详细」档有），浮层让它们按需出现，卡片本身
+   * 一个像素都不为此让位——默认关闭时与没有备注、没有这枚控件时逐像素相同。
    */
-  const myTags = cardStyle === "latency" && hasNotes(notes) ? tagsFor(notes, node.name) : []
-  // 「+N」点开后展开完整清单：关闭时不占位（卡片与没有备注时逐像素相同），点开才长高。
-  const [tagsOpen, setTagsOpen] = useState(false)
+  const peek = cardStyle === "latency"
+  const noteTags = hasNotes(notes) ? tagsFor(notes, node.name) : []
+  const [peekOpen, setPeekOpen] = useState(false)
+  const peekRef = useRef<HTMLSpanElement>(null)
+  // 钉住（点开）之后点别处要能收起；点卡片别的地方会跳详情页，所以只在浮层外按下时收。
+  useEffect(() => {
+    if (!peekOpen) return
+    const onDown = (e: PointerEvent) => {
+      // 别写 `e.target as Node`：本文件里的 `Node` 是主题自己的节点类型（@/lib/api），
+      // 会和 DOM 的 Node 撞名。用 instanceof 收窄，既避开名字冲突也真的判了类型。
+      const el = e.target
+      if (!(el instanceof HTMLElement) || !peekRef.current?.contains(el)) setPeekOpen(false)
+    }
+    document.addEventListener("pointerdown", onDown)
+    return () => document.removeEventListener("pointerdown", onDown)
+  }, [peekOpen])
   const price = priceText(node)
   const cycle = cycleText(node)
 
@@ -283,51 +296,66 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
         <Country node={node} />
         {/* 简约档只把名字加粗一档（参考站是 600），文字与位置照旧。 */}
         <h3 className={`truncate ${plain ? "font-semibold" : "font-medium"}`}>{node.name}</h3>
-        {/* 延迟档的备注：排在名字右边那片留白里——首枚胶囊 + 「+N」。
-            关闭时**零占位**（卡片总高与读数格上沿都与没有备注时逐像素相同）；点「+N」才把
-            完整清单摊在下面，悬停也能从 title 里看全。只有一个标签时没什么可展开的，就不挂控件。 */}
-        {myTags.length > 1 ? (
-          <button
-            type="button"
-            data-note-toggle=""
-            aria-expanded={tagsOpen}
-            title={myTags.join(" · ")}
-            // 卡片自己就是 role=button：Enter / 空格冒泡上去会被它当成「打开详情页」，
-            // 这里必须拦住，否则用键盘展开备注会顺手跳到详情页。
-            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") setTagsOpen(false) }}
-            onClick={(e) => { e.stopPropagation(); setTagsOpen((v) => !v) }}
-            className="ml-auto flex shrink-0 items-center gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        {/* 「延迟」档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期）。
+            卡片自己是 role=button，所以点击与 Enter/空格都要拦在控件里，别让它冒泡成「打开详情页」；
+            浮层挂在同一个 relative 容器内，鼠标从图标移到浮层上不会把它关掉。 */}
+        {peek && (
+          <span
+            ref={peekRef}
+            className="relative ml-auto shrink-0"
+            onPointerEnter={() => setPeekOpen(true)}
+            onPointerLeave={() => setPeekOpen(false)}
           >
-            <Badge variant="secondary" className="min-w-0 max-w-[9rem] shrink font-normal text-muted-foreground">
-              <span className="min-w-0 truncate">{myTags[0]}</span>
-            </Badge>
-            <span className="shrink-0 rounded-full px-1 text-[11px] text-muted-foreground">{tagsOpen ? "−" : `+${myTags.length - 1}`}</span>
-          </button>
-        ) : myTags.length === 1 ? (
-          <Badge
-            variant="secondary"
-            className="ml-auto min-w-0 max-w-[9rem] shrink font-normal text-muted-foreground"
-            title={myTags[0]}
-          >
-            <span className="min-w-0 truncate">{myTags[0]}</span>
-          </Badge>
-        ) : null}
-      </div>
-      {/* 点开后摊出来的完整清单：写法与「详细」档那一行同一套，关闭时不渲染、不占位。 */}
-      {tagsOpen && myTags.length > 1 && (
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1">
-          {myTags.map((tag, i) => (
-            <Badge
-              key={`${i}-${tag}`}
-              variant="secondary"
-              className="min-w-0 max-w-full shrink font-normal"
-              title={tag}
+            <button
+              type="button"
+              data-note-popover=""
+              aria-expanded={peekOpen}
+              aria-label="在线时间、备注、价格与到期"
+              onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") setPeekOpen(false) }}
+              onClick={(e) => { e.stopPropagation(); setPeekOpen((v) => !v) }}
+              className="grid size-5 place-items-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             >
-              <span className="min-w-0 truncate">{tag}</span>
-            </Badge>
-          ))}
-        </div>
-      )}
+              <Info className="size-3.5" />
+            </button>
+            {peekOpen && (
+              <span
+                data-note-panel=""
+                className="absolute right-0 top-6 z-20 block w-56 space-y-1.5 rounded-md border bg-popover px-3 py-2.5 text-xs shadow-md"
+              >
+                {/* 备注：一行一枚胶囊（逗号分隔的多枚也就排成多枚），没有备注的机器不占这一行。 */}
+                {noteTags.length > 0 && (
+                  <span className="flex min-w-0 flex-wrap items-center gap-1">
+                    {noteTags.map((tag, i) => (
+                      <Badge
+                        key={`${i}-${tag}`}
+                        variant="secondary"
+                        className="min-w-0 max-w-full shrink font-normal text-muted-foreground"
+                        title={tag}
+                      >
+                        <span className="min-w-0 truncate">{tag}</span>
+                      </Badge>
+                    ))}
+                  </span>
+                )}
+                <span className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">在线时间</span>
+                  <span className="tnum min-w-0 truncate">{onlineText(node) ?? "—"}</span>
+                </span>
+                {price && (
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">价格</span>
+                    <span className="tnum min-w-0 truncate">{cycle ? `${price} / ${cycle}` : price}</span>
+                  </span>
+                )}
+                <span className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">到期</span>
+                  <span className="tnum min-w-0 truncate">{expiryText(node) ?? "无期限"}</span>
+                </span>
+              </span>
+            )}
+          </span>
+        )}
+      </div>
 
       {/* One layout for both states: a disconnected node still knows its
           cores, memory, disk size and traffic totals, and showing those with

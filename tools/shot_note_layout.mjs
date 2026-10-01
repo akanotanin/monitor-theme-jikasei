@@ -147,6 +147,7 @@ const MEASURE = `(() => {
       nameW: h3 ? Math.round(h3.getBoundingClientRect().width) : null,
       badges,
       pingRows: c.querySelectorAll('svg polyline').length,
+      panel: (() => { const p = c.querySelector('[data-note-panel]'); return p ? p.innerText.replace(/\\n/g, ' | ') : null })(),
     };
   });
   return JSON.stringify({ count: cards.length, withPing: out.filter((c) => c.pingRows > 0).length, cards: out });
@@ -154,11 +155,11 @@ const MEASURE = `(() => {
 
 const NAMES = TAGGED
 
-// 三态：无备注（基线）/ 备注关闭（默认形态，与基线逐像素相同）/ 点开「+N」后的展开态。
+// 三态：无备注（基线）/ 浮层关闭（默认形态，与基线逐像素相同）/ 悬停打开浮层（桌面走真鼠标）。
 const MODES = [
   { key: '0', name: '0-无备注（基线）', notes: false, open: false },
-  { key: 'a', name: 'a-备注关闭（默认）', notes: true, open: false },
-  { key: 'ao', name: 'b-点开「+1」展开', notes: true, open: true },
+  { key: 'a', name: 'a-浮层关闭（默认）', notes: true, open: false },
+  { key: 'ao', name: 'b-悬停/点击打开浮层', notes: true, open: true },
 ]
 
 const rows = []
@@ -190,14 +191,26 @@ for (const mode of MODES) {
   if (scrolled !== true) problems.push(`${mode.name}: 没找到目标卡片、没滚动（切片可能是视口外的空白）`)
   let opened = null
   if (mode.open) {
-    opened = await evalJS(`(() => {
+    const box = JSON.parse(await evalJS(`(() => {
       const c = [...document.querySelectorAll('[data-slot="card"]')].find((el) => (el.querySelector('h3') || {}).textContent.trim() === ${JSON.stringify(NAMES[0])})
-      const b = c && c.querySelector('[data-note-toggle]')
-      if (!b) return false
-      b.click()
-      return true
-    })()`)
-    await sleep(500)
+      const b = c && c.querySelector('[data-note-popover]')
+      if (!b) return JSON.stringify(null)
+      const r = b.getBoundingClientRect()
+      return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) })
+    })()`))
+    opened = box !== null
+    if (box) {
+      // 先移上去（触发 onPointerEnter），再点一下钉住 —— 两条入口都走到，图里才看得到悬停态。
+      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y, button: 'none', buttons: 0 })
+      await sleep(400)
+      await evalJS(`(() => {
+        const c = [...document.querySelectorAll('[data-slot="card"]')].find((el) => (el.querySelector('h3') || {}).textContent.trim() === ${JSON.stringify(NAMES[0])})
+        const b = c && c.querySelector('[data-note-popover]')
+        if (b && b.getAttribute('aria-expanded') === 'false') b.click()
+        return true
+      })()`)
+      await sleep(500)
+    }
   }
   const geo = JSON.parse(await evalJS(MEASURE))
   const box = await evalJS(`(() => {
@@ -222,7 +235,7 @@ for (const mode of MODES) {
   const show = (n) => {
     const c = byName[n]
     if (!c) return `${n}: 没量到`
-    return `高 ${c.cardH}px / 标题行 ${c.rowH}px / 名字 ${c.nameW}px${c.nameClipped ? '（截断）' : ''} / 标签 ${c.badges.map((b) => `${b.text}(${b.w}×${b.h})`).join(' ') || '无'}`
+    return `高 ${c.cardH}px / 标题行 ${c.rowH}px / 名字 ${c.nameW}px${c.nameClipped ? '（截断）' : ''} / 浮层标签 ${c.badges.map((b) => `${b.text}(${b.w}×${b.h})`).join(' ') || '无'}${c.panel ? ` / 浮层「${c.panel}」` : ''}`
   }
   console.log(`\n📷 ${mode.name}  渲染=${ok ? 'ok' : '⚠ 超时'}  延迟行到齐=${pinged ? 'ok' : '⚠ 超时'}  桩命中=${hitCount}  卡片 ${geo.count} 张（有延迟行 ${geo.withPing}）`)
   console.log(`   ${clipPath}  ${fullPath}`)
@@ -230,11 +243,10 @@ for (const mode of MODES) {
   if (hitCount !== 1) problems.push(`${mode.name}: 配置桩命中 ${hitCount} 次（应为 1）`)
   if (!ok) problems.push(`${mode.name}: 等待渲染落定超时`)
   if (!pinged) problems.push(`${mode.name}: 三网延迟一直没画出来（卡片高度不可比）`)
-  if (mode.open && opened !== true) problems.push(`展开态：没找到那枚「+N」控件，拍到的是收起态`)
+  if (mode.open && opened !== true) problems.push(`打开态：没找到那枚浮层控件，拍到的是关闭态`)
   // 备注开的那一档：清单里的前几台必须真的挂上了标签（否则拍到的仍是「没有备注」的样子）。
-  if (mode.notes) {
-    const missed = NAMES.filter((n) => !(byName[n]?.badges?.length > 0))
-    if (missed.length) problems.push(`备注开了却没挂上标签：${missed.join('、')}`)
+  if (mode.open && !(byName[NAMES[0]]?.badges?.length > 0)) {
+    problems.push(`打开态：${NAMES[0]} 的浮层里没量到备注胶囊（备注没被列进浮层？）`)
   }
   rows.push({ mode: mode.name, key: mode.key, hits: hitCount, pinged, count: geo.count, byName })
 }
