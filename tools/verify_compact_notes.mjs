@@ -109,7 +109,14 @@ ws.addEventListener('message', (e) => {
   if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) }
 })
 const send = (method, params = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })) })
-const evalJS = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value
+const evalJS = async (expr) => {
+  const r = (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result
+  // 探针抛异常时别只回一个 undefined（那会让 JSON.parse 崩在一行看不懂的地方）——把异常打出来。
+  if (r?.exceptionDetails) {
+    console.log('⚠ 页面侧异常：', r.exceptionDetails.exception?.description || r.exceptionDetails.text)
+  }
+  return r?.result?.value
+}
 const waitFor = async (expr, timeout = 40000) => { const d = Date.now() + timeout; while (Date.now() < d) { if ((await evalJS(expr)) === true) return true; await sleep(250) } return false }
 let pass = 0, fail = 0
 const check = (name, ok, info = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? ' — ' + info : ''}`); ok ? pass++ : fail++ }
@@ -147,13 +154,29 @@ const PROBE = `JSON.stringify((() => {
   const box = panel ? panel.querySelector('td > div') : null
   if (!box) return { missing: true }
   const ranges = box.querySelector('div.flex.flex-wrap.items-center')
+  const strip = box.querySelector('[data-note-strip]')
   const btn = box.querySelector('[data-note-popover]')
   const pop = box.querySelector('[data-note-panel]')
+  const detail = [...box.querySelectorAll('button')].find((b) => /完整详情/.test(b.innerText))
+  // 「可见」= 真的占版面。★别只看元素自己的 computed display —— 收在 sm:hidden 的**父级**里时，
+  // 子元素自己的 display 仍是 inline-flex，会得出「PC 上那枚图标还在」的假红。用 getClientRects 数框。
+  const vis = (el) => !!el && el.getClientRects().length > 0
   const rect = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), r: Math.round(b.right), b: Math.round(b.bottom) } }
   return {
+    stripVisible: vis(strip),
+    stripBox: vis(strip) ? rect(strip) : null,
+    // ★这里只能放文本，不能放 DOM 元素：JSON.stringify 撞上 React 挂在元素上的 Fiber 会「循环结构」当场抛；
+    // 而且这段注释本身写在模板字面量里 —— 里面连反引号都不能有（写一个就把字符串截断）。
+    stripBadges: strip ? [...strip.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()) : [],
+    stripBadgeWidths: strip ? [...strip.querySelectorAll('[data-slot="badge"]')].map((b) => Math.round(b.getBoundingClientRect().width)) : [],
+    detailLeft: detail ? Math.round(detail.getBoundingClientRect().left) : null,
+    detailVisible: vis(detail),
+    iconVisible: vis(btn),
+    panelVisible: vis(pop),
     boxH: Math.round(box.getBoundingClientRect().height),
     rangesH: ranges ? Math.round(ranges.getBoundingClientRect().height) : null,
     hasBtn: !!btn,
+    hasStrip: !!strip,
     btnTag: btn ? btn.tagName : null,
     expanded: btn ? btn.getAttribute('aria-expanded') : null,
     hasPanel: !!pop,
@@ -174,42 +197,59 @@ if (none.missing) {
   process.exit(2)
 }
 
-/* ── 1) 没有备注：那一行与改动前一样（没有图标、没有浮层） ─────────────────── */
-check('无备注：展开区里没有那枚备注图标', none.hasBtn === false && none.hasPanel === false, `btn=${none.hasBtn}`)
+/* ── 1) 没有备注：那一行与改动前一样（没有标签带、也没有那枚图标） ─────────────── */
+check('无备注：展开区里既没有标签带、也没有那枚备注图标',
+  none.hasStrip === false && none.hasBtn === false && none.hasPanel === false,
+  JSON.stringify({ strip: none.hasStrip, btn: none.hasBtn }))
 
-/* ── 2) 有备注：不摊开时零占位 ─────────────────────────────────────────── */
+/* ── 2) PC（1440）：备注**直接并排显示**在「完整详情 ›」左边，且不新增行高 ────── */
 const NOTES = '节点一=测试测试,222,333'
-await renderAndExpand({ cardStyle: 'compact', serverNotes: NOTES }, '有备注·关')
-const closed = JSON.parse(await evalJS(PROBE))
-check('有备注：那枚图标在、且是原生 button', closed.hasBtn === true && closed.btnTag === 'BUTTON', `${closed.btnTag}`)
-check('有备注：默认收起（aria-expanded=false、没有浮层）', closed.expanded === 'false' && closed.hasPanel === false, `expanded=${closed.expanded} panel=${closed.hasPanel}`)
-check('有备注：不摊开时展开区高度与无备注时逐像素相同（零占位）',
-  closed.boxH === none.boxH && closed.rangesH === none.rangesH, `高 ${closed.boxH}/${none.boxH} 量程行 ${closed.rangesH}/${none.rangesH}`)
+await renderAndExpand({ cardStyle: 'compact', serverNotes: NOTES }, '有备注·PC')
+const desk = JSON.parse(await evalJS(PROBE))
+check('PC：三枚备注直接显示（标签带可见，不是浮层）',
+  desk.stripVisible === true && desk.stripBadges.join('|') === '测试测试|222|333',
+  `可见 ${desk.stripVisible} / ${desk.stripBadges.join('|')}`)
+check('PC：标签带排在「完整详情 ›」左边（右沿不越过它的左沿）',
+  desk.stripBox !== null && desk.detailLeft !== null && desk.stripBox.r <= desk.detailLeft + 1,
+  `标签带右 ${desk.stripBox?.r} / 完整详情左 ${desk.detailLeft}`)
+check('PC：三枚宽度都够读出内容（没被压成一个字）',
+  desk.stripBadgeWidths.length === 3 && desk.stripBadgeWidths.every((w) => w >= 28),
+  JSON.stringify(desk.stripBadgeWidths))
+check('PC：那枚手机用的图标在这档不显示（display:none）', desk.iconVisible === false, `可见 ${desk.iconVisible}`)
+check('PC：展开区高度与无备注时逐像素相同（并排显示也不新增行高）',
+  desk.boxH === none.boxH && desk.rangesH === none.rangesH, `高 ${desk.boxH}/${none.boxH} 量程行 ${desk.rangesH}/${none.rangesH}`)
+check('PC：没有横向溢出', desk.overflowX === false, '')
 
-/* ── 3) 点一下：摊开 ─────────────────────────────────────────────────── */
+/* ── 3) PC 六枚长备注：不撑高、不越界，「完整详情 ›」仍在 ─────────────────── */
+await renderAndExpand({ cardStyle: 'compact', serverNotes: `节点一=${Array.from({ length: 6 }, (_, i) => `标签${i + 1}号`).join(',')}` }, '六枚')
+const many = JSON.parse(await evalJS(PROBE))
+check('PC（六枚）：展开区高度不变、不横向溢出', many.boxH === none.boxH && many.overflowX === false, `高 ${many.boxH}/${none.boxH}`)
+check('PC（六枚）：标签带不越出卡片、「完整详情 ›」仍可见',
+  many.stripBox !== null && many.stripBox.r <= many.detailLeft + 1 && many.detailVisible === true,
+  `标签带右 ${many.stripBox?.r} / 完整详情左 ${many.detailLeft}`)
+
+/* ── 4) 手机 390：那一行放不下，收成图标 + 浮层 ─────────────────────────── */
+const r390 = await renderAndExpand({ cardStyle: 'compact', serverNotes: NOTES }, '手机', 390, 1200)
+const mobClosed = JSON.parse(await evalJS(PROBE))
+check('手机 390：标签带不显示、那枚图标显示（两套形态按断点分开）',
+  mobClosed.stripVisible === false && mobClosed.iconVisible === true && mobClosed.btnTag === 'BUTTON',
+  `标签带 ${mobClosed.stripVisible} / 图标 ${mobClosed.iconVisible}`)
+check('手机 390：不摊开时展开区高度与无备注时相同',
+  mobClosed.boxH === JSON.parse(await evalJS(PROBE)).boxH && mobClosed.rangesH === mobClosed.rangesH, `高 ${mobClosed.boxH}`)
 await evalJS(`(() => { document.querySelector('tbody tr[role=button]').nextElementSibling.querySelector('[data-note-popover]').click(); return true })()`)
-await sleep(300)
-const open = JSON.parse(await evalJS(PROBE))
-check('点一下：aria-expanded 变 true、浮层出现', open.expanded === 'true' && open.hasPanel === true, `expanded=${open.expanded}`)
-check('浮层里三枚备注逐字同序', open.badges.join('|') === '测试测试|222|333', open.badges.join('|'))
-check('浮层是绝对定位：摊开后展开区高度不变', open.boxH === none.boxH, `${open.boxH}/${none.boxH}`)
-check('浮层不越出展开区右沿', open.panelBox !== null && open.panelBox.r <= open.boxRight + 1, `浮层右 ${open.panelBox?.r} / 容器右 ${open.boxRight}`)
-check('图标的 aria-label 带上全部备注（读屏可读）', /测试测试/.test(open.btnLabel) && /333/.test(open.btnLabel), open.btnLabel)
+await sleep(400)
+const mob = JSON.parse(await evalJS(PROBE))
+check('手机 390：点得开、三枚都在、浮层不越出视口、无横向溢出',
+  mob.panelVisible === true && mob.badges.length === 3 && mob.panelBox.x >= 0 && mob.panelBox.r <= 390 + 1 && mob.overflowX === false,
+  `${mob.badges.join('|')} 浮层 ${mob.panelBox.x}~${mob.panelBox.r}`)
+check('手机 390：摊开也不改展开区高度（浮层是绝对定位）', mob.boxH === mobClosed.boxH, `${mob.boxH}/${mobClosed.boxH}`)
+{ const shot = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(`${SHOT_DIR}/mobile.png`, Buffer.from(shot.result.data, 'base64')) }
 
-/* ── 4) 点别处收起 ───────────────────────────────────────────────────── */
-await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 200, y: 620, button: 'left', clickCount: 1 })
-await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 200, y: 620, button: 'left', clickCount: 1 })
-await sleep(300)
-const afterOutside = JSON.parse(await evalJS(PROBE))
-check('点浮层外面：收起（浮层消失、aria-expanded 回 false）', afterOutside.hasPanel === false && afterOutside.expanded === 'false', `panel=${afterOutside.hasPanel}`)
-check('收起后展开区高度回到与无备注时相同', afterOutside.boxH === none.boxH, `${afterOutside.boxH}/${none.boxH}`)
-
-/* ── 5) Esc 收起 + 能聚焦 ────────────────────────────────────────────── */
-await evalJS(`(() => { const b = document.querySelector('tbody tr[role=button]').nextElementSibling.querySelector('[data-note-popover]'); b.click(); b.focus(); return true })()`)
-await sleep(250)
-const focused = await evalJS(`(() => { const a = document.activeElement; return !!a && typeof a.getAttribute === 'function' && a.getAttribute('data-note-popover') !== null })()`)
-// ★用页面内合成的 keydown（bubbles:true 冒到 document），别用 CDP 的 Input.dispatchKeyEvent——
-// 这个环境里那个事件到不了页面的 document 监听，测试会假红。
+/* ── 5) 手机那枚图标的交互（零占位 / 点外 / Esc / 聚焦 / 不收起这一行） ───────────── */
+check('手机 390：图标的 aria-label 带上全部备注（读屏可读）',
+  /测试测试/.test(mob.btnLabel) && /333/.test(mob.btnLabel), mob.btnLabel)
+check('手机 390：那枚图标是原生 button、能被聚焦', mob.btnTag === 'BUTTON' && mob.expanded === 'true',
+  `${mob.btnTag} aria-expanded=${mob.expanded}`)
 await evalJS(`(() => {
   const b = document.querySelector('tbody tr[role=button]').nextElementSibling.querySelector('[data-note-popover]')
   b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
@@ -217,38 +257,25 @@ await evalJS(`(() => {
 })()`)
 await sleep(300)
 const afterEsc = JSON.parse(await evalJS(PROBE))
-check('那枚图标能被聚焦（原生 button）', focused === true, String(focused))
-check('Esc：收起', afterEsc.hasPanel === false && afterEsc.expanded === 'false', `panel=${afterEsc.hasPanel}`)
-
-/* ── 6) 点图标不该让这一行收起来 ──────────────────────────────────────── */
-// ★点完要**等一拍**再读 DOM：React 的状态更新不是同步的，同一个 eval 里点完立刻读会读到旧 DOM
-// （第一版就这么假红了一次）。
+check('手机 390：Esc 收起（且仍在列表页）',
+  afterEsc.panelVisible === false && (await evalJS('location.pathname')) === '/', `panel=${afterEsc.panelVisible}`)
+await evalJS(`(() => { document.querySelector('tbody tr[role=button]').nextElementSibling.querySelector('[data-note-popover]').click(); return true })()`)
+await sleep(300)
+await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 30, y: 700, button: 'left', clickCount: 1 })
+await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 30, y: 700, button: 'left', clickCount: 1 })
+await sleep(300)
+const afterOutside = JSON.parse(await evalJS(PROBE))
+check('手机 390：点浮层外面收起，且展开区高度回到与无备注时相同',
+  afterOutside.panelVisible === false && afterOutside.boxH === mobClosed.boxH, `panel=${afterOutside.panelVisible} 高 ${afterOutside.boxH}/${mobClosed.boxH}`)
 await evalJS(`(() => { document.querySelector('tbody tr[role=button]').nextElementSibling.querySelector('[data-note-popover]').click(); return true })()`)
 await sleep(300)
 const still = await evalJS(`(() => {
   const row = document.querySelector('tbody tr[role=button]')
-  return JSON.stringify({ rowExpanded: row.getAttribute('aria-expanded'), hasPanel: !!row.nextElementSibling.querySelector('[data-note-panel]'), path: location.pathname })
+  return JSON.stringify({ rowExpanded: row.getAttribute('aria-expanded'), panel: row.nextElementSibling.querySelector('[data-note-panel]') !== null, path: location.pathname })
 })()`)
 { const j = JSON.parse(still)
-  check('点那枚图标：只摊浮层，不会把这一行收起来、也不跳页', j.rowExpanded === 'true' && j.hasPanel === true && j.path === '/', still) }
-
-/* ── 7) 六枚长备注 ──────────────────────────────────────────────────── */
-await renderAndExpand({ cardStyle: 'compact', serverNotes: `节点一=${Array.from({ length: 6 }, (_, i) => `标签${i + 1}号`).join(',')}` }, '六枚')
-await evalJS(`(() => { document.querySelector('tbody tr[role=button]').nextElementSibling.querySelector('[data-note-popover]').click(); return true })()`)
-await sleep(300)
-const many = JSON.parse(await evalJS(PROBE))
-check('六枚备注：浮层里六枚都在', many.badges.length === 6, `${many.badges.length} 枚`)
-check('六枚备注：浮层不越出展开区右沿、展开区高度不变',
-  many.panelBox.r <= many.boxRight + 1 && many.boxH === none.boxH, `浮层右 ${many.panelBox.r} / 容器右 ${many.boxRight} / 高 ${many.boxH}/${none.boxH}`)
-
-/* ── 8) 手机 390 ────────────────────────────────────────────────────── */
-await renderAndExpand({ cardStyle: 'compact', serverNotes: NOTES }, '手机', 390, 1200)
-await evalJS(`(() => { document.querySelector('tbody tr[role=button]').nextElementSibling.querySelector('[data-note-popover]').click(); return true })()`)
-await sleep(400)
-const mob = JSON.parse(await evalJS(PROBE))
-check('手机 390：图标在、点得开、三枚都在', mob.hasBtn && mob.hasPanel && mob.badges.length === 3, mob.badges.join('|'))
-check('手机 390：浮层不越出视口、无横向溢出', mob.panelBox.x >= 0 && mob.panelBox.r <= 390 + 1 && mob.overflowX === false, `浮层 ${mob.panelBox.x}~${mob.panelBox.r} 溢出 ${mob.overflowX}`)
-{ const s = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(`${SHOT_DIR}/mobile.png`, Buffer.from(s.result.data, 'base64')) }
+  check('手机 390：点那枚图标只摊浮层，不会把这一行收起来、也不跳页',
+    j.rowExpanded === 'true' && j.panel === true && j.path === '/', still) }
 
 /* ── 9) 整页详情也挂同一枚（同一组件、非 embedded 模式） ───────────────── */
 config = { pingLines: '北京电信', cardStyle: 'compact', serverNotes: NOTES }
@@ -256,12 +283,17 @@ await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, de
 await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/node/1` })
 // 详情页默认落在「资源」页签、桩里那条序列是空的（没有图）——所以只等那枚图标，
 // 别把「有图」也写进等待条件（否则这一条会假红）。
-const detailOk = await waitFor(`(() => !!document.querySelector('[data-note-popover]'))()`, 40000)
-const detailDiag = await evalJS(`JSON.stringify({
-  path: location.pathname, icons: document.querySelectorAll('[data-note-popover]').length,
-  ranges: !!document.querySelector('div.flex.flex-wrap.items-center'), text: (document.body.innerText || '').slice(0, 120),
-})`)
-check('整页详情（/node/1）上也有同一枚备注图标', detailOk === true, `${detailDiag}`)
+const detailOk = await waitFor(`(() => !!document.querySelector('[data-note-strip]'))()`, 40000)
+const detailDiag = await evalJS(`(() => {
+  const strip = document.querySelector('[data-note-strip]')
+  return JSON.stringify({
+    path: location.pathname,
+    stripVisible: !!strip && getComputedStyle(strip).display !== 'none',
+    texts: strip ? [...strip.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()) : [],
+  })
+})()`)
+check('整页详情（/node/1）上备注同样直接显示（同一份清单、同一落点）',
+  detailOk === true && JSON.parse(detailDiag).stripVisible === true && JSON.parse(detailDiag).texts.length === 3, `${detailDiag}`)
 
 /* ── 10) 控制台无报错 ────────────────────────────────────────────────── */
 check('整轮下来控制台 0 报错', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' / '))

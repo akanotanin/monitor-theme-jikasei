@@ -437,44 +437,54 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, notes = "" }:
           {(noteTags.length > 0 || (embedded && onOpenDetail)) && (
             <span className="ml-auto flex min-w-0 items-center gap-x-4 gap-y-1">
               {noteTags.length > 0 && (
-                <span
-                  ref={peekRef}
-                  className="relative inline-flex items-center"
-                  onPointerEnter={() => setPeekOpen(true)}
-                  onPointerLeave={() => setPeekOpen(false)}
-                >
-                  <button
-                    data-note-popover
-                    aria-expanded={peekOpen}
-                    aria-label={`服务器备注：${noteTags.join("、")}`}
-                    onClick={(e) => {
-                      // 这一块本身在展开行里，点它不该连带开合那一行。
-                      e.stopPropagation()
-                      setPeekOpen((open) => !open)
-                    }}
-                    // 只拦「激活键」的冒泡（别让 Enter 顺带开合这一行、跳详情页）；
-                    // ★Esc 必须放它上去——早先这里是无条件 stopPropagation，焦点在图标上按 Esc
-                    // 关不掉浮层（护栏「Esc：收起」当场报红，是真问题不是测试问题）。
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation() }}
-                    className="inline-flex text-muted-foreground transition-colors hover:text-foreground"
+                <>
+                  {/* PC（≥sm）：**直接并排显示**在「完整详情 ›」左边——这一行右边本来就空着，不新增行高。
+                      宽度上限用固定 px（内容尺寸容器里百分比会被解析成很小的值），空间不够先压标签。 */}
+                  <span data-note-strip className="hidden min-w-0 max-w-[14rem] items-center gap-1 overflow-hidden sm:flex">
+                    {noteTags.map((tag, i) => (
+                      <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
+                        <span className="min-w-0 truncate">{tag}</span>
+                      </Badge>
+                    ))}
+                  </span>
+                  {/* 手机（<sm）：这一行放不下那几枚标签，收成一枚图标 + 浮层（悬停或点开看全，
+                      点别处 / Esc 收起）；不摊开时这一行与没有备注时逐像素相同。 */}
+                  <span
+                    ref={peekRef}
+                    className="relative inline-flex items-center sm:hidden"
+                    onPointerEnter={() => setPeekOpen(true)}
+                    onPointerLeave={() => setPeekOpen(false)}
                   >
-                    <Info className="size-3.5" />
-                  </button>
-                  {peekOpen && (
-                    <span
-                      data-note-panel
-                      role="tooltip"
-                      // 宽度上限用固定 px：这一组是内容尺寸容器，百分比上限会被解析成很小的值（手机上标签会被压成一个字）。
-                      className="absolute top-5 right-0 z-20 flex w-max max-w-[16rem] flex-wrap gap-1 rounded-md border bg-card px-2 py-1.5 shadow-md"
+                    <button
+                      data-note-popover
+                      aria-expanded={peekOpen}
+                      aria-label={`服务器备注：${noteTags.join("、")}`}
+                      onClick={(e) => {
+                        // 这一块本身在展开行里，点它不该连带开合那一行。
+                        e.stopPropagation()
+                        setPeekOpen((open) => !open)
+                      }}
+                      // 只拦「激活键」的冒泡（别让 Enter 顺带开合这一行、跳详情页）；Esc 必须放它上去。
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation() }}
+                      className="inline-flex text-muted-foreground transition-colors hover:text-foreground"
                     >
-                      {noteTags.map((tag, i) => (
-                        <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
-                          <span className="min-w-0 truncate">{tag}</span>
-                        </Badge>
-                      ))}
-                    </span>
-                  )}
-                </span>
+                      <Info className="size-3.5" />
+                    </button>
+                    {peekOpen && (
+                      <span
+                        data-note-panel
+                        role="tooltip"
+                        className="absolute top-5 right-0 z-20 flex w-max max-w-[16rem] flex-wrap gap-1 rounded-md border bg-card px-2 py-1.5 shadow-md"
+                      >
+                        {noteTags.map((tag, i) => (
+                          <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
+                            <span className="min-w-0 truncate">{tag}</span>
+                          </Badge>
+                        ))}
+                      </span>
+                    )}
+                  </span>
+                </>
               )}
               {embedded && onOpenDetail && (
                 <button onClick={onOpenDetail} className="text-xs text-muted-foreground transition-colors hover:text-foreground">
