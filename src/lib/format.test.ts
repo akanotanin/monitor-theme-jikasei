@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, cpuName, daysUntil, despike, osName, pair, quarters, timeTicks, uptime,
+  axisBytes, axisTop, bytes, cpuName, daysUntil, despike, osName, pair, quarters, rate, timeTicks, uptime,
 } from "./format.ts"
 
 let failed = 0
@@ -30,6 +30,25 @@ eq(bytes(1024, 1), "1.0 KB", "digits 覆盖默认档位")
 // pair: one unit when both sides share it, two when they do not.
 eq(pair(300 * 1024 ** 2, 900 * 1024 ** 2), "300.00 / 900.00 MB", "同单位只写一次")
 eq(pair(300 * 1024 ** 2, 3 * 1024 ** 3), "300 MB / 3.00 GB", "跨单位各写各的")
+
+// rate: the same three significant digits as bytes(), plus the two rules the
+// summary cards forced on it -- the KB bin prints no decimal, and every bin stops
+// at 999 so that no reading is ever four digits wide. The two rates share a 50/50
+// row there, and the narrowest four-column cell leaves 77px for the text: an
+// old-style "1023.9 KB/s" needed 122px and was silently ellipsised.
+eq(rate(0), "0 B/s", "rate(0)")
+eq(rate(0.5), "0 B/s", "rate(0.5) 不能落到 UNITS[-1]")
+eq(rate(512), "512 B/s", "B 档整数")
+eq(rate(5 * 1024), "5.0 KB/s", "10 以下留一位小数")
+eq(rate(62.2 * 1024), "62 KB/s", "KB 档不给小数")
+eq(rate(112.6 * 1024), "113 KB/s", "KB 档四舍五入到整数")
+eq(rate(999.4 * 1024), "999 KB/s", "进位前最长的那串")
+eq(rate(999.5 * 1024), "1.0 MB/s", "到 999.5 进位到上一档")
+eq(rate(1023.9 * 1024), "1.0 MB/s", "1023.9 KB/s 不再印成四位数")
+eq(rate(1.8 * 1024 ** 2), "1.8 MB/s", "MB 档 10 以下留一位")
+eq(rate(20.5 * 1024 ** 2), "21 MB/s", "MB 档 10 以上不留小数")
+eq(rate(999.4 * 1024 ** 2), "999 MB/s", "MB 档进位前最长的那串")
+eq(rate(999.9 * 1024 ** 2), "1.0 GB/s", "MB 档同样封顶进位")
 
 // axisBytes: ticks under three digits keep one decimal, or a narrow axis repeats
 // a label; a trailing .0 adds nothing.

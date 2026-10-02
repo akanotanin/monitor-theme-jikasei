@@ -117,7 +117,15 @@ const ONCE_ONLY = {
   nodes: [base(1, '买断机', { online: true, price: 300, currency: 'CNY', billing_cycle: 'once', expires_in: 200 })],
 }
 
-const VARIANTS = { mixed: MIXED, down: ALL_DOWN, tied: TIED, free: NO_PRICE, exotic: EXOTIC, once: ONCE_ONLY }
+/* 长读数夹具（第 11 组断言用）：概览行那两列数字的宽度上限 */
+// 62.2 KB/s ↓ / 112.6 KB/s ↑ —— 站长截图里那份读数（四列布局下 1280 起才放得下）。
+const LONG_KB = { nodes: [base(1, 'Node A', { online: true, day_rx: 1.25 * GB, day_tx: 0.75 * GB, metrics: metrics({ cpu: 12.5, net_rx: 62.2 * KB, net_tx: 112.6 * KB }) })] }
+// bytes(n, 1) 在 [100, 1024) 档给一位小数 → 「1023.9 KB/s」是 KB 档最长的那串。
+const MAX_KB = { nodes: [base(1, 'Node A', { online: true, metrics: metrics({ cpu: 12.5, net_rx: 1023.9 * KB, net_tx: 1023.9 * KB }) })] }
+// MB 档同理：1023.9 MB/s（≈1 GB/s）。
+const MAX_MB = { nodes: [base(1, 'Node A', { online: true, metrics: metrics({ cpu: 12.5, net_rx: 1023.9 * MB, net_tx: 1023.9 * MB }) })] }
+
+const VARIANTS = { mixed: MIXED, down: ALL_DOWN, tied: TIED, free: NO_PRICE, exotic: EXOTIC, once: ONCE_ONLY, long: LONG_KB, maxkb: MAX_KB, maxmb: MAX_MB }
 
 let config = {}
 let variant = 'mixed'
@@ -327,7 +335,7 @@ function checkColumn(where, cards) {
 
 /**
  * 「和谐的节奏」：预算版那两张卡的右列，与「今日流量」「实时网速」两张卡里那张两列小栅格的
- * 第二列，落点应当相同（都是 50/50 拆分 + 同一个 gap-x-3）。差几像素说明前两张卡自成一个
+ * 第二列，落点应当相同（都是 50/50 拆分 + 同一个 gap-x-2）。差几像素说明前两张卡自成一个
  * 节奏，整行读起来就不是一个栅格（站长要的就是这个）。
  */
 function checkRhythm(where, dom) {
@@ -365,8 +373,8 @@ let classicNet = null
     tile(dom, '最忙节点').text === '最忙节点 | 51.0% | Node B', tile(dom, '最忙节点').text)
   check('原版：今日流量卡：今日 1.25 GB ↓ / 768 MB ↑，总流量 3.50 TB ↓ / 2.25 TB ↑',
     tile(dom, '今日流量').text === '今日流量 | 1.25 GB | 768 MB | 总流量 | 3.50 TB | 2.25 TB', tile(dom, '今日流量').text)
-  check('原版：实时网速卡 = 在线且有指标的节点之和（20.5 MB/s ↓ / 40.1 MB/s ↑）',
-    tile(dom, '实时网速').text === '实时网速 | 20.5 MB/s | 40.1 MB/s', tile(dom, '实时网速').text)
+  check('原版：实时网速卡 = 在线且有指标的节点之和（20.5 → 21 MB/s ↓ / 40.125 → 40 MB/s ↑）',
+    tile(dom, '实时网速').text === '实时网速 | 21 MB/s | 40 MB/s', tile(dom, '实时网速').text)
   // ── 与参考站对齐的三条：每块读数都是「小标签 / 大数 / 一行小字」三段、四张卡等高、
   //    24px 的主数字在两列栅格里不被截断（栅格自己不溢出，格子里的 truncate 是静默的）。
   check('原版：每块读数都是三段（小标签 / 大数 / 一行小字，照参考站）',
@@ -559,6 +567,26 @@ let classicNet = null
   const none = await render({ showSummary: false, showGroupTabs: false }, 'legacy-none')
   check('旧键迁移：两个旧键都关 → 两个都不显示', none.tiles.length === 0 && !none.body.includes('未分组'),
     `概览 ${none.tiles.length} 张 / 分组行 ${none.body.includes('未分组')}`)
+}
+
+/* 11) 长读数：概览行那两列数字的宽度上限（读数口径收敛 + 几何微调后，1024 起都应放得下） */
+// 这一行是 `grid grid-cols-2` + `truncate`，每格的文字框 = 格宽 − 20px（箭头 14 + 间距 6），
+// 四列布局下卡片最宽 299px → 文字框最多 107px；1024 那一档最狠，只有 73px。
+// 读数串的长度随数值变（KB 档四位数「1023.9 KB/s」要 122px），所以是「有概率显示不全」
+// ——护栏必须拿长读数当用例：原先只用了 20.5 / 40.1 MB/s（需 91px），在 107px 下恒过。
+// 机位铺到 1024 / 1100 是因为那段四列最窄，正是站长截图里中招的区间。
+{
+  const netRows = (dom) => ['今日流量', '实时网速'].map((n) => ({ n, clip: tile(dom, n).blocks[0].cellClip ?? [], text: tile(dom, n).blocks[0].text }))
+  for (const [v, label] of [['long', '62.2 KB/s / 112.6 KB/s'], ['maxkb', '1023.9 KB/s ×2'], ['maxmb', '1023.9 MB/s ×2']]) {
+    for (const w of [1024, 1100, 1280, 1440]) {
+      await send('Emulation.setDeviceMetricsOverride', { width: w, height: 1000, deviceScaleFactor: 1, mobile: false })
+      const dom = await render({ listTop: 'summary' }, `net-${v}-${w}`, v)
+      const rows = netRows(dom)
+      check(`长读数·${label} @${w}：两格里的大数都没被截断`,
+        rows.every((r) => r.clip.length === 2 && r.clip.every((c) => c <= 0)),
+        rows.map((r) => `${r.n} ${r.text} 截断${JSON.stringify(r.clip)}`).join('；'))
+    }
+  }
 }
 
 ws.close()

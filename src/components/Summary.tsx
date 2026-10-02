@@ -65,7 +65,7 @@ function Tile({ children }: { children: ReactNode }) {
 }
 
 /**
- * 一张卡片里两块读数：**两块平分**（`grid-cols-2` + 同一个 `gap-x-3`），所以两张卡里的第二块
+ * 一张卡片里两块读数：**两块平分**（`grid-cols-2` + 同一个 `gap-x-2`），所以两张卡里的第二块
  * 读数落在同一条竖线上，而且与「今日流量 / 实时网速」两张卡里那张两列小栅格的第二列同一落点
  * —— 整行四张卡读起来是一个栅格（站长挑的排法：最素、不要分隔线）。
  *
@@ -77,22 +77,53 @@ function Tile({ children }: { children: ReactNode }) {
  */
 function Pair({ children }: { children: ReactNode }) {
   return (
-    <Card className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-0 p-4">
+    <Card className="grid min-w-0 grid-cols-2 gap-x-2 gap-y-0 p-4">
       {children}
     </Card>
   )
 }
 
-/** 一枚带方向箭头的读数。颜色随所在那一行（今日那行是前景色，累计那行是弱化灰）。 */
+/**
+ * 一枚带方向箭头的读数。颜色随所在那一行（今日那行是前景色，累计那行是弱化灰）。
+ *
+ * 箭头 12px、与数字的间距 4px（原为 14 / 6）：概览卡片那两列数字的宽度是按像素抠出来的，
+ * 这 4px 直接进文字框（见 Unit 那段注释），观感上分辨不出。
+ */
 function Val({ icon: Icon, children }: {
   icon: typeof ArrowDown
   children: ReactNode
 }) {
   return (
-    <span className="tnum inline-flex min-w-0 items-center gap-1.5">
-      <Icon className="size-3.5 shrink-0" />
+    <span className="tnum inline-flex min-w-0 items-center gap-1">
+      <Icon className="size-3 shrink-0" />
       <span className="truncate">{children}</span>
     </span>
+  )
+}
+
+/**
+ * 读数里的「数字 / 单位」两段：数字保持 24px，单位（含 `/s`）降一档 —— 16px、常规字重、
+ * 弱化灰，与「节点」卡里那个 `/ 4` 同一套写法。
+ *
+ * 为的是宽度。这一行是 `grid grid-cols-2` + `truncate`，每格的文字框 = 格宽 − 16px
+ * （箭头 12 + 间距 4），而四列布局下卡片最宽 299px → 文字框最多 111px，最窄的四列
+ * （1024 那档）只有 77px。24px 的「112.6 KB/s」要 109px、「1023.9 KB/s」要 122px，
+ * 装不下就被静默截成「112.6 K…」——站长报过的「概览卡片有概率显示不全」就是这个：
+ * 读数越长、视口越窄越容易中招。三道一起收：单位降一档（省 20px，见下）、
+ * `rate()` 的三位有效数字（最长「999 KB/s」71px）、箭头与间距各收一档（省 4px）。
+ *
+ * 只给上面那行 24px 的大数用（今日流量 / 实时网速）：底部那行小字本来就是 12px，
+ * 单位再「降档」会比数字还大。空格留在单位前而不是用 `ml-*` 撑间距——否则复制文本
+ * 与读屏会把两个词黏成「112.6KB/s」。
+ */
+function Unit({ children }: { children: string }) {
+  const m = children.match(/^([0-9.,]+)\s*(.+)$/)
+  if (!m) return <>{children}</>
+  return (
+    <>
+      {m[1]}
+      <span className="text-base font-normal text-muted-foreground"> {m[2]}</span>
+    </>
   )
 }
 
@@ -216,10 +247,11 @@ export function SummaryCards({ nodes, finance = false }: { nodes: Node[]; financ
         <Block title="今日流量">
           {/* 大数一行（今日上下行），累计并成一行小字——参考站整张卡就是「小标签 / 大数 /
               一行小字」三段，这样四张卡等高、整行才是一个节奏。四个数一个没少。
-              栅格间距沿用 `gap-x-3`：整行四张卡的第二列因此落在同一条竖线上（护栏钉着）。 */}
-          <div className="mt-1 grid grid-cols-2 gap-x-3 text-2xl font-semibold tracking-tight">
-            <Val icon={ArrowDown}>{bytes(fleet.dayRx)}</Val>
-            <Val icon={ArrowUp}>{bytes(fleet.dayTx)}</Val>
+              栅格间距沿用 `gap-x-2`（与 Pair 同一个值）：整行四张卡的第二列因此落在同一条
+              竖线上（护栏钉着）。 */}
+          <div className="mt-1 grid grid-cols-2 gap-x-2 text-2xl font-semibold tracking-tight">
+            <Val icon={ArrowDown}><Unit>{bytes(fleet.dayRx)}</Unit></Val>
+            <Val icon={ArrowUp}><Unit>{bytes(fleet.dayTx)}</Unit></Val>
           </div>
           <Foot>
             <span className="inline-flex items-center gap-1.5">
@@ -233,9 +265,9 @@ export function SummaryCards({ nodes, finance = false }: { nodes: Node[]; financ
 
       <Tile>
         <Block title="实时网速">
-          <div className="mt-1 grid grid-cols-2 gap-x-3 text-2xl font-semibold tracking-tight">
-            <Val icon={ArrowDown}>{rate(fleet.netRx)}</Val>
-            <Val icon={ArrowUp}>{rate(fleet.netTx)}</Val>
+          <div className="mt-1 grid grid-cols-2 gap-x-2 text-2xl font-semibold tracking-tight">
+            <Val icon={ArrowDown}><Unit>{rate(fleet.netRx)}</Unit></Val>
+            <Val icon={ArrowUp}><Unit>{rate(fleet.netTx)}</Unit></Val>
           </div>
           <Sparkline series={series} />
         </Block>

@@ -47,8 +47,36 @@ export function axisBytes(v: number): string {
   return bytes(v, v / 1024 ** unit >= 100 ? 0 : 1).replace(".0 ", " ")
 }
 
+/**
+ * A transfer rate. Same three-significant-digits rule as `bytes`, plus two that
+ * exist purely for width: the KB bin never prints a decimal, and every bin stops
+ * at 999 -- a reading at or above 999.5 carries into the next unit and prints one
+ * decimal.
+ *
+ * Both come from the summary cards, where the two rates share one 50/50 row and
+ * each therefore gets half the card. The narrowest four-column width gives that
+ * cell 77px of text (the arrow and its gap already take 16px), while the old
+ * "1023.9 KB/s" needed 122px -- silently ellipsised to "1023.9 K...", which reads
+ * as a broken card rather than as a missing unit. With the rule above the longest
+ * reading is "999 KB/s" (71px) or "1.0 MB/s" (67px), which fits every width this
+ * row is drawn at.
+ *
+ * The cost is one significant digit: 62.2 KB/s prints as 62 KB/s and 20.5 MB/s as
+ * 21 MB/s. The one decimal below 10 stays, since 1.8 MB/s and 2 MB/s are different
+ * readings and that digit still fits.
+ */
 export function rate(n: number): string {
-  return `${bytes(n, 1)}/s`
+  // `< 1` for the same reason as bytes(): a fraction of a byte puts unitOf at -1.
+  if (!n || n < 1) return "0 B/s"
+  let i = unitOf(n)
+  let v = n / 1024 ** i
+  // `i < UNITS.length - 1`：进位不能越过 PB —— 一份离谱的大数（Infinity、1e30）会
+  // 走到最后两档，越界后印出 "undefined PB/s"。到顶就留在 PB 档照原样打印。
+  if (v >= 999.5 && i < UNITS.length - 1) {
+    i += 1
+    v = n / 1024 ** i
+  }
+  return `${v.toFixed(i >= 1 && v < 10 ? 1 : 0)} ${UNITS[i]}/s`
 }
 
 export function percent(used: number, total: number): number {

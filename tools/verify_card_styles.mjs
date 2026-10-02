@@ -588,7 +588,8 @@ const moveAway = async () => hover(4, 4)
   check('详细：三枚读数盒', dom.infoBox === 3 && dom.infoGrid === 1, `盒 ${dom.infoBox} / 栅格 ${dom.infoGrid}`)
   check('详细：元信息行（在线时长 · 价格/周期）', /在线 /.test(dom.text) && /¥12\.50 \/ 月付/.test(dom.text), dom.text)
   check('详细：读数盒里是真实读数（速率 / 总量 / 到期）',
-    /512\.0 KB\/s/.test(dom.text) && /1\.00 TB/.test(dom.text) && /剩余 95 天/.test(dom.text), dom.text)
+    // 速率走 rate() 的三位有效数字（KB 档不给小数）：512 KB/s、128 KB/s —— 别写回 512.0。
+    /512 KB\/s/.test(dom.text) && /128 KB\/s/.test(dom.text) && /1\.00 TB/.test(dom.text) && /剩余 95 天/.test(dom.text), dom.text)
   check('详细：三网延迟块也照旧', dom.polylines === 3 * dom.cards, `polyline ${dom.polylines} / 卡 ${dom.cards}`)
   check('详细：每节点恰好 1 次延迟请求', ping === 2, `实测 ${ping} 次`)
   check('详细：网格不再有四列（卡片更宽）', !dom.grid.includes('xl:grid-cols-4'), dom.grid)
