@@ -9,7 +9,7 @@ import { LatencyPanel } from "@/components/Latency"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
-import { remarkTags } from "@/lib/notes"
+import { hubTags } from "@/lib/notes"
 
 /**
  * This period's usage as the plan meters it. The hub computes it; the switch
@@ -166,15 +166,13 @@ function trafficFoot(node: Node) {
     : `${bytes(monthUsage(node))} / ${FOREVER}`
 }
 
-export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes }: {
+export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
   node: Node
   onOpen: () => void
   /** 指针或键盘刚落到这张卡片上：先把手头这块 chunk（详情页的图表那 391KB）取回来。 */
   onWarm?: () => void
   latencyLines: string
   cardStyle: "classic" | "latency" | "detailed" | "plain"
-  /** 站点设置里那份「服务器备注」清单（每行 `服务器名=备注`）；留空 = 全用 hub 的公开备注。 */
-  notes: string
 }) {
   const m = node.metrics
   // 详细档：图标、元信息行与三枚读数盒都只在它里面出现；配色仍与另外两档同一套灰。
@@ -184,9 +182,8 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
   // 进度条压到 4px、底注降到 11px、名字加粗一档、格子间距收紧（见下方各处 plain 分支）。
   // ★ 按站长的口径，简约档**不显示公开备注**（其余四档都显示），这一档保持原样。
   const plain = cardStyle === "plain"
-  // 这台机器的备注（见 @/lib/notes）：站点设置里写了这台就用那里的，没写就用 hub 的公开备注。
-  // 逗号分隔＝多枚小卡片，写法与 1.15.x 那份「服务器备注」逐字相同。
-  const noteTags = remarkTags(node, notes)
+  // 这台机器的公开备注（见 @/lib/notes）：hub 后台按节点填的那条，逗号分隔＝多枚小卡片。
+  const noteTags = hubTags(node)
   /**
    * 「经典」「延迟」两档右上角那枚信息控件：悬停或点击弹出浮层，里面是
    * **备注（写了才有）+ 在线时间 + 价格 + 到期**。
@@ -272,7 +269,7 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
         <h3 className={`min-w-0 truncate ${plain ? "font-semibold" : "font-medium"}`}>{node.name}</h3>
         {/* 「详细」档的备注：挂在**标题行右端**——名字下面那一行、读数格、
             三枚读数盒一概不动（早先那套「把价格挤进读数盒、把到期日藏起来」的重排已经取消）。
-            写法与 1.15.x 那份「服务器备注」一致：逗号分隔＝多枚，一枚一枚各自成卡片。
+            写法与公开备注那几处一致：逗号分隔＝多枚，一枚一枚各自成卡片。
             ★名字优先：名字那格照旧（可截断），备注这格 `grow basis-0` —— flex 基准尺寸是 0，
             所以它**从不参与「谁先被压」的竞争**：名字先拿满自己内容需要的宽度，剩下的才给备注，
             备注拿到多少由容器余量与上限（窄屏 40%、≥sm 55%）决定，不够就自己截断。

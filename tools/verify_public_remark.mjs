@@ -1,5 +1,5 @@
-// 备注（hub 后台的「公开备注」+ 主题设置里的「服务器备注」，取舍见 @/lib/notes）在五种卡片形态、
-// 「紧凑」就地展开与整页详情上的落点护栏，外加「时间范围按保留天数生成」（见 @/lib/ranges）。
+// 备注落点护栏：hub 后台按节点填的「公开备注」（给访客）在五种卡片形态与「紧凑」就地展开上的位置、
+// 「私有备注」（只下发给登录的管理员）在整页详情上拆成小卡片，外加「时间范围按保留天数生成」（见 @/lib/ranges）。
 //
 // 用法：node tools/verify_public_remark.mjs [端口]
 //   自带静态伺服（本机 dist + 桩 /api，未知路径回落入口 HTML）——与 verify_card_styles.mjs 同一路子。
@@ -7,11 +7,12 @@
 //     `{nodes:[…]}`，喂错形状整页当场崩（症状是页面上只剩一行 TypeError 文案）。
 //
 // 站长 2026-10-03 定的口径（这一份护栏就是它的判据）：
-//   · 来源两处，**主题设置优先**：主题设置里写了这台就用那里的，没写才用 hub 的公开备注；
-//   · 「经典」「延迟」两档**右上角常驻**一枚信息图标：点开是在线时间/价格/到期，写了备注就多一排小卡片；
-//   · 「详细」档备注挂在标题行右端（多枚小卡片）；「简约」档不显示备注、也不挂那枚图标；
+//   · 备注只有一个来源：hub 后台按节点填的字段（主题设置里那份「服务器备注」清单 1.18.0 起彻底删掉）；
+//   · 「经典」「延迟」两档**右上角常驻**一枚信息图标：点开是在线时间/价格/到期，写了公开备注就多一排小卡片；
+//   · 「详细」档公开备注挂在标题行右端（多枚小卡片）；「简约」档不显示备注、也不挂那枚图标；
 //   · 「紧凑」档并排在展开行量程栏右端（手机收成一枚图标 + 浮层）；
-//   · **整页详情不摊备注**（只留规格与图表）；
+//   · **整页详情不摊公开备注**（只留规格与图表），但**私有备注**在那里摊成小卡片
+//     （逗号分隔＝多枚，先按换行分段、段内再拆；hub 对它没有单行约束）；
 //   · 没写备注的机器该处零占位；时间范围按 hub 的 `history_days` 生成（老 hub 按 7 天）。
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -84,7 +85,8 @@ const PING = {
 
 // ── 伺服（本机 dist + 桩 /api） ──────────────────────────────────────────
 let remark = ''            // 节点一的 hub 公开备注（空串 = 没写）
-let themeConfig = {}       // 站点配置（cardStyle / serverNotes）。★必须由本伺服自己回答：见 render()
+let privateNote = ''       // 节点一的 hub 私有备注（空串 = 没写；hub 只把它下发给登录的管理员）
+let themeConfig = {}       // 站点配置（cardStyle）。★必须由本伺服自己回答：见 render()
 let meExtra = {}           // /api/me 上多出来的字段（history_days）
 let metricHits = []        // 详情页发出的历史请求（断「窗口按保留天数生成」用）
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.json': 'application/json' }
@@ -104,7 +106,7 @@ const server = createServer((req, res) => {
     let body = {}
     if (path === '/api/me') body = { authed: false, github: false, public_page: true, site: `http://127.0.0.1:${PORT}`, site_name: '备注校验', ...meExtra }
     // ★形状是 `{nodes:[…]}` 而不是裸数组：App 那边是 `api<{nodes:Node[]}>('/nodes')`。
-    else if (path === '/api/nodes') body = { nodes: [{ ...node1, public_remark: remark }, node2, node3] }
+    else if (path === '/api/nodes') body = { nodes: [{ ...node1, public_remark: remark, remark: privateNote }, node2, node3] }
     else if (path.endsWith('/config')) body = themeConfig
     else if (path === '/api/version') body = { version: '1.3.2' }
     else if (/^\/api\/nodes\/\d+\/metrics/.test(path)) {
@@ -227,6 +229,31 @@ const CARD_PROBE = (name) => `JSON.stringify((() => {
   }
 })())`
 
+/**
+ * 整页详情上的**私有备注**块：那一块、几段、每段几枚、以及原文有没有被整条直出。
+ * ★按结构定位（`[data-private-remark]` 的直接子元素 = 一段），别认 Tailwind 类名。
+ */
+const PRIVATE_PROBE = `JSON.stringify((() => {
+  const b = document.querySelector('[data-private-remark]')
+  if (!b) return { block: false, rows: 0, tags: [], titles: [], text: '' }
+  const tags = [...b.querySelectorAll('[data-slot="badge"]')]
+  const bg = (el) => el ? getComputedStyle(el).backgroundColor : ''
+  // 颜色得**换算成像素**再比：浅色主题里 muted(0.967) 与 secondary(0.96) 是两串不同的
+  // 字符串、视觉上却是同一块灰 —— 拿字符串比大小的护栏会恒真（踩过）。canvas 读回真 RGB。
+  const rgb = (c) => { try { const cv = document.createElement('canvas'); cv.width = cv.height = 1; const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]] } catch { return null } }
+  return {
+    block: true,
+    rows: [...b.children].length,
+    tags: tags.map((t) => t.innerText.trim()),
+    titles: tags.map((t) => t.getAttribute('title') || ''),
+    chipBg: bg(tags[0]),
+    boxBg: bg(b),
+    chipRgb: rgb(bg(tags[0])),
+    boxRgb: rgb(bg(b)),
+    text: b.innerText,
+  }
+})())`
+
 /** 经典 / 延迟 / 紧凑 那枚浮层控件：控件本身、浮层内容、以及「点它不跳页」。 */
 const POPOVER_PROBE = (scope) => `JSON.stringify((() => {
   const root = ${scope}
@@ -261,7 +288,7 @@ async function shot(name) {
 /** 渲染一档并等到「内容出来 + 字体落定 + 数字不是动画中间态」。 */
 async function render(cfg, tag, { w = 1440, h = 1200, mobile = false, path = '/' } = {}) {
   // ★配置桩必须自己答（别去问上游 hub）：新的主题根本没装在那台 hub 上 → 回 `{}`，
-  //   桩里设的 cardStyle / serverNotes 一个字不生效，整轮判据会全落在默认档上（踩过）。
+  //   桩里设的 cardStyle 一个字不生效，整轮判据会全落在默认档上（踩过）。
   themeConfig = cfg
   await fetch(`http://127.0.0.1:${PORT}/__reset`)
   await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile })
@@ -528,40 +555,50 @@ console.log('\n── 整页详情：不显示备注（备注只在列表卡片�
   await shot('detail-page-1440')
 }
 
-/* ─────────────────── ⑦ 两个来源：主题设置优先，hub 兜底 ─────────────────── */
-console.log('\n── 备注来源：主题设置里写了的优先，没写的用 hub 的公开备注 ──')
+/* ────────────── ⑦ 私有备注：整页详情上拆成小卡片（多行分段） ────────────── */
+console.log('\n── 私有备注（hub 后台那个「仅管理员可见」的字段）：整页详情上拆成小卡片 ──')
 {
+  // ① 没写私有备注 → 那一块一个像素都不占（匿名访客与老 hub 就是这一态：字段根本不在）
+  privateNote = ''
   remark = SHORT
-  // ① 主题设置里写了这台 → 用它，hub 那条不出现
-  await render({ cardStyle: 'detailed', serverNotes: '节点一=主题设置里的备注' }, 'src-theme-wins')
-  const own = await card('节点一')
-  check('主题设置里写了这台 → 用它（hub 那条让位）',
-    SAME(own.tags, ['主题设置里的备注']) && !own.text.includes('CN2 GIA'), JSON.stringify(own.tags))
-  // ② 主题设置里只写了别的机器 → 这台用 hub 的
-  await render({ cardStyle: 'detailed', serverNotes: '节点二=别的机器的备注' }, 'src-hub-fallback')
-  const fallback = await card('节点一')
-  check('主题设置里没写这台 → 用 hub 的公开备注（三枚）',
-    SAME(fallback.tags, tagsOf(SHORT)), JSON.stringify(fallback.tags))
-  // ③ 两边都有 → 主题设置优先
-  await render({ cardStyle: 'detailed', serverNotes: '节点一=覆盖用的备注,第二枚' }, 'src-both')
-  const both = await card('节点一')
-  check('两边都有 → 主题设置优先（两枚都来自主题设置）',
-    SAME(both.tags, ['覆盖用的备注', '第二枚']), JSON.stringify(both.tags))
-  // ④ 主题设置里写成空值 → 仍用 hub 的（「没在这里写」）
-  await render({ cardStyle: 'detailed', serverNotes: '节点一=' }, 'src-empty')
-  const empty = await card('节点一')
-  check('主题设置里写成空值 → 仍用 hub 的公开备注',
-    SAME(empty.tags, tagsOf(SHORT)), JSON.stringify(empty.tags))
-  // ⑤ 老 hub（没有 public_remark）+ 主题设置里写了 → 照样显示
-  remark = ''
-  await render({ cardStyle: 'detailed', serverNotes: '节点一=老 hub 上的备注' }, 'src-oldhub')
-  const oldHub = await card('节点一')
-  check('老 hub（没有公开备注字段）+ 主题设置里写了 → 照样显示',
-    SAME(oldHub.tags, ['老 hub 上的备注']), JSON.stringify(oldHub.tags))
-  // ⑥ 两边都没有 → 零占位
-  await render({ cardStyle: 'detailed', serverNotes: '' }, 'src-none')
-  const none = await card('节点一')
-  check('两边都没有 → 详细档零占位', none.note === false && none.tags.length === 0, JSON.stringify(none.tags))
+  await render({ cardStyle: 'plain' }, 'priv-none', { path: '/node/1' })
+  const off = await json(PRIVATE_PROBE)
+  check('私有备注没写 → 整页详情上没有那一块（零占位）',
+    off.block === false && off.tags.length === 0, JSON.stringify(off))
+
+  // ② 多行 + 逗号：按换行分段、段内拆成小卡片
+  privateNote = '私有甲,私有乙\n第二行的一枚，带全角逗号\n\n第三行'
+  await render({ cardStyle: 'plain' }, 'priv-lines', { path: '/node/1' })
+  const got = await json(PRIVATE_PROBE)
+  check('私有备注：三行（中间夹一行空行）→ 三段', got.rows === 3, `段数 ${got.rows}`)
+  check('私有备注：段内按逗号拆成小卡片（逐枚同序，半角与全角都认）',
+    SAME(got.tags, ['私有甲', '私有乙', '第二行的一枚', '带全角逗号', '第三行']), JSON.stringify(got.tags))
+  check('私有备注：不是整条直出（原文里带逗号的那串没留在正文里）',
+    !got.text.includes('私有甲,私有乙') && !got.text.includes('第二行的一枚，带全角逗号'), got.text)
+  check('私有备注：每一枚都挂 title 看全（截断只发生在版式层）', SAME(got.titles, got.tags), JSON.stringify(got.titles))
+  // 小卡片不能和容器同色：都是灰底时视觉复核会把它读成「一整块纯文字」（实测踩过）。
+  // 判据按**像素距离**，不按字符串：浅色里 muted 与 secondary 的 oklch 写法不同、观感相同。
+  const dist = (a, b) => (a && b ? Math.sqrt(a.reduce((s, v, i) => s + (v - b[i]) ** 2, 0)) : -1)
+  const gap = dist(got.chipRgb, got.boxRgb)
+  check('私有备注：小卡片的底色与所在容器有可见差别（在灰底上不糊成一块文字）', gap >= 6,
+    `卡片 ${JSON.stringify(got.chipRgb)} / 容器 ${JSON.stringify(got.boxRgb)}｜像素距离 ${gap.toFixed(1)}` + (gap < 0 ? '（读不出颜色）' : ''))
+  check('私有备注：公开备注照旧不在整页详情上（这一页只摊私有那条）',
+    !/CN2 GIA|三网优化/.test(got.text), got.text)
+  await shot('detail-private-remark-1440')
+
+  // ③ hub 面板给的就是单行输入框：单行多枚 = 一段多枚
+  privateNote = '单行甲,单行乙'
+  await render({ cardStyle: 'plain' }, 'priv-single', { path: '/node/1' })
+  const one = await json(PRIVATE_PROBE)
+  check('私有备注：单行两枚 → 一段两枚', one.rows === 1 && SAME(one.tags, ['单行甲', '单行乙']), JSON.stringify(one))
+
+  // ④ 列表卡片上不许出现私有备注：它只在整页详情那一块（hub 也只把它下发给登录的管理员）
+  await render({ cardStyle: 'detailed' }, 'priv-not-on-card')
+  const list = await card('节点一')
+  check('私有备注不出现在列表卡片上（只有整页详情那一块）',
+    !list.text.includes('单行甲') && !list.text.includes('私有甲'), list.text.slice(0, 140))
+
+  privateNote = ''
   remark = SHORT
 }
 

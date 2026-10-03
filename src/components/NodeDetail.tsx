@@ -14,7 +14,7 @@ import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, osName, rate, timeTicks, uptime,
 } from "@/lib/format"
-import { remarkTags } from "@/lib/notes"
+import { hubTags, privateTagLines } from "@/lib/notes"
 import { rangesFor } from "@/lib/ranges"
 
 type Point = {
@@ -145,7 +145,7 @@ function Fact({ label, value }: { label: string; value?: string | number | null 
   )
 }
 
-export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, notes = "" }: {
+export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }: {
   node: Node
   /** 紧凑形态点开一行时的就地渲染：省掉身份行与规格，直接落在延迟上，高度写死。 */
   embedded?: boolean
@@ -153,14 +153,14 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   onOpenDetail?: () => void
   /** hub 的历史保留天数（`/api/me` 的 `history_days`）；老 hub 不给，按 7 天算（见 @/lib/ranges）。 */
   historyDays?: number
-  /** 站点设置里那份「服务器备注」清单（与卡片形态同一份）；留空 = 全用 hub 的公开备注。 */
-  notes?: string
 }) {
-  // 这台机器的备注（见 @/lib/notes）：站点设置里写了这台就用那里的，没写就用 hub 的公开备注。
-  // ★整页详情**不摊备注**（站长 2026-10-03 定的）：这一页只留规格与图表；备注在列表卡片上
-  // （经典/延迟收在右上角浮层里、详细挂标题行右端）和「紧凑」展开行那格看。
-  // 下面那枚控件与备注块都只在 embedded（紧凑展开）时才出现。
-  const noteTags = remarkTags(node, notes)
+  // 这台机器的公开备注（见 @/lib/notes）：hub 后台按节点填的那条，逗号分隔＝多枚小卡片。
+  // ★**公开**备注在整页详情上不摊（站长 2026-10-03 定的）：这一页只留规格与图表，公开备注在列表
+  // 卡片上（经典/延迟收在右上角浮层里、详细挂标题行右端）与「紧凑」展开行那格看。
+  // 下面那枚控件与备注条都只在 embedded（紧凑展开）时才出现；私有备注见再下面那个块。
+  const noteTags = hubTags(node)
+  // 私有备注（hub 后台那个「仅管理员可见」的字段）：hub 只在登录态下发，匿名访客拿不到这个键。
+  const privateLines = privateTagLines(node)
   const [peekOpen, setPeekOpen] = useState(false)
   const peekRef = useRef<HTMLSpanElement | null>(null)
   // 摊开时点别处 / Esc 收起（与「延迟」档那枚同一个做法）。
@@ -394,8 +394,25 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
         <Fact label="在线时间" value={onlineFor(node)} />
       </dl>
 
-      {node.remark && (
-        <p className="rounded-md bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{node.remark}</p>
+      {/* 私有备注（hub 后台那个「仅管理员可见」的字段，只在登录态下发）：与公开备注同一套写法——
+          ★容器用 `bg-card border` 而不是 `bg-muted`：小卡片是 `secondary` 底（浅色 0.96 / 深色 0.27），
+          铺在 `muted` 底（0.967 / 0.27）上两者几乎同色，视觉复核会把它读成「一块纯文字」——同一份
+          灰底上的卡片等于没画。护栏里有一条按计算样式断「卡片底色 ≠ 容器底色」，别再改回去。
+          逗号分隔＝多枚小卡片，**先按换行分段、段内再拆**。hub 对它不做单行与长度校验（面板虽然是
+          单行输入框，历史数据与接口写入都可能带换行），分段这一手是为了不把站长自己分好的几行压成
+          一串。匿名访客拿不到这个字段，所以这一块只有站长自己看得到；没写时一个像素都不占。 */}
+      {privateLines.length > 0 && (
+        <div data-private-remark className="space-y-1 rounded-md border border-border bg-card px-3 py-2">
+          {privateLines.map((tags, i) => (
+            <div key={i} className="flex min-w-0 flex-wrap items-center gap-1">
+              {tags.map((tag) => (
+                <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
+                  <span className="min-w-0 truncate">{tag}</span>
+                </Badge>
+              ))}
+            </div>
+          ))}
+        </div>
       )}
       </>
       )}
@@ -435,11 +452,11 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
           )}
           {/* 公开备注在这一行右端：桌面（≥sm）**直接并排**在「完整详情 ›」左边（不新增行高），
               手机这一行放不下，收成一枚小图标 + 浮层（点开看全，点别处 / Esc 收起）。
-              一枚备注一枚小卡片（逗号分隔的多枚就排成多枚，写法与 1.15.x 一致）。
+              一枚备注一枚小卡片（逗号分隔的多枚就排成多枚）。
               宽度上限用固定 px（内容尺寸容器里百分比会被解析成很小的值）。没写备注时这一行与从前
               逐像素相同。
-              ★只有「紧凑」就地展开（embedded）才需要这条入口：整页详情把整条写在标题下面的备注块里
-              （见上面），所以那一页的量程栏右边不再挂图标，免得同一句话出现两遍。 */}
+              ★只有「紧凑」就地展开（embedded）才需要这条入口：整页详情不摊**公开**备注（见上面那段），
+              所以那一页的量程栏右边不再挂图标，免得同一句话出现两遍。 */}
           {embedded && (noteTags.length > 0 || onOpenDetail) && (
             <span className="ml-auto flex min-w-0 items-center gap-x-4 gap-y-1">
               {noteTags.length > 0 && (

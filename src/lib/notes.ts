@@ -1,18 +1,18 @@
-import { splitTags, tagsFor } from "./site-settings.ts"
-
 /**
- * 节点备注：站长在 hub 后台「公开备注」里写给访客的一行说明，随 `/api/nodes` 的公开视图
- * 一起下发（hub 1.3.2 起；单行、≤100 字，留空就是没写）。hub 存的时候就 trim 过、
- * 换行与控制字符直接拒收，所以这边拿到的一定是一行文本。老 hub 没有这个字段，
- * 按「这台没写备注」处理。
+ * 节点备注：两个字段都在 hub 后台按节点填，随 `/api/nodes` 一起下发。
  *
- * **两个来源，取舍见 `remarkTags`**：主题设置里的「服务器备注」写了哪台就优先用那里的
- * （1.15.x 及更早那份清单的写法，1.16.0 短暂删过、1.17.0 请了回来并定为优先），
- * 没写的才用 hub 这条——全站备注平时只在后台维护一处，想临时给某台加一句则不必进后台。
+ *   · **公开备注**（`public_remark`）——站长写给访客的一行说明（hub 1.3.2 起）：单行、≤100 字、
+ *     留空就是没写；hub 存的时候就 trim 过，换行与控制字符直接拒收，所以这边拿到的一定是一行
+ *     文本。它随**公开视图**下发，匿名也拿得到；老 hub 没有这个字段，按「这台没写备注」处理。
+ *   · **私有备注**（`remark`）——站长写给自己的那个（面板里的 placeholder 就是「仅管理员可见」），
+ *     **只在登录态下发**，匿名视图里根本没有这个键。hub 对它不做长度与控制字符校验（面板虽是
+ *     单行输入框，历史数据与接口写入都可能带换行），所以它按「先分段、段内再拆」处理。
  *
- * 写法两边**一致**：逗号分隔就是多枚，一枚一枚各自成卡片。从旧版迁过来不用改写法。
+ * 两个字段的**写法一致**：逗号（半角 `,` 与全角 `，`）分隔＝多枚小卡片，一枚一枚各自成卡片；
+ * 与 1.15.x 那份「服务器备注」清单逐字相同（那份清单 1.18.0 已删——备注只留 hub 一处维护，
+ * 主题设置里不再有这一项）。
  *
- * 放在这里（而不是组件里）是因为它是纯函数：能脱开 React 单测，改起来不怕漏。
+ * 放在这里（而不是组件里）是因为它们是纯函数：能脱开 React 单测，改起来不怕漏。
  */
 export function publicRemark(node: { public_remark?: string | null }): string {
   // 再削一次空白：旧数据、手工改库都可能带空白，而「只有空白」应当与「没写」等价，
@@ -20,21 +20,28 @@ export function publicRemark(node: { public_remark?: string | null }): string {
   return (node.public_remark ?? "").trim()
 }
 
-/** hub 那条公开备注 → 一枚枚小卡片（写法与主题设置里那份清单逐字相同）。 */
+/** hub 那条公开备注 → 一枚枚小卡片。 */
 export function hubTags(node: { public_remark?: string | null }): string[] {
   return splitTags(publicRemark(node))
 }
 
 /**
- * 这台机器最终显示的备注（一枚枚小卡片），两个来源按站长定的规矩取舍：
+ * 私有备注 → 一段段小卡片（每段一行）：**先按换行分段，段内再按逗号拆**。
  *
- *   ① **主题设置的「服务器备注」里写了这台** → 用那里的（`服务器名=备注1,备注2`）；
- *   ② 那里没写（或写了空值） → 用 **hub 后台按节点填的「公开备注」**（hub ≥ 1.3.2）。
- *
- * 于是站长想临时给某台加一句不必进后台改节点；而全站的备注仍然只在 hub 里维护一处。
- * 两种来源都没有 → 空数组，页面上一个像素都不占。
+ * 分段而不是整条拆平，是因为 hub 对它没有单行约束：整条拆平会把站长自己分好的几行压成一串。
+ * 返回空数组＝没写（空串、只有空白、字段不在都算），页面上一个像素都不占。
  */
-export function remarkTags(node: { public_remark?: string | null; name: string }, notes = ""): string[] {
-  const own = tagsFor(notes, node.name)
-  return own.length > 0 ? own : hubTags(node)
+export function privateTagLines(node: { remark?: string | null }): string[][] {
+  return (node.remark ?? "")
+    .split(/\r?\n/)
+    .map((line) => splitTags(line))
+    .filter((tags) => tags.length > 0)
+}
+
+/** 备注值 → 小卡片列表：逗号（半角 / 全角）分隔，削首尾空白、丢掉空片段。 */
+export function splitTags(value: string): string[] {
+  return value
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
 }

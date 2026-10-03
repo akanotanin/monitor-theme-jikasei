@@ -25,12 +25,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
-// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行、按节点补备注——名字与
+// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行、按名字挑延迟线路——名字与
 // theme.json 的 label 逐字对应。
-// ★「服务器备注」1.16.0 删过、1.17.0 又请了回来（站长口径）：它与 hub 的「公开备注」是同一个位置的
-// 两种来源，这里写了的优先、没写的用 hub 那条（取舍在 src/lib/notes.ts 的 remarkTags 里）。
-// 它必须在清单里——**字段数正好卡在 6**，多一个就会让面板切两列 + 分组导航（下面有排版断言）。
-const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '服务器备注', '显示的延迟线路'];
+// ★备注（1.15.x 的「服务器备注」清单）1.16.0 删过、1.17.0 请了回来、**1.18.0 起彻底删掉**：
+// 备注只在 hub 后台按节点填（公开备注给访客、私有备注只给管理员，见 src/lib/notes.ts）。
+// 所以下面不但不要求它出现，还反过来断「它不许再回来」。
+// **字段数 5**（≤6）：到 7 个才会让面板切两列 + 分组导航（下面有排版断言）。
+const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '显示的延迟线路'];
 const PORT = 9780 + Math.floor(Math.random() * 20);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe']
   .find((p) => existsSync(p)) || 'chrome';
@@ -180,18 +181,12 @@ check('「养鸡场入口」的说明不再带跨站示例', helpText !== '' && 
 check('对话框里也没有残留的旧示例句子',
   !everyText.includes('例如想直接进公开的') && !/https?:\/\/[^\s"）)]*\/chicken/.test(everyText));
 
-// 「服务器备注」这一项本身（1.17.0 起回来）：manifest 声明了没、面板画出来了没。
-// 只断一边会漏掉「字段删了、对话框还画着一格」这种半截状态，而站长会照着那一格白填。
-check('theme.json 里声明了「服务器备注」（serverNotes）', entries.some((e) => e.key === 'serverNotes'));
-check('「主题设置」对话框里画出了「服务器备注」', everyText.includes('服务器备注'),
-  everyText.includes('服务器备注') ? '（在）' : '（没画出来）');
-
-// 它的说明必须把**两种来源的取舍**讲清楚（留空＝用后台节点的「公开备注」）：这是站长唯一看得见的地方，
-// 只在代码里写注释是看不见的。写法（`服务器名=备注`）也照旧要给出——它跟 1.15.x 那份逐字相同。
-const NOTE_HELP = (entries.find((e) => e.key === 'serverNotes') || {}).help || '';
-check('「服务器备注」的说明给出了 `服务器名=备注` 的写法', /服务器名\s*=\s*备注/.test(NOTE_HELP), `help=${NOTE_HELP}`);
-check('「服务器备注」的说明讲清了兜底：留空＝用后台节点的「公开备注」', /留空/.test(NOTE_HELP) && /公开备注/.test(NOTE_HELP), `help=${NOTE_HELP}`);
-check('对话框里也画出了这条说明', everyText.includes(NOTE_HELP.slice(0, 8)), `找「${NOTE_HELP.slice(0, 8)}…」`);
+// 「服务器备注」这一格（1.15.x 起、1.16.0 删过、1.17.0 请回、**1.18.0 起彻底删掉**）：
+// 两个方向都断——manifest 不许再声明、面板也不许再画出来。只断一边会漏掉「字段删了、
+// 对话框还画着一格」这种半截状态，而站长会照着那一格白填（备注现在只在 hub 后台节点里填）。
+check('theme.json 里不再声明「服务器备注」（serverNotes）', !entries.some((e) => e.key === 'serverNotes'));
+check('「主题设置」对话框里也没有「服务器备注」这一格', !everyText.includes('服务器备注'),
+  everyText.includes('服务器备注') ? '（还在！）' : '（已撤掉）');
 
 // 1.16.0 临时放在那一格位置上的**指引标题**（「备注已移到探针后台…」）已撤掉：设置项回来了，
 // 再挂一行「去后台设」会跟它自相矛盾。它占的是 `type: title` 那一行，而 Hub 会**静默丢掉**
