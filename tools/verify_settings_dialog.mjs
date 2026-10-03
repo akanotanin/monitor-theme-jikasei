@@ -188,6 +188,19 @@ check('theme.json 里不再声明「服务器备注」（serverNotes）', !entri
 check('「主题设置」对话框里也没有「服务器备注」这一格', !everyText.includes('服务器备注'),
   everyText.includes('服务器备注') ? '（还在！）' : '（已撤掉）');
 
+// 「备注怎么填」那一行说明（1.18.0 加的）：它是 `type: title`（hub 只给 title 画纯文字、没有输入框），
+// 所以**必须紧跟一个字段**——hub 的 configForm() 会把「紧跟另一个标题的标题」和「列表里最后一个标题」
+// 静默丢掉（踩过：放在原位的那行谁也没看见）。三件事都断：声明了没、后面跟没跟字段、画出来了没。
+const GUIDE = (entries.find((e) => e.type === 'title' && /公开备注/.test(String(e.label))) || {}).label || '';
+check('theme.json 里声明了「备注怎么填」那一行说明', GUIDE !== '',
+  JSON.stringify(entries.filter((e) => e.type === 'title').map((e) => e.label)));
+check('那一行说明里给出了后台字段名「公开备注」与逗号写法', /公开备注/.test(GUIDE) && /逗号/.test(GUIDE), GUIDE);
+check('那一行说明紧跟一个字段（hub 会丢掉没有字段跟进的标题）',
+  entries.some((e, i) => e.type === 'title' && String(e.label) === GUIDE && entries[i + 1] && entries[i + 1].type !== 'title'),
+  JSON.stringify(entries.map((e) => e.type)));
+check('「主题设置」对话框里画出了那一行说明', GUIDE !== '' && everyText.includes(GUIDE.slice(0, 12)),
+  `找「${GUIDE.slice(0, 12)}…」`);
+
 // 1.16.0 临时放在那一格位置上的**指引标题**（「备注已移到探针后台…」）已撤掉：设置项回来了，
 // 再挂一行「去后台设」会跟它自相矛盾。它占的是 `type: title` 那一行，而 Hub 会**静默丢掉**
 // 没有字段跟进的标题——所以这里连「三网延迟」那个小节名一起断，确保标题没有连带丢一个。

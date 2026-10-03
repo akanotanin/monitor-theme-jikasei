@@ -1,7 +1,7 @@
 // 备注的取值与切分：公开备注（hub 下发给访客的那条）与私有备注（只下发给登录的管理员）。
 // 空 / 空白 / 没有这个字段都算「没写」；逗号分隔＝多枚小卡片；私有备注先按换行分段、段内再拆。
 // 跑法同另外几个：`npm test`（Node 自己剥类型，不需要 runner）。没有任何东西 import 它，不进 bundle。
-import { hubTags, privateTagLines, publicRemark, splitTags } from "./notes.ts"
+import { hubTags, privateRemark, publicRemark, splitTags } from "./notes.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -40,21 +40,18 @@ eq(hubTags({ public_remark: "备注1,备注测试2,备注333" }), ["备注1", "�
 // 私有备注绝不能顶替公开备注（匿名访客拿不到它，那会变成「有的站看得见、有的看不见」）。
 eq(hubTags({ public_remark: "公开那条", remark: "私有那条" } as { public_remark: string; remark: string }), ["公开那条"], "hubTags 只读公开字段")
 
-// ── 私有备注：先按换行分段，段内再按逗号拆 ─────────────────────────────
-eq(privateTagLines({ remark: "私有甲,私有乙" }), [["私有甲", "私有乙"]], "单行两枚 → 一段两枚")
-eq(privateTagLines({ remark: "第一行\n第二行" }), [["第一行"], ["第二行"]], "两行 → 两段")
-eq(privateTagLines({ remark: "甲,乙\n丙" }), [["甲", "乙"], ["丙"]], "混合：段内照样拆")
-eq(privateTagLines({ remark: "甲，乙" }), [["甲", "乙"]], "全角逗号也认")
-eq(privateTagLines({ remark: "甲\r\n乙" }), [["甲"], ["乙"]], "CRLF 与 LF 一样分段")
-eq(privateTagLines({ remark: "甲\n\n\n乙" }), [["甲"], ["乙"]], "空行不算一段")
-eq(privateTagLines({ remark: "甲,\n,,,乙" }), [["甲"], ["乙"]], "空片段 / 整行都是逗号 → 整行丢掉")
-eq(privateTagLines({ remark: "  甲  " }), [["甲"]], "逐枚削首尾空白")
-eq(privateTagLines({ remark: "" }), [], "空串＝没写")
-eq(privateTagLines({ remark: "   \n  " }), [], "只有空白＝没写")
-eq(privateTagLines({ remark: null }), [], "null＝没写")
-eq(privateTagLines({}), [], "字段不在（老 hub / 匿名视图）＝没写")
-eq(privateTagLines({ remark: "私有那条", public_remark: "公开那条" } as { remark: string; public_remark: string }), [["私有那条"]], "只读私有字段")
-eq(privateTagLines({ remark: "一枚" }), [["一枚"]], "没有分隔符就是一枚")
+// ── 私有备注：整段原文（保留换行，**不拆**） ─────────────────────────────
+eq(privateRemark({ remark: "私有甲,私有乙" }), "私有甲,私有乙", "单行带逗号也整段留着（不拆成两枚）")
+eq(privateRemark({ remark: "第一行\n第二行" }), "第一行\n第二行", "换行原样保留")
+eq(privateRemark({ remark: "第一行\n\n第三行" }), "第一行\n\n第三行", "中间的空行也留着（成段的备忘）")
+eq(privateRemark({ remark: "甲\r\n乙" }), "甲\n乙", "CRLF 归一成 LF")
+eq(privateRemark({ remark: "甲\r乙" }), "甲\n乙", "单独的 CR 也归一")
+eq(privateRemark({ remark: "  甲,乙  " }), "甲,乙", "只削首尾空白，内部一字不动")
+eq(privateRemark({ remark: "" }), "", "空串＝没写")
+eq(privateRemark({ remark: "   \n  " }), "", "只有空白＝没写（不能渲染出空块）")
+eq(privateRemark({ remark: null }), "", "null＝没写")
+eq(privateRemark({}), "", "字段不在（老 hub / 匿名视图）＝没写")
+eq(privateRemark({ remark: "私有那条", public_remark: "公开那条" } as { remark: string; public_remark: string }), "私有那条", "只读私有字段")
 
 // ── splitTags 本身 ────────────────────────────────────────────────────
 eq(splitTags("a, b ，c"), ["a", "b", "c"], "半角 / 全角逗号都拆，逐枚削空白")

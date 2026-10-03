@@ -11,8 +11,8 @@
 //   · 「经典」「延迟」两档**右上角常驻**一枚信息图标：点开是在线时间/价格/到期，写了公开备注就多一排小卡片；
 //   · 「详细」档公开备注挂在标题行右端（多枚小卡片）；「简约」档不显示备注、也不挂那枚图标；
 //   · 「紧凑」档并排在展开行量程栏右端（手机收成一枚图标 + 浮层）；
-//   · **整页详情不摊公开备注**（只留规格与图表），但**私有备注**在那里摊成小卡片
-//     （逗号分隔＝多枚，先按换行分段、段内再拆；hub 对它没有单行约束）；
+//   · **整页详情不摊公开备注**（只留规格与图表），但**私有备注**在那里**整段展示**（探针原本的设定）：
+//     保留换行、不做逗号拆分，块顶带一行「私有备注 · 仅自己可见」标记；
 //   · 没写备注的机器该处零占位；时间范围按 hub 的 `history_days` 生成（老 hub 按 7 天）。
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -235,22 +235,26 @@ const CARD_PROBE = (name) => `JSON.stringify((() => {
  */
 const PRIVATE_PROBE = `JSON.stringify((() => {
   const b = document.querySelector('[data-private-remark]')
-  if (!b) return { block: false, rows: 0, tags: [], titles: [], text: '' }
-  const tags = [...b.querySelectorAll('[data-slot="badge"]')]
-  const bg = (el) => el ? getComputedStyle(el).backgroundColor : ''
-  // 颜色得**换算成像素**再比：浅色主题里 muted(0.967) 与 secondary(0.96) 是两串不同的
-  // 字符串、视觉上却是同一块灰 —— 拿字符串比大小的护栏会恒真（踩过）。canvas 读回真 RGB。
-  const rgb = (c) => { try { const cv = document.createElement('canvas'); cv.width = cv.height = 1; const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]] } catch { return null } }
+  if (!b) return { block: false, lines: [], text: '', badges: 0 }
+  const p = b.querySelector('p')
+  const cv = document.createElement('canvas'); cv.width = cv.height = 1
+  const cx = cv.getContext('2d')
+  // 读颜色前先 clearRect：透明色 fillRect 不覆盖上一个像素，会把上一枚的颜色留在画布上（踩过）。
+  const rgb = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]] }
+  const dist = (a, c) => Math.sqrt(a.reduce((s, v, i) => s + (v - c[i]) * (v - c[i]), 0))
+  const cs = getComputedStyle(b)
+  const boxRgb = rgb(cs.backgroundColor)
+  const pageRgb = rgb(getComputedStyle(document.body).backgroundColor)
   return {
     block: true,
-    rows: [...b.children].length,
-    tags: tags.map((t) => t.innerText.trim()),
-    titles: tags.map((t) => t.getAttribute('title') || ''),
-    chipBg: bg(tags[0]),
-    boxBg: bg(b),
-    chipRgb: rgb(bg(tags[0])),
-    boxRgb: rgb(bg(b)),
+    lines: (p ? p.innerText : '').split(String.fromCharCode(10)),
     text: b.innerText,
+    badges: b.querySelectorAll('[data-slot="badge"]').length,
+    preWrap: p ? getComputedStyle(p).whiteSpace : '',
+    label: b.firstElementChild ? b.firstElementChild.innerText.trim() : '',
+    lock: !!b.querySelector('svg'),
+    border: cs.borderTopWidth,
+    boxRgb, pageRgb, pageGap: Number(dist(boxRgb, pageRgb).toFixed(1)),
   }
 })())`
 
@@ -555,42 +559,43 @@ console.log('\n── 整页详情：不显示备注（备注只在列表卡片�
   await shot('detail-page-1440')
 }
 
-/* ────────────── ⑦ 私有备注：整页详情上拆成小卡片（多行分段） ────────────── */
-console.log('\n── 私有备注（hub 后台那个「仅管理员可见」的字段）：整页详情上拆成小卡片 ──')
+/* ───────────── ⑦ 私有备注：整页详情上「整段」展示（带「仅自己可见」标记） ───────────── */
+console.log('\n── 私有备注（hub 后台那个「仅管理员可见」的字段）：整页详情上整段展示 ──')
 {
-  // ① 没写私有备注 → 那一块一个像素都不占（匿名访客与老 hub 就是这一态：字段根本不在）
+  // ① 没写 → 那一块一个像素都不占（匿名访客与老 hub 就是这一态：字段根本不在）
   privateNote = ''
   remark = SHORT
   await render({ cardStyle: 'plain' }, 'priv-none', { path: '/node/1' })
   const off = await json(PRIVATE_PROBE)
   check('私有备注没写 → 整页详情上没有那一块（零占位）',
-    off.block === false && off.tags.length === 0, JSON.stringify(off))
+    off.block === false && off.lines.length === 0, JSON.stringify(off))
 
-  // ② 多行 + 逗号：按换行分段、段内拆成小卡片
+  // ② 多行 + 逗号：**按探针原本的设定整段展示**（保留换行、不做逗号拆分）
   privateNote = '私有甲,私有乙\n第二行的一枚，带全角逗号\n\n第三行'
   await render({ cardStyle: 'plain' }, 'priv-lines', { path: '/node/1' })
   const got = await json(PRIVATE_PROBE)
-  check('私有备注：三行（中间夹一行空行）→ 三段', got.rows === 3, `段数 ${got.rows}`)
-  check('私有备注：段内按逗号拆成小卡片（逐枚同序，半角与全角都认）',
-    SAME(got.tags, ['私有甲', '私有乙', '第二行的一枚', '带全角逗号', '第三行']), JSON.stringify(got.tags))
-  check('私有备注：不是整条直出（原文里带逗号的那串没留在正文里）',
-    !got.text.includes('私有甲,私有乙') && !got.text.includes('第二行的一枚，带全角逗号'), got.text)
-  check('私有备注：每一枚都挂 title 看全（截断只发生在版式层）', SAME(got.titles, got.tags), JSON.stringify(got.titles))
-  // 小卡片不能和容器同色：都是灰底时视觉复核会把它读成「一整块纯文字」（实测踩过）。
-  // 判据按**像素距离**，不按字符串：浅色里 muted 与 secondary 的 oklch 写法不同、观感相同。
-  const dist = (a, b) => (a && b ? Math.sqrt(a.reduce((s, v, i) => s + (v - b[i]) ** 2, 0)) : -1)
-  const gap = dist(got.chipRgb, got.boxRgb)
-  check('私有备注：小卡片的底色与所在容器有可见差别（在灰底上不糊成一块文字）', gap >= 6,
-    `卡片 ${JSON.stringify(got.chipRgb)} / 容器 ${JSON.stringify(got.boxRgb)}｜像素距离 ${gap.toFixed(1)}` + (gap < 0 ? '（读不出颜色）' : ''))
+  check('私有备注：整段展示——原文逐字都在（逗号也照旧留着）',
+    got.text.includes('私有甲,私有乙') && got.text.includes('第二行的一枚，带全角逗号') && got.text.includes('第三行'),
+    JSON.stringify(got.text))
+  check('私有备注：换行保留（含中间那个空行，行数与原文一致）',
+    SAME(got.lines, ['私有甲,私有乙', '第二行的一枚，带全角逗号', '', '第三行']), JSON.stringify(got.lines))
+  check('私有备注：没有拆成小卡片（那一块里一个 badge 都没有）', got.badges === 0, `badge ${got.badges}`)
+  check('私有备注：靠 whitespace-pre-wrap 保留换行（不是 <br>）', got.preWrap === 'pre-wrap', got.preWrap)
+  check('私有备注：顶部那行标记在（锁图标 + 「私有备注 · 仅自己可见」）',
+    got.lock === true && got.label.includes('私有备注') && got.label.includes('仅自己可见'), JSON.stringify(got.label))
+  check('私有备注：那一块有 1px 描边、且底色与页面底色有可见差别（不是无边界的一块浅灰）',
+    got.border === '1px' && got.pageGap >= 6,
+    `border ${got.border}｜块 ${JSON.stringify(got.boxRgb)} vs 页 ${JSON.stringify(got.pageRgb)}（${got.pageGap}）`)
   check('私有备注：公开备注照旧不在整页详情上（这一页只摊私有那条）',
     !/CN2 GIA|三网优化/.test(got.text), got.text)
   await shot('detail-private-remark-1440')
 
-  // ③ hub 面板给的就是单行输入框：单行多枚 = 一段多枚
+  // ③ hub 面板给的就是单行输入框：单行也整段
   privateNote = '单行甲,单行乙'
   await render({ cardStyle: 'plain' }, 'priv-single', { path: '/node/1' })
   const one = await json(PRIVATE_PROBE)
-  check('私有备注：单行两枚 → 一段两枚', one.rows === 1 && SAME(one.tags, ['单行甲', '单行乙']), JSON.stringify(one))
+  check('私有备注：单行带逗号也整段展示（不拆成两枚）',
+    one.lines.length === 1 && one.text.includes('单行甲,单行乙'), JSON.stringify(one.lines))
 
   // ④ 列表卡片上不许出现私有备注：它只在整页详情那一块（hub 也只把它下发给登录的管理员）
   await render({ cardStyle: 'detailed' }, 'priv-not-on-card')
