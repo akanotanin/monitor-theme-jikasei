@@ -39,6 +39,14 @@ export type ThemeConfig = {
   listTop: "none" | "groups" | "summary" | "budget" | "both" | "bothBudget"
   /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */
   pingLines: string
+  /**
+   * 「服务器备注」清单：每行一台，`服务器名=备注`（逗号分隔 = 多枚小卡片；`#` 开头的行是注释）。
+   *
+   * 它与 hub 后台按节点填的「公开备注」是**同一个位置的两种来源**（见 `@/lib/notes`）：
+   * 这里写了的机器**优先用这里的**，没写的（或留空）才用 hub 那条——站长想临时给某台加一句
+   * 备注不必先进后台改节点，写在这里就覆盖得住。
+   */
+  serverNotes: string
 }
 
 export const DEFAULTS: ThemeConfig = {
@@ -55,6 +63,9 @@ export const DEFAULTS: ThemeConfig = {
   // 延迟线路：留空 = 按后台顺序自动显示前几条；填了名字就只显示这些（一行一个）。
   // 名字是 ping 任务的名字，不是节点名——对不上的行会被跳过。
   pingLines: "",
+  // 备注清单：留空 = 全站都用 hub 后台按节点填的「公开备注」（hub ≥ 1.3.2）；
+  // 在这里写了的机器优先用这里的。两种来源都没有的机器一个像素都不占。
+  serverNotes: "",
 }
 
 /**
@@ -147,5 +158,40 @@ export function normalizeConfig(saved: unknown): ThemeConfig {
     listTop: listTopOf(s.listTop, { showSummary: s.showSummary, showGroupTabs: s.showGroupTabs }),
     // 留空是有意义的值（= 自动取前几条），空串不能当「没填过」；只有类型不对时才回落。
     pingLines: typeof s.pingLines === "string" ? s.pingLines : DEFAULTS.pingLines,
+    // 同理：备注清单的空串是有意义的值（= 这台交给 hub 的公开备注）。
+    serverNotes: typeof s.serverNotes === "string" ? s.serverNotes : DEFAULTS.serverNotes,
   }
+}
+
+/**
+ * 「服务器备注」清单里这台机器的备注。逐行读 `服务器名=备注`，`#` 开头的行是注释；
+ * 名字按去掉首尾空白后逐字匹配节点名。同一台写多行时后面一行覆盖前面。
+ *
+ * 备注里用逗号分隔＝多枚小卡片（半角 `,` 与全角 `，` 都认，两侧空白削掉、空片段丢掉）：
+ * `东京机=三网优化,备用` 就是两枚，而不是一枚写着「三网优化,备用」的。
+ * 没有匹配、或值里全是空片段，都返回空数组——**空数组的含义是「这台没在这里写」**，
+ * 由 `@/lib/notes` 接着去问 hub 的公开备注。
+ *
+ * 放在这里（而不是 NodeCard）是因为它是纯函数：能脱开 React 单测，改起来不怕漏。
+ */
+export function tagsFor(notes: string, name: string): string[] {
+  let found: string[] = []
+  for (const raw of notes.split("\n")) {
+    const line = raw.trim()
+    if (!line || line.startsWith("#")) continue
+    const at = line.indexOf("=")
+    if (at <= 0) continue
+    if (line.slice(0, at).trim() !== name) continue
+    // 后一行覆盖前一行——包括「后一行写成空值」这种就是「这台不在这里写」。
+    found = splitTags(line.slice(at + 1))
+  }
+  return found
+}
+
+/** 备注值 → 小卡片列表：逗号（半角 / 全角）分隔，削首尾空白、丢掉空片段。 */
+export function splitTags(value: string): string[] {
+  return value
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
 }

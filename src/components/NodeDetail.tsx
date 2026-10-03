@@ -145,7 +145,7 @@ function Fact({ label, value }: { label: string; value?: string | number | null 
   )
 }
 
-export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }: {
+export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, notes = "" }: {
   node: Node
   /** 紧凑形态点开一行时的就地渲染：省掉身份行与规格，直接落在延迟上，高度写死。 */
   embedded?: boolean
@@ -153,11 +153,14 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
   onOpenDetail?: () => void
   /** hub 的历史保留天数（`/api/me` 的 `history_days`）；老 hub 不给，按 7 天算（见 @/lib/ranges）。 */
   historyDays?: number
+  /** 站点设置里那份「服务器备注」清单（与卡片形态同一份）；留空 = 全用 hub 的公开备注。 */
+  notes?: string
 }) {
-  // 公开备注：站长在 hub 后台写给访客的说明（见 @/lib/notes）。逗号分隔＝多枚小卡片，
-  // 写法与 1.15.x 那份「服务器备注」逐字相同；一枚都没有时这一页与从前逐像素相同
-  // ——「备注块」不占位，量程栏那格也不多出图标。
-  const noteTags = remarkTags(node)
+  // 这台机器的备注（见 @/lib/notes）：站点设置里写了这台就用那里的，没写就用 hub 的公开备注。
+  // ★整页详情**不摊备注**（站长 2026-10-03 定的）：这一页只留规格与图表；备注在列表卡片上
+  // （经典/延迟收在右上角浮层里、详细挂标题行右端）和「紧凑」展开行那格看。
+  // 下面那枚控件与备注块都只在 embedded（紧凑展开）时才出现。
+  const noteTags = remarkTags(node, notes)
   const [peekOpen, setPeekOpen] = useState(false)
   const peekRef = useRef<HTMLSpanElement | null>(null)
   // 摊开时点别处 / Esc 收起（与「延迟」档那枚同一个做法）。
@@ -390,19 +393,6 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
             那一格——公开页的访客关心这台机器还活着多久，价格与到期在后台看。 */}
         <Fact label="在线时间" value={onlineFor(node)} />
       </dl>
-
-      {/* 公开备注：整页详情上**摊在这里**——访客一眼可见，不必去悬停或点开某个图标。
-          一枚备注一枚小卡片（与卡片上同一套读法）。下面那一块是私有备注（`remark`），
-          只有登录的管理员拿得到。 */}
-      {noteTags.length > 0 && (
-        <div data-public-remark="page" className="flex flex-wrap gap-1 rounded-md bg-muted px-3 py-2">
-          {noteTags.map((tag, i) => (
-            <Badge key={`${i}-${tag}`} variant="secondary" className="max-w-full font-normal" title={tag}>
-              <span className="truncate">{tag}</span>
-            </Badge>
-          ))}
-        </div>
-      )}
 
       {node.remark && (
         <p className="rounded-md bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{node.remark}</p>

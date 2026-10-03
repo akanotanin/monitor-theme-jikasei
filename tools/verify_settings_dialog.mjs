@@ -25,10 +25,12 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
-// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行——名字与 theme.json 的 label 逐字对应。
-// 1.16.0 起「服务器备注」不在这一列里了（备注改由 hub 按节点管）：它的**缺席**由下面两条
-// 专门的反向断言钉住，别留在「必须画出来」的清单里——那样每次都会报两条假 FAIL。
-const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '显示的延迟线路'];
+// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行、按节点补备注——名字与
+// theme.json 的 label 逐字对应。
+// ★「服务器备注」1.16.0 删过、1.17.0 又请了回来（站长口径）：它与 hub 的「公开备注」是同一个位置的
+// 两种来源，这里写了的优先、没写的用 hub 那条（取舍在 src/lib/notes.ts 的 remarkTags 里）。
+// 它必须在清单里——**字段数正好卡在 6**，多一个就会让面板切两列 + 分组导航（下面有排版断言）。
+const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '服务器备注', '显示的延迟线路'];
 const PORT = 9780 + Math.floor(Math.random() * 20);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe']
   .find((p) => existsSync(p)) || 'chrome';
@@ -178,21 +180,29 @@ check('「养鸡场入口」的说明不再带跨站示例', helpText !== '' && 
 check('对话框里也没有残留的旧示例句子',
   !everyText.includes('例如想直接进公开的') && !/https?:\/\/[^\s"）)]*\/chicken/.test(everyText));
 
-// 1.16.0 删掉了「服务器备注」这一项：备注改由 hub 的「公开备注」按节点管，主题不再有自己的清单。
-// 两个方向都要断——manifest 里没有它（我们的表单删干净了），面板里也没有它（Hub 不认旧声明）；
+// 「服务器备注」这一项本身（1.17.0 起回来）：manifest 声明了没、面板画出来了没。
 // 只断一边会漏掉「字段删了、对话框还画着一格」这种半截状态，而站长会照着那一格白填。
-check('theme.json 里没有「服务器备注」这一项（备注已交给 hub）', !entries.some((e) => e.key === 'serverNotes'));
-check('「主题设置」对话框里也不再画「服务器备注」', !everyText.includes('服务器备注'),
-  everyText.includes('服务器备注') ? '对话框里仍有「服务器备注」字样' : '（没有，好）');
+check('theme.json 里声明了「服务器备注」（serverNotes）', entries.some((e) => e.key === 'serverNotes'));
+check('「主题设置」对话框里画出了「服务器备注」', everyText.includes('服务器备注'),
+  everyText.includes('服务器备注') ? '（在）' : '（没画出来）');
 
-// 原来那一格的位置现在放的是一行**指引**（`type: title`，面板画成一行加粗小标题）：备注该去哪儿设、
-// 怎么写。两个方向都要断——manifest 里写了没、面板上画出来了没；只在代码里写注释是站长看不见的。
-const GUIDE = '备注已移到探针后台';
-check('theme.json 写了「备注去哪儿设」的指引（type: title）',
-  entries.some((e) => e.type === 'title' && String(e.label).includes(GUIDE)),
+// 它的说明必须把**两种来源的取舍**讲清楚（留空＝用后台节点的「公开备注」）：这是站长唯一看得见的地方，
+// 只在代码里写注释是看不见的。写法（`服务器名=备注`）也照旧要给出——它跟 1.15.x 那份逐字相同。
+const NOTE_HELP = (entries.find((e) => e.key === 'serverNotes') || {}).help || '';
+check('「服务器备注」的说明给出了 `服务器名=备注` 的写法', /服务器名\s*=\s*备注/.test(NOTE_HELP), `help=${NOTE_HELP}`);
+check('「服务器备注」的说明讲清了兜底：留空＝用后台节点的「公开备注」', /留空/.test(NOTE_HELP) && /公开备注/.test(NOTE_HELP), `help=${NOTE_HELP}`);
+check('对话框里也画出了这条说明', everyText.includes(NOTE_HELP.slice(0, 8)), `找「${NOTE_HELP.slice(0, 8)}…」`);
+
+// 1.16.0 临时放在那一格位置上的**指引标题**（「备注已移到探针后台…」）已撤掉：设置项回来了，
+// 再挂一行「去后台设」会跟它自相矛盾。它占的是 `type: title` 那一行，而 Hub 会**静默丢掉**
+// 没有字段跟进的标题——所以这里连「三网延迟」那个小节名一起断，确保标题没有连带丢一个。
+const GONE = '备注已移到探针后台';
+check('过时的指引标题已从 theme.json 撤掉', !entries.some((e) => String(e.label).includes(GONE)),
   JSON.stringify(entries.filter((e) => e.type === 'title').map((e) => e.label)));
-check('「主题设置」对话框里画出了这条指引', everyText.includes(GUIDE),
-  everyText.includes(GUIDE) ? '（在）' : '（没画出来）');
+check('对话框里也没有那行过时指引', !everyText.includes(GONE));
+check('「三网延迟」小节标题还在（撤指引没有连带丢标题）',
+  entries.some((e) => e.type === 'title' && e.label === '三网延迟') && everyText.includes('三网延迟'),
+  JSON.stringify(entries.filter((e) => e.type === 'title').map((e) => e.label)));
 
 // ── 下拉框（type: select）的选项文案 ──────────────────────────────────
 // 面板对 select 画的是「真 <select> 一份 + Radix combobox 一份」，两侧的选项文案都来自 manifest.config。
@@ -300,7 +310,7 @@ for (const field of entries.filter((e) => e.type !== 'title' && e.help)) {
   if (n > 2 || n < 1) wrapped.push(`${field.label}=${n < 0 ? '没找到' : n + ' 行'}`)
 }
 // 病根是**两列半宽**下的四五行，不是「说明必须恰好一行」：单列 462px 里说明折成两行是正常的，
-// 1.6.0 的「养鸡场入口」要讲清留空 / off / 地址三种状态、「服务器备注」要给出 `名字=备注` 的写法，
+// 1.6.0 的「养鸡场入口」要讲清留空 / off / 地址三种状态、「服务器备注」要给出 `服务器名=备注` 的写法，
 // 压成一行就只能删掉站长唯一的说明书。所以门槛定在 ≤2 行——四五行的退化（半宽那份）照样报错。
 check('排版：每项说明至多两行（没有折成四五行的）', wrapped.length === 0, wrapped.join('、') || '全部 ≤2 行')
 

@@ -7,7 +7,6 @@ import { SummaryCards } from "@/components/Summary"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupsOf, useNodes, type Node } from "@/lib/api"
-import { publicRemark } from "@/lib/notes"
 import { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, isBudgetLayout, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
 import { FarmIcon } from "@/components/FarmIcon"
 
@@ -40,7 +39,7 @@ const NodeDetail = lazy(loadDetail)
  * 页签 py-1 + text-xs = 24、图块 = 小标题 mb-2 + `h-40`、四张图之间 space-y-5、
  * 规格格那层用同一套 grid 断点。于是手机上（一列六行）与桌面上（三列两行）都自动对上。
  */
-function DetailSkeleton({ remark = false }: { remark?: boolean }) {
+function DetailSkeleton() {
   return (
     <div className="detail-skeleton space-y-4" aria-busy="true">
       <div className="flex items-center gap-2">
@@ -55,12 +54,6 @@ function DetailSkeleton({ remark = false }: { remark?: boolean }) {
           </div>
         ))}
       </div>
-      {/* 这台机器写了公开备注时，详情页多一块（实测 36px 高 + space-y-4 的 16px 间距）：
-          骨架照它摆一块，否则点开那一下会「先塌再撑」——详情骨架存在的理由就是高度一致。
-          ★长备注在手机窄屏上会折成两三行，那种情况下这一块会矮一点；桩里那台是短备注，
-          护栏（verify_detail_preload）的 ±24px 判据看着的就是它。 */}
-      {remark && <Skeleton className="h-9 w-full rounded-md" />}
-
       <div className="space-y-2 border-t pt-4">
         <div className="flex gap-1">
           <Skeleton className="h-6 w-12" />
@@ -334,10 +327,10 @@ export default function App() {
           !nodes ? (
             <DetailSkeleton />
           ) : selected ? (
-            <Suspense fallback={<DetailSkeleton remark={publicRemark(selected) !== ""} />}>
-              {/* 整页详情与紧凑展开里是同一个组件：保留天数也要一起给它，
-                  否则「展开里有 30 天、点进去只有 7 天」会显得不一致。 */}
-              <NodeDetail node={selected} historyDays={me.history_days} />
+            <Suspense fallback={<DetailSkeleton />}>
+              {/* 整页详情与紧凑展开里是同一个组件：保留天数与备注清单也要一起给它，
+                  否则「展开里有 30 天、点进去只有 7 天」、或「展开里有备注、点进去没有」会显得不一致。 */}
+              <NodeDetail node={selected} historyDays={me.history_days} notes={config.serverNotes} />
             </Suspense>
           ) : (
             <p className="py-16 text-center text-sm text-muted-foreground">
@@ -367,7 +360,8 @@ export default function App() {
             <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail} showTabs={hasGroupTabs(config.listTop)}
               latencyLines={config.pingLines}
               cardStyle={config.cardStyle}
-              historyDays={me.history_days} />
+              historyDays={me.history_days}
+              notes={config.serverNotes} />
           </>
         )}
       </main>
@@ -406,7 +400,7 @@ function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | nu
 // without groups keeps the page it always had. The operator can also keep the
 // row off outright (theme setting `listTop`), which leaves the page as one
 // flat list.
-function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLines, cardStyle, historyDays }: {
+function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLines, cardStyle, historyDays, notes }: {
   nodes: Node[]
   /** null is every node, "" the ungrouped. */
   group: string | null
@@ -421,6 +415,8 @@ function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLine
   cardStyle: "classic" | "latency" | "detailed" | "plain" | "compact"
   /** hub 的历史保留天数：透给「紧凑」形态展开行里那块详情图（时间范围那排按钮按它生成）。 */
   historyDays?: number
+  /** 站点设置里那份「服务器备注」清单（每行 `服务器名=备注`）；留空 = 全用 hub 的公开备注。 */
+  notes: string
 }) {
   const groups = groupsOf(nodes)
   const ungrouped = nodes.filter((n) => !n.group).length
@@ -463,11 +459,11 @@ function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLine
       {nodes.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
       ) : cardStyle === "compact" ? (
-        <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} />
+        <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} notes={notes} />
       ) : (
         <div className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
           {shown.map((n) => (
-            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} latencyLines={latencyLines} cardStyle={cardStyle} />
+            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} latencyLines={latencyLines} cardStyle={cardStyle} notes={notes} />
           ))}
         </div>
       )}

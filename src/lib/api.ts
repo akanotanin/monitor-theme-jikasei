@@ -34,7 +34,7 @@ export type Node = {
   /**
    * 站长在后台写给访客的一行说明（单行、≤100 字，留空是空串）。hub 1.3.2 起随**公开视图**
    * 一起下发，所以匿名也拿得到——与最下面那个私有的 `remark` 不是一回事。老 hub 没有这个 key。
-   * 主题唯一的备注来源，取值见 `@/lib/notes`。
+   * 这是备注的**默认来源**；主题设置里的「服务器备注」写了哪台就优先用那里的（见 `@/lib/notes`）。
    */
   public_remark?: string | null
   last_seen: number

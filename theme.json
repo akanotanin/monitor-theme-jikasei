@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.16.2",
+  "version": "1.17.0",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -58,8 +58,15 @@
       "help": "经典＝速率与总量各一行；简约＝网络一行、标签提亮；延迟＝加三网延迟；详细＝加时长与计费；紧凑＝表格。"
     },
     {
+      "type": "text",
+      "key": "serverNotes",
+      "label": "服务器备注",
+      "default": "",
+      "help": "每行一台「服务器名=备注1,备注2」，逗号分隔＝多枚小卡片；# 注释。留空＝用后台节点的「公开备注」。"
+    },
+    {
       "type": "title",
-      "label": "备注已移到探针后台：节点 → 编辑 →「公开备注」，逗号分隔＝多枚小卡片"
+      "label": "三网延迟"
     },
     {
       "type": "text",

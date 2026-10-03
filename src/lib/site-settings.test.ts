@@ -5,8 +5,9 @@
 //   1. cardStyle：≤1.2.9 的 "detail" 现在叫 "latency"，1.9.0 起多了 "compact";
 //   2. listTop：≤1.4.0 是两个布尔开关（showSummary / showGroupTabs），1.5.0 合成四选一；
 //   3. farmUrl：≤1.5.0 是两个键（showFarmEntry + farmUrl），1.6.0 并成一个三态键。
-// 另外 1.16.0 删掉了 serverNotes（备注改由 hub 的「公开备注」按节点管，见 notes.test.ts）：
-// 删字段不是迁移，但要挡住它以后被顺手加回来——下面有一条护栏按 theme.json 与 DEFAULTS 双向断。
+// 另外 serverNotes（「服务器备注」清单）在 1.16.0 删过、1.17.0 请了回来：它与 hub 后台按节点
+// 填的「公开备注」是同一个位置的两种来源，取舍在 notes.test.ts 的 remarkTags 里。下面双向断
+// 「theme.json 声明了没 / DEFAULTS 兜底了没」——半截状态（字段删了、对话框还画着一格）最难发现。
 // 读不出来的表现不是报错，而是「站长开着的那一项自己关了」。
 import { readFileSync } from "node:fs"
 
@@ -89,11 +90,15 @@ if (fields.length > 6) {
 const keys = fields.map((f: { key: string }) => f.key).sort()
 eq(keys, Object.keys(DEFAULTS).sort(), "theme.json 的字段与 DEFAULTS 的键一致")
 
-// 1.16.0 删掉的 serverNotes 不许以任何形式回来：备注只有 hub 的「公开备注」一个来源
-// （按节点管，见 notes.test.ts）。留一条反向断言，是因为「顺手把老开关加回来」最容易
-// 变成两套并存——页面照常、后台照常，只有站长会在两处各写一遍备注然后发现只有一处生效。
-eq(keys.includes("serverNotes"), false, "theme.json 里没有 serverNotes（备注已交给 hub）")
-eq(Object.keys(DEFAULTS).includes("serverNotes"), false, "DEFAULTS 里没有 serverNotes")
+// 备注清单（serverNotes）在 1.16.0 短暂删过、1.17.0 又请了回来：它与 hub 后台按节点填的
+// 「公开备注」是同一个位置的两种来源，取舍在 @/lib/notes 的 remarkTags 里（这里写了的优先，
+// 没写的用 hub 那条）。两个方向都断：manifest 声明了没、DEFAULTS 兜底了没。
+eq(keys.includes("serverNotes"), true, "theme.json 里声明了 serverNotes（服务器备注）")
+eq(Object.keys(DEFAULTS).includes("serverNotes"), true, "DEFAULTS 里有 serverNotes 的兜底值")
+eq(DEFAULTS.serverNotes, "", "serverNotes 默认空串（= 全站都用 hub 的公开备注）")
+eq(normalizeConfig({ serverNotes: "" }).serverNotes, "", "备注清单空串保留（＝这台交给 hub）")
+eq(normalizeConfig({ serverNotes: "东京机=三网优化" }).serverNotes, "东京机=三网优化", "备注清单原样读回")
+eq(normalizeConfig({ serverNotes: 42 }).serverNotes, "", "备注清单类型不对 → 回落空串")
 
 if (failed) {
   console.error(`\n站点设置：${failed} 条不通过`)

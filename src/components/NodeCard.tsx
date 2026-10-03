@@ -166,33 +166,36 @@ function trafficFoot(node: Node) {
     : `${bytes(monthUsage(node))} / ${FOREVER}`
 }
 
-export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
+export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes }: {
   node: Node
   onOpen: () => void
   /** 指针或键盘刚落到这张卡片上：先把手头这块 chunk（详情页的图表那 391KB）取回来。 */
   onWarm?: () => void
   latencyLines: string
   cardStyle: "classic" | "latency" | "detailed" | "plain"
+  /** 站点设置里那份「服务器备注」清单（每行 `服务器名=备注`）；留空 = 全用 hub 的公开备注。 */
+  notes: string
 }) {
   const m = node.metrics
   // 详细档：图标、元信息行与三枚读数盒都只在它里面出现；配色仍与另外两档同一套灰。
   const detailed = cardStyle === "detailed"
-  // 经典档：底部是 2×2 四格、不含延迟；公开备注与「详细」档同落一处（标题行右端）。
-  const classic = cardStyle === "classic"
+  // 经典档：底部是 2×2 四格、不含延迟；备注与「延迟」档一样收在右上角那枚浮层里（见 peek）。
   // 简约档：结构、内容、位置与经典档完全一致，只换一套视觉处理——标签改用前景色、
   // 进度条压到 4px、底注降到 11px、名字加粗一档、格子间距收紧（见下方各处 plain 分支）。
   // ★ 按站长的口径，简约档**不显示公开备注**（其余四档都显示），这一档保持原样。
   const plain = cardStyle === "plain"
-  // 公开备注：站长在 hub 后台写给访客的说明（见 @/lib/notes）。逗号分隔＝多枚小卡片，
-  // 写法与 1.15.x 那份「服务器备注」逐字相同；一枚都没有时下面每一处都整个不渲染
-  // ——与这次改动之前逐像素相同（零占位）。
-  const noteTags = remarkTags(node)
+  // 这台机器的备注（见 @/lib/notes）：站点设置里写了这台就用那里的，没写就用 hub 的公开备注。
+  // 逗号分隔＝多枚小卡片，写法与 1.15.x 那份「服务器备注」逐字相同。
+  const noteTags = remarkTags(node, notes)
   /**
-   * 「延迟」档右上角那枚信息控件：悬停或点击弹出浮层，里面是**备注 + 在线时间 + 价格 + 到期**。
-   * 「延迟」档本来不写这些（它们原来只有「详细」档有），浮层让它们按需出现，卡片本身
-   * 一个像素都不为此让位——没写备注时与没有这枚控件时逐像素相同。
+   * 「经典」「延迟」两档右上角那枚信息控件：悬停或点击弹出浮层，里面是
+   * **备注（写了才有）+ 在线时间 + 价格 + 到期**。
+   *
+   * 这两档本来不写这些（它们原来只有「详细」档有），浮层让它们按需出现；控件本身只有 20px、
+   * 挂在标题行右端，卡片其余部分一个像素都不为它让位。★这两档**常驻**这枚控件（站长 2026-10-03 定的）：
+   * 没写备注的机器点开也能看到在线时间/价格/到期——不然那几项在这两档上根本无处可看。
    */
-  const peek = cardStyle === "latency"
+  const peek = cardStyle === "classic" || cardStyle === "latency"
   const [peekOpen, setPeekOpen] = useState(false)
   const peekRef = useRef<HTMLSpanElement>(null)
   // 钉住（点开）之后点别处要能收起；点卡片别的地方会跳详情页，所以只在浮层外按下时收。
@@ -267,10 +270,8 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
         <Country node={node} />
         {/* 简约档只把名字加粗一档（参考站是 600），文字与位置照旧。 */}
         <h3 className={`min-w-0 truncate ${plain ? "font-semibold" : "font-medium"}`}>{node.name}</h3>
-        {/* 「经典」「详细」两档的公开备注：挂在**标题行右端**——名字下面那一行、读数格、
+        {/* 「详细」档的备注：挂在**标题行右端**——名字下面那一行、读数格、
             三枚读数盒一概不动（早先那套「把价格挤进读数盒、把到期日藏起来」的重排已经取消）。
-            备注是站长在 hub 后台「公开备注」里写给访客的一行说明（≤100 字、单行），所以这里是
-            一行文字而不是一排胶囊：这格放不下就截断、把整条挂在 title 上供悬停看全。
             写法与 1.15.x 那份「服务器备注」一致：逗号分隔＝多枚，一枚一枚各自成卡片。
             ★名字优先：名字那格照旧（可截断），备注这格 `grow basis-0` —— flex 基准尺寸是 0，
             所以它**从不参与「谁先被压」的竞争**：名字先拿满自己内容需要的宽度，剩下的才给备注，
@@ -279,9 +280,9 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
             名字少 2px 并被截断（护栏实测 175 → 173px），因为 shrink 是按「收缩系数 × 基准尺寸」
             分摊的，只要备注有基准尺寸就会分走一点。
             极端情况（名字特别长）下备注会被压到看不见 —— 刻意的取舍：宁可备注隐身，也不动机器名。
-            「简约」档不挂（站长的口径），「延迟」「紧凑」两档收在浮层里（见本文件下面那个控件与
-            NodeDetail 的量程栏）。 */}
-        {(classic || detailed) && noteTags.length > 0 && (
+            ★「经典」档不挂在这里：它与「延迟」档一样把备注收进右上角那枚浮层（见下面那个控件）。
+            「简约」档不挂（站长的口径），「紧凑」档收在展开行量程栏那格（见 NodeDetail）。 */}
+        {detailed && noteTags.length > 0 && (
           <span
             data-public-remark="title"
             className="ml-auto flex min-w-0 max-w-[40%] grow basis-0 items-center justify-end gap-1 overflow-hidden sm:max-w-[55%]"
@@ -298,11 +299,12 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
             ))}
           </span>
         )}
-        {/* 「延迟」档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期）。
+        {/* 「经典」「延迟」两档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期）。
             卡片自己是 role=button，所以点击与 Enter/空格都要拦在控件里，别让它冒泡成「打开详情页」；
             浮层挂在同一个 relative 容器内，鼠标从图标移到浮层上不会把它关掉。
-            ★ 没写备注就不画它（零占位）：这一档原先「有备注才有这枚图标」，规矩不变。 */}
-        {peek && noteTags.length > 0 && (
+            ★ 这两档常驻这枚控件（20px，挂在标题行右端）：没写备注时它照样在，
+            点开是在线时间/价格/到期；「详细」档不挂它——那几项本来就在卡面上写着。 */}
+        {peek && (
           <span
             ref={peekRef}
             className="relative ml-auto shrink-0"

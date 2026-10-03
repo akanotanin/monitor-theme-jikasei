@@ -131,7 +131,7 @@ async function go(style, tag, { path = '/', w = 1440, h = 900, after = null } = 
 }
 
 /**
- * 拍完打印这一档的关键事实：备注在不在、文本、有没有被截断、整条能不能拿到。
+ * 拍完打印这一档的关键事实：备注在哪一处、几枚、浮层里有什么；整页详情则报「有没有备注元素」。
  * 「图看着对」不算判据——这里给的才是（取景只负责让人一眼看到）。
  */
 async function facts() {
@@ -139,32 +139,39 @@ async function facts() {
     const name = ${JSON.stringify(TARGET)}
     const card = [...document.querySelectorAll('[role=button]')].find((el) => ((el.querySelector('h3') || {}).textContent || '').trim() === name)
     const note = (card || document).querySelector('[data-public-remark]')
-    const page = document.querySelector('[data-public-remark="page"]')
     const pop = document.querySelector('[data-note-panel]')
     const strip = document.querySelector('[data-note-strip]')
-    const btn = document.querySelector('[data-note-popover]')
+    const btn = (card || document).querySelector('[data-note-popover]')
     return {
       card: card ? Math.round(card.getBoundingClientRect().height) : null,
       noteTags: note ? [...note.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()) : null,
       noteTitles: note ? [...note.querySelectorAll('[data-slot="badge"]')].map((b) => b.getAttribute('title')) : null,
-      pageTags: page ? [...page.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()) : null,
-      pageBlock: page ? page.textContent.trim().slice(0, 30) : null,
-      pageBlockVisible: page ? page.getBoundingClientRect().height > 0 : null,
       popoverBtn: !!btn,
+      popoverLabel: btn ? btn.getAttribute('aria-label') : null,
       popoverOpen: !!pop,
+      popTags: pop ? [...pop.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()) : null,
+      popText: pop ? pop.innerText.trim().split(String.fromCharCode(10)).join(' / ') : null,
       stripText: strip ? strip.textContent.trim().slice(0, 24) : null,
+      // 1.17.0 起整页详情**不摊备注**：这里数的是那一页上还有没有备注元素（应为 0）。
+      pageNoteEls: document.querySelectorAll('[data-public-remark], [data-note-popover], [data-note-strip]').length,
+      // 别在这里写正则：这段是模板字面量里的源码，反斜杠转义的斜杠会被折成裸斜杠，
+      // 生成的正则当场报 Invalid regular expression flags（本次踩过）。用 indexOf 判前缀最稳。
+      isDetail: location.pathname.indexOf('/node/') === 0,
       tabRowNote: document.querySelectorAll('[data-note-popover]').length,
     }
   })())`)
   const f = JSON.parse(raw ?? '{}')
   const bits = []
-  if (f.page) bits.push(`整页那块的文本「${f.pageBlock}…」`)
-  if (f.noteTags !== null) bits.push(`卡片上 ${f.noteTags.length} 枚小卡片 ${JSON.stringify(f.noteTags)}（每枚的 title 都在=${(f.noteTitles || []).every(Boolean)}）`)
-  if (f.pageTags) bits.push(`整页那块 ${f.pageTags.length} 枚 ${JSON.stringify(f.pageTags)}`)
-  if (f.pageBlock !== null) bits.push(`整页备注块「${f.pageBlock}…」可见=${f.pageBlockVisible}`)
-  if (f.popoverBtn) bits.push(`信息图标在=${f.popoverBtn} 浮层已开=${f.popoverOpen}`)
-  if (f.stripText !== null) bits.push(`紧凑那格「${f.stripText}…」`)
-  console.log(`   事实：卡片高 ${f.card}px，${bits.length ? bits.join('；') : '这一档不带备注位（按口径）'}`)
+  if (f.isDetail) {
+    bits.push(`整页详情上的备注元素 ${f.pageNoteEls} 个（1.17.0 起应为 0：那一页不摊备注）`)
+  } else {
+    if (f.noteTags !== null) bits.push(`标题行 ${f.noteTags.length} 枚小卡片 ${JSON.stringify(f.noteTags)}（每枚的 title 都在=${(f.noteTitles || []).every(Boolean)}）`)
+    if (f.noteTags === null) bits.push('标题行上没有备注元素')
+    bits.push(f.popoverBtn ? `右上角那枚信息图标在（${f.popoverLabel}），浮层已开=${f.popoverOpen}` : '这一档没有那枚信息图标')
+    if (f.popTags) bits.push(`浮层里 ${f.popTags.length} 枚 ${JSON.stringify(f.popTags)}｜内容「${f.popText}」`)
+    if (f.stripText !== null) bits.push(`紧凑那格「${f.stripText}…」`)
+  }
+  console.log(`   事实：卡片高 ${f.card}px，${bits.join('；')}`)
 }
 
 if (HUB_MODE) {
@@ -191,7 +198,7 @@ hub 上存的站点配置：${JSON.stringify(cfg)} → 形态 ${style}`)
     console.log(`   浮层里的备注小卡片：${panel}`)
     await shoot(`hub-01b-list-popover-1440`)
   } else {
-    console.log('   这一档没有浮层控件（经典/详细档的备注直接挂在标题行右端）')
+    console.log('   这一档没有浮层控件（只有经典/延迟有；详细档的备注挂在标题行右端，简约档不挂）')
   }
   await go(style, 'hub-detail', { path: `/node/${remarked[0].id}`, h: 1100 })
   await shoot('hub-02-detail-1440')
@@ -207,10 +214,22 @@ hub 上存的站点配置：${JSON.stringify(cfg)} → 形态 ${style}`)
   process.exit(0)
 }
 
-/* ── ① 经典 ── */
+/* ── ① 经典（1.17.0 起备注收在右上角那枚浮层里） ── */
 {
-  await go('classic', 'classic')
-  await shoot('01-classic-1440')
+  await go('classic', 'classic', { after: async () => {
+    const raw = await evalJS(`(() => {
+      const c = [...document.querySelectorAll('[role=button]')].find((el) => ((el.querySelector('h3') || {}).textContent || '').trim() === ${JSON.stringify(TARGET)})
+      const b = c && c.querySelector('[data-note-popover]')
+      if (!b) return null
+      const r = b.getBoundingClientRect()
+      return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) })
+    })()`)
+    if (!raw) { console.log('   ⚠ 没找到那枚信息图标'); return }
+    const { x, y } = JSON.parse(raw)
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none', buttons: 0 })
+    await sleep(600)
+  } })
+  await shoot('01-classic-popover-1440')
   await facts()
   const box = await cardBox(TARGET)
   if (box) await shoot('01b-classic-card', box)
@@ -262,7 +281,7 @@ hub 上存的站点配置：${JSON.stringify(cfg)} → 形态 ${style}`)
   } })
   await shoot('05-compact-390')
 }
-/* ── ⑥ 整页详情（备注那块） ── */
+/* ── ⑥ 整页详情（1.17.0 起不摊备注：取景用来证明那一页干净） ── */
 {
   const id = remarked[0].id
   await go('plain', 'detail', { path: `/node/${id}`, h: 1100 })
