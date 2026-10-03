@@ -176,6 +176,23 @@ hub 上存的站点配置：${JSON.stringify(cfg)} → 形态 ${style}`)
   await go(style, `hub-list-${style}`, { h: 1000 })
   await shoot(`hub-01-list-1440`)
   await facts()
+  // 延迟/紧凑档的备注收在浮层里：点开那一枚信息图标，把浮层内容也拍下来 + 打成事实
+  // （这一档在现网就是站长自己选的形态，肉眼要看的就是这一下）。
+  const opened = await evalJS(`(() => {
+    const c = [...document.querySelectorAll('[role=button]')].find((el) => ((el.querySelector('h3') || {}).textContent || '').trim() === ${JSON.stringify(TARGET)})
+    const b = c && c.querySelector('[data-note-popover]')
+    if (!b) return false
+    b.click()
+    return true
+  })()`)
+  if (opened) {
+    await sleep(400)
+    const panel = await evalJS(`(() => { const p = document.querySelector('[data-note-panel]'); return p ? JSON.stringify([...p.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim())) : null })()`)
+    console.log(`   浮层里的备注小卡片：${panel}`)
+    await shoot(`hub-01b-list-popover-1440`)
+  } else {
+    console.log('   这一档没有浮层控件（经典/详细档的备注直接挂在标题行右端）')
+  }
   await go(style, 'hub-detail', { path: `/node/${remarked[0].id}`, h: 1100 })
   await shoot('hub-02-detail-1440')
   await facts()
