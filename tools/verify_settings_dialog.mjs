@@ -190,40 +190,41 @@ check('theme.json 里不再声明「服务器备注」（serverNotes）', !entri
   JSON.stringify(entries.filter((e) => e.type !== 'title').map((e) => e.key)));
 check('「主题设置」对话框里也没有那一格', !everyText.includes('服务器备注'));
 
-// 「备注的用法说明」+ 它的那个设置项（1.18.0 起、1.19.0 改口径并配了字段）：标题是 `type: title`
-// （hub 只给 title 画纯文字、没有输入框），所以**必须紧跟一个字段**——hub 的 configForm() 会把
-// 「紧跟另一个标题的标题」和「列表里最后一个标题」静默丢掉（实测：把说明挪到「卡片形态」下面，
-// 它后面跟的是「三网延迟」标题，整行消失）。所以 1.19.0 给它配了「备注显示位置」这个真实字段，
-// 卡片形态也就回到了「列表与卡片」下面。五件事都断：声明了没、讲清了怎么用、
-// 后面跟没跟字段（且那个字段是备注显示位置）、画出来了没、渲染几行。
-const GUIDE = (entries.find((e) => e.type === 'title' && /备注/.test(String(e.label))) || {}).label || '';
-check('theme.json 里声明了「备注的展示说明」那一行', GUIDE !== '',
+// 「备注」那一节的用法说明（1.18.0 起、1.19.0 改过两轮）：**现在它不再是上面那行加粗标题**——
+// 用户 2026-10-03 要求「挪到备注显示位置下面、更精简」，于是它并进了那个字段的 `help`
+// （灰色小字，就画在下拉框下面、与「卡片＝…；详情页＝…」那句合成一段）。判据因此从「标题文案」
+// 挪到「那个字段的 help」；标题只留一个精简的小节名，且**必须紧跟一个字段**（hub 会把
+// 「紧跟另一个标题的标题」与「列表里最后一个标题」静默丢掉——实测挪到「卡片形态」下面整行消失）。
+const GUIDE_TITLE = (entries.find((e) => e.type === 'title' && /备注/.test(String(e.label))) || {}).label || '';
+check('theme.json 里声明了「备注」那一节的标题', GUIDE_TITLE !== '',
   JSON.stringify(entries.filter((e) => e.type === 'title').map((e) => e.label)));
-check('说明里讲清了两个来源与可见性（公开备注给访客、私有备注只有自己看得到）',
-  /公开备注/.test(GUIDE) && /私有备注/.test(GUIDE) && /访客|别人|只有自己/.test(GUIDE), GUIDE);
+check('小节标题精简（说明搬进字段的灰色说明里了，标题不再是整段话）', GUIDE_TITLE.length <= 6, GUIDE_TITLE);
+const GUIDE = (entries.find((e) => e.key === 'remarkPlacement') || {}).help || '';
+check('用法说明并进了「备注显示位置」的灰色说明里（在下拉框下面）', GUIDE !== '', GUIDE);
+check('说明里讲清了两个来源与可见性（公开给访客、私有给自己）',
+  /公开/.test(GUIDE) && /私有/.test(GUIDE) && /访客/.test(GUIDE) && /自己/.test(GUIDE), GUIDE);
 check('说明里讲清了展示位置（卡片与详情页）', /卡片/.test(GUIDE) && /详情/.test(GUIDE), GUIDE);
-// 用户 2026-10-03：「把备注内容改的更详细些，包含怎么去使用备注标签」——所以还要断「怎么填」：
+// 用户 2026-10-03：「包含怎么去使用备注标签」——所以还要断「怎么填」：
 // 填在哪儿（后台节点）、怎么分隔（逗号＝多枚）、留空会怎样。
 check('说明里讲了怎么填（后台节点 / 逗号分隔＝多枚 / 留空不显示）',
   /后台|节点/.test(GUIDE) && /逗号/.test(GUIDE) && /留空/.test(GUIDE), GUIDE);
-check('那一行说明紧跟一个字段（hub 会丢掉没有字段跟进的标题）',
-  entries.some((e, i) => e.type === 'title' && String(e.label) === GUIDE && entries[i + 1] && entries[i + 1].type !== 'title'),
+check('那一节标题紧跟一个字段（hub 会丢掉没有字段跟进的标题）',
+  entries.some((e, i) => e.type === 'title' && String(e.label) === GUIDE_TITLE && entries[i + 1] && entries[i + 1].type !== 'title'),
   JSON.stringify(entries.map((e) => e.type)));
 // 而且跟的那个字段就是「备注显示位置」——说明才有地方挂；顺带断「卡片形态」回到了「列表与卡片」下
 // （用户 2026-10-03 的原话是「把备注和卡片形态调个位置」，但直接调会被 hub 丢掉，所以是给它配字段）。
-const guideAt = entries.findIndex((e) => e.type === 'title' && String(e.label) === GUIDE);
+const guideAt = entries.findIndex((e) => e.type === 'title' && String(e.label) === GUIDE_TITLE);
 check('说明后面跟的正是「备注显示位置」', entries[guideAt + 1]?.key === 'remarkPlacement',
   JSON.stringify(entries[guideAt + 1]));
 check('「卡片形态」在「列表与卡片」那一组里（不再挂在备注标题下）',
   entries.findIndex((e) => e.key === 'cardStyle') < guideAt &&
     entries.slice(0, entries.findIndex((e) => e.key === 'cardStyle')).some((e) => e.type === 'title' && e.label === '列表与卡片'),
   JSON.stringify(entries.map((e) => e.key || e.label)));
-check('「主题设置」对话框里画出了那一行说明', GUIDE !== '' && everyText.includes(GUIDE.slice(0, 12)),
-  `找「${GUIDE.slice(0, 12)}…」`);
-// 说明那一行的**观感**：hub 里唯一能放纯文字的类型就是 `type: title`——画出来是一行加粗小标题，
-// 没有输入框，而且**不认 help**（实测给 title 加 help，面板一个像素都不画）。所以文案必须短到
-// **只占一行**，读起来像小节标题；长到折两行就会变成末行只剩几个字的「半截段落」（用户 2026-10-03
-// 要的「美观」）。这里按**渲染出来的行数**断，不看字符数（字体宽度不是我们能算准的）。
+check('「主题设置」对话框里画出了这段说明（在下拉框下面那行灰字里）',
+  GUIDE !== '' && everyText.includes(GUIDE.slice(0, 12)), `找「${GUIDE.slice(0, 12)}…」`);
+// 这段说明的**观感**：它现在是普通字段的灰色说明（并进 help 之后），所以门槛是**不超过两行**
+// （与上面「每项说明至多两行」同一条规矩）；断的是**渲染出来的行数**，不看字符数——字体宽度
+// 不是我们能算准的。
 const GUIDE_MEASURE = (label) => `JSON.stringify((() => {
   const dlg = document.querySelector('[role="dialog"]')
   if (!dlg) return { missing: 'dialog' }
@@ -238,8 +239,8 @@ const GUIDE_MEASURE = (label) => `JSON.stringify((() => {
 const guideBox = JSON.parse((await js(GUIDE_MEASURE(GUIDE))) || '{}')
 // 用户 2026-10-03 要「更详细」之后，这段说明本来就该是多行——但也不能是四五行的墙。门槛定在 2~4 行：
 // 只占一行说明内容被砍过（或根本没画出来），超过四行则是排版退化（当年两列半宽那份的病根）。
-check('说明渲染成 2~4 行（详细但不糊成一团）',
-  typeof guideBox.lines === 'number' && guideBox.lines >= 2 && guideBox.lines <= 4, JSON.stringify(guideBox));
+check('这段说明渲染成 1~2 行（精简，不糊成一团）',
+  typeof guideBox.lines === 'number' && guideBox.lines >= 1 && guideBox.lines <= 2, JSON.stringify(guideBox));
 
 // 1.16.0 临时放在那一格位置上的**指引标题**（「备注已移到探针后台…」）已撤掉：设置项回来了，
 // 再挂一行「去后台设」会跟它自相矛盾。它占的是 `type: title` 那一行，而 Hub 会**静默丢掉**
