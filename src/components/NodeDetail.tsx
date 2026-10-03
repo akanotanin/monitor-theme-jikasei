@@ -14,6 +14,7 @@ import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, osName, rate, timeTicks, uptime,
 } from "@/lib/format"
 import { remarkChips } from "@/lib/notes"
+import { remarksOnCards, remarksOnDetail, type RemarkPlacement } from "@/lib/site-settings"
 import { rangesFor } from "@/lib/ranges"
 
 type Point = {
@@ -144,7 +145,7 @@ function Fact({ label, value }: { label: string; value?: string | number | null 
   )
 }
 
-export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }: {
+export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, remarkPlacement }: {
   node: Node
   /** 紧凑形态点开一行时的就地渲染：省掉身份行与规格，直接落在延迟上，高度写死。 */
   embedded?: boolean
@@ -152,13 +153,19 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
   onOpenDetail?: () => void
   /** hub 的历史保留天数（`/api/me` 的 `history_days`）；老 hub 不给，按 7 天算（见 @/lib/ranges）。 */
   historyDays?: number
+  /** 「备注显示位置」：`embedded`（紧凑展开行）算「卡片」那一侧，整页详情那一块算「详情页」那一侧。 */
+  remarkPlacement?: RemarkPlacement
 }) {
   // 这台机器的备注（见 @/lib/notes）：私有在前（仅自己可见）、公有在后，都拆成一枚枚小卡片。
   // ★**公开**备注在整页详情上不单独摊（站长 2026-10-03 定的口径）：这一页只留规格与图表，
   // 列表卡片上那几处（经典/延迟的右上角浮层、详细档标题行右端、紧凑展开行那格）才摊它们；
   // 而**私有**备注在整页详情那一块里跟它一起摊（见下面那个块）。
   // 下面那枚控件与备注条都只在 embedded（紧凑展开）时才出现。
+  // 同一个节点在两处出现，口径却不同：`embedded`（紧凑展开行那一格）算「卡片」那一侧，
+  // 整页详情那一块算「详情页」那一侧——所以这里按「备注显示位置」分别取一次（见 @/lib/site-settings）。
   const chips = remarkChips(node)
+  const cardChips = remarksOnCards(remarkPlacement ?? "both") ? chips : []
+  const detailChips = remarksOnDetail(remarkPlacement ?? "both") ? chips : []
   const [peekOpen, setPeekOpen] = useState(false)
   const peekRef = useRef<HTMLSpanElement | null>(null)
   // 摊开时点别处 / Esc 收起（与「延迟」档那枚同一个做法）。
@@ -398,9 +405,9 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
           ★**不加容器**（没有底、没有描边、没有内边距）：小卡片直接落在页面上，与列表卡片那几处同一副
           面孔。早先那层「白框」是给整段文字当底用的，改成小卡片之后它只是多余的一圈边（用户 2026-10-03
           要求去掉）。护栏里有一条断「那一块没有描边、底色是透明的」。没写备注时一个像素都不占。 */}
-      {chips.length > 0 && (
+      {detailChips.length > 0 && (
         <div data-remark-block className="flex min-w-0 flex-wrap items-center gap-1">
-          <RemarkChips chips={chips} />
+          <RemarkChips chips={detailChips} />
         </div>
       )}
       </>
@@ -446,15 +453,15 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
               逐像素相同。
               ★只有「紧凑」就地展开（embedded）才需要这条入口：整页详情把整串摊在规格下面（见上面那段），
               所以那一页的量程栏右边不再挂图标，免得同一句话出现两遍。 */}
-          {embedded && (chips.length > 0 || onOpenDetail) && (
+          {embedded && (cardChips.length > 0 || onOpenDetail) && (
             <span className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-x-4 gap-y-1">
-              {chips.length > 0 && (
+              {cardChips.length > 0 && (
                 <>
                   {/* ★不许再给它 `max-w-[14rem]` 那种上限：这一行的左边本来是空的（量程按钮与削峰只占
                       一小段），上限一压，四枚备注就各自缩成「测…」（用户 2026-10-03 指出的）。
                       `flex-1` + 右对齐让它把左边的空档吃满，真的放不下时才按老规矩截断。 */}
                   <span data-note-strip className="hidden min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden sm:flex">
-                    <RemarkChips chips={chips} />
+                    <RemarkChips chips={cardChips} />
                   </span>
                   <span
                     ref={peekRef}
@@ -465,7 +472,7 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
                     <button
                       data-note-popover
                       aria-expanded={peekOpen}
-                      aria-label={`备注：${chips.map((c) => c.text).join("、")}`}
+                      aria-label={`备注：${cardChips.map((c) => c.text).join("、")}`}
                       onClick={(e) => {
                         // 这一块本身在展开行里，点它不该连带开合那一行。
                         e.stopPropagation()
@@ -483,7 +490,7 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
                         role="tooltip"
                         className="absolute top-5 right-0 z-20 flex w-max max-w-[16rem] flex-wrap gap-1 rounded-md border bg-card px-2 py-1.5 shadow-md"
                       >
-                        <RemarkChips chips={chips} />
+                        <RemarkChips chips={cardChips} />
                       </span>
                     )}
                   </span>

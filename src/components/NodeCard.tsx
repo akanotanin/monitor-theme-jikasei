@@ -10,6 +10,7 @@ import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
 import { remarkChips, type RemarkChip } from "@/lib/notes"
+import { remarksOnCards, type RemarkPlacement } from "@/lib/site-settings"
 
 /**
  * This period's usage as the plan meters it. The hub computes it; the switch
@@ -192,13 +193,15 @@ export function RemarkChips({ chips, max = "full", keep = false }: { chips: Rema
   )
 }
 
-export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
+export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remarkPlacement }: {
   node: Node
   onOpen: () => void
   /** 指针或键盘刚落到这张卡片上：先把手头这块 chunk（详情页的图表那 391KB）取回来。 */
   onWarm?: () => void
   latencyLines: string
   cardStyle: "classic" | "latency" | "detailed" | "plain"
+  /** 「备注显示位置」：`detail` 时卡片这一侧一枚都不摊（整页详情照旧，见 NodeDetail）。 */
+  remarkPlacement?: RemarkPlacement
 }) {
   const m = node.metrics
   // 详细档：图标、元信息行与三枚读数盒都只在它里面出现；配色仍与另外两档同一套灰。
@@ -209,7 +212,8 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
   // ★ 按站长的口径，简约档**不显示公开备注**（其余四档都显示），这一档保持原样。
   const plain = cardStyle === "plain"
   // 这台机器的备注（见 @/lib/notes）：私有在前（仅自己可见）、公有在后，都拆成一枚枚小卡片。
-  const chips = remarkChips(node)
+  // 备注那一串：先按「备注显示位置」判这一侧要不要摊，再交给 @/lib/notes 拆（私有在前、公有在后）。
+  const chips = remarksOnCards(remarkPlacement ?? "both") ? remarkChips(node) : []
   /**
    * 「经典」「延迟」两档右上角那枚信息控件：悬停或点击弹出浮层，里面是
    * **备注（写了才有）+ 在线时间 + 价格 + 到期**。

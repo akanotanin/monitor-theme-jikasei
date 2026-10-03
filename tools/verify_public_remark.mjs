@@ -724,6 +724,49 @@ const hoursRequested = async () => {
   delete meExtra.history_days
 }
 
+/* ────── ⑩ 「备注显示位置」：三档取值真的管住两处（卡片侧 / 整页详情侧） ────── */
+console.log('\n── 备注显示位置：卡片与详情页 / 只在卡片 / 只在详情页（主题设置里那个新字段真的管住两处） ──')
+{
+  remark = SHORT
+  // ① 默认（两边都摊）：卡片上有、详情页那一块也在
+  await render({ cardStyle: 'detailed' }, 'place-both-card')
+  const bothCard = await card('节点一')
+  await render({ cardStyle: 'plain', remarkPlacement: 'both' }, 'place-both-detail', { path: '/node/1' })
+  const bothDetail = await json(MERGED_PROBE)
+  check('两边都摊（默认）：卡片上有、详情页那一块也在',
+    bothCard.note === true && SAME(bothCard.tags, tagsOf(SHORT)) && bothDetail.block === true && SAME(bothDetail.chips, tagsOf(SHORT)),
+    JSON.stringify({ card: bothCard.tags, detail: bothDetail.chips }))
+  // ② 只在卡片：卡片上有、整页详情那一块整个不出现
+  await render({ cardStyle: 'detailed', remarkPlacement: 'card' }, 'place-card-card')
+  const cardOnlyCard = await card('节点一')
+  await render({ cardStyle: 'plain', remarkPlacement: 'card' }, 'place-card-detail', { path: '/node/1' })
+  const cardOnlyDetail = await json(MERGED_PROBE)
+  check('只在卡片：卡片上有、整页详情那一块整个不出现',
+    cardOnlyCard.note === true && SAME(cardOnlyCard.tags, tagsOf(SHORT)) && cardOnlyDetail.block === false && cardOnlyDetail.chips.length === 0,
+    JSON.stringify({ card: cardOnlyCard.tags, detail: cardOnlyDetail.chips }))
+  // ③ 只在详情页：卡片这一侧一枚都不摊（连经典/延迟那枚浮层里的备注行也没有），详情页那一块在
+  await render({ cardStyle: 'detailed', remarkPlacement: 'detail' }, 'place-detail-card')
+  const detailOnlyCard = await card('节点一')
+  await render({ cardStyle: 'plain', remarkPlacement: 'detail' }, 'place-detail-detail', { path: '/node/1' })
+  const detailOnlyDetail = await json(MERGED_PROBE)
+  check('只在详情页：卡片这一侧一枚都不摊、详情页那一块在',
+    detailOnlyCard.note === false && detailOnlyCard.tags.length === 0 && detailOnlyDetail.block === true && SAME(detailOnlyDetail.chips, tagsOf(SHORT)),
+    JSON.stringify({ card: detailOnlyCard.tags, detail: detailOnlyDetail.chips }))
+  // ④ 「紧凑」就地展开行那格算「卡片」那一侧：只在详情页 → 展开行里也没有备注位
+  await render({ cardStyle: 'compact', remarkPlacement: 'detail' }, 'place-detail-compact', { h: 1400 })
+  await expandFirstRow()
+  await sleep(2500)
+  const compactDetailOnly = await json(POPOVER_PROBE(EXPANDED_ROW))
+  check('只在详情页：紧凑展开行那格（算卡片那一侧）也没有备注位',
+    compactDetailOnly.strip === null && compactDetailOnly.btn === null, JSON.stringify(compactDetailOnly.strip))
+  // ⑤ 不认识的取值 → 回落「两边都摊」（老站点配置 / 手改库都不该让备注消失）
+  await render({ cardStyle: 'detailed', remarkPlacement: 'everywhere' }, 'place-junk')
+  const junk = await card('节点一')
+  check('取值不认识 → 回落两边都摊（备注不会凭空消失）',
+    junk.note === true && SAME(junk.tags, tagsOf(SHORT)), JSON.stringify(junk.tags))
+  remark = SHORT
+}
+
 /* ────────────────────────────── ⑨ 收尾 ────────────────────────────────── */
 console.log('\n── 收尾 ──')
 check('全程没有控制台异常', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' / '))

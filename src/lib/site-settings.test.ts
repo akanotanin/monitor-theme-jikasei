@@ -11,7 +11,7 @@
 // 读不出来的表现不是报错，而是「站长开着的那一项自己关了」。
 import { readFileSync } from "node:fs"
 
-import { DEFAULTS, FARM_OFF, cardStyleOf, hasGroupTabs, hasSummary, isBudgetLayout, listTopOf, normalizeConfig } from "./site-settings.ts"
+import { DEFAULTS, FARM_OFF, cardStyleOf, hasGroupTabs, hasSummary, isBudgetLayout, listTopOf, normalizeConfig, remarksOnCards, remarksOnDetail } from "./site-settings.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -95,6 +95,19 @@ eq(keys, Object.keys(DEFAULTS).sort(), "theme.json 的字段与 DEFAULTS 的键�
 // 不许再声明、DEFAULTS 不许再有兜底值。只断一边会漏掉「字段删了、对话框还画着一格」这种半截状态。
 eq(keys.includes("serverNotes"), false, "theme.json 里不再声明 serverNotes（服务器备注）")
 eq(Object.keys(DEFAULTS).includes("serverNotes"), false, "DEFAULTS 里也没有 serverNotes 的兜底值")
+
+// 「备注显示位置」（1.19.0 新增，用户拍板）：给「备注」那一节配一个真实设置项——说明才有地方挂
+// （hub 只画「后面跟着字段」的标题）。三档取值 + 两个判据函数都要断，且**卡片侧 + 详情侧合起来
+// 必须恰好覆盖三档**（漏一档就会出现「选了只在卡片、详情页还摊着」这种半截状态）。
+eq(keys.includes("remarkPlacement"), true, "theme.json 里声明了 remarkPlacement（备注显示位置）")
+eq(DEFAULTS.remarkPlacement, "both", "默认两边都摊")
+eq(normalizeConfig({ remarkPlacement: "card" }).remarkPlacement, "card", "只在卡片：原样读回")
+eq(normalizeConfig({ remarkPlacement: "detail" }).remarkPlacement, "detail", "只在详情页：原样读回")
+eq(normalizeConfig({ remarkPlacement: "everywhere" }).remarkPlacement, "both", "不认识的取值 → 回落两边都摊")
+eq(normalizeConfig({}).remarkPlacement, "both", "老站点配置里没这个键 → 两边都摊")
+eq([remarksOnCards("both"), remarksOnDetail("both")], [true, true], "both：卡片 + 详情都摊")
+eq([remarksOnCards("card"), remarksOnDetail("card")], [true, false], "card：卡片摊、详情页不摊")
+eq([remarksOnCards("detail"), remarksOnDetail("detail")], [false, true], "detail：卡片不摊、详情页摊")
 
 if (failed) {
   console.error(`\n站点设置：${failed} 条不通过`)

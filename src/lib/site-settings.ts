@@ -39,6 +39,27 @@ export type ThemeConfig = {
   listTop: "none" | "groups" | "summary" | "budget" | "both" | "bothBudget"
   /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */
   pingLines: string
+  /** 「备注显示位置」：备注小卡片摊在哪儿（卡片 / 整页详情 / 两边都摊）。 */
+  remarkPlacement: RemarkPlacement
+}
+
+/** 「备注显示位置」：`both` 卡片与详情页（默认）/ `card` 只在卡片 / `detail` 只在整页详情。 */
+export type RemarkPlacement = "both" | "card" | "detail"
+
+/** 三档取值（`normalizeConfig` 认这三样，别的都回落到 `both`）。 */
+export const REMARK_PLACEMENTS: RemarkPlacement[] = ["both", "card", "detail"]
+
+/**
+ * 卡片那一侧（含「紧凑」就地展开行、经典/延迟右上角那枚浮层、详细档标题行）要不要摊备注。
+ * 与 `remarksOnDetail` 是一对：两处合起来恰好覆盖「备注的落点」那三条口径。
+ */
+export function remarksOnCards(p: RemarkPlacement): boolean {
+  return p !== "detail"
+}
+
+/** 整页详情（点进去那一页）要不要摊备注。 */
+export function remarksOnDetail(p: RemarkPlacement): boolean {
+  return p !== "card"
 }
 
 export const DEFAULTS: ThemeConfig = {
@@ -55,6 +76,8 @@ export const DEFAULTS: ThemeConfig = {
   // 延迟线路：留空 = 按后台顺序自动显示前几条；填了名字就只显示这些（一行一个）。
   // 名字是 ping 任务的名字，不是节点名——对不上的行会被跳过。
   pingLines: "",
+  // 备注显示位置：默认两边都摊。
+  remarkPlacement: "both",
 }
 
 /**
@@ -147,5 +170,9 @@ export function normalizeConfig(saved: unknown): ThemeConfig {
     listTop: listTopOf(s.listTop, { showSummary: s.showSummary, showGroupTabs: s.showGroupTabs }),
     // 留空是有意义的值（= 自动取前几条），空串不能当「没填过」；只有类型不对时才回落。
     pingLines: typeof s.pingLines === "string" ? s.pingLines : DEFAULTS.pingLines,
+    // 「备注显示位置」只认那三档；老站点配置里没有这个键（或写成别的）→ 两边都摊。
+    remarkPlacement: REMARK_PLACEMENTS.includes(s.remarkPlacement as RemarkPlacement)
+      ? (s.remarkPlacement as RemarkPlacement)
+      : DEFAULTS.remarkPlacement,
   }
 }
