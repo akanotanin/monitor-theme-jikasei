@@ -1,6 +1,6 @@
-// 公开备注的取值：空 / 空白 / 没有这个字段都算「没写」，其余原样（含首尾空白削掉）。
+// 公开备注的取值与切分：空 / 空白 / 没有这个字段都算「没写」；逗号分隔＝多枚小卡片。
 // 跑法同另外几个：`npm test`（Node 自己剥类型，不需要 runner）。没有任何东西 import 它，不进 bundle。
-import { publicRemark } from "./notes.ts"
+import { publicRemark, remarkTags } from "./notes.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -24,6 +24,17 @@ eq(LONG.length, 100, "样张正好 100 字")
 eq(publicRemark({ public_remark: LONG }), LONG, "整条备注原样交给版式层")
 // 只取一个字面量、不留引用：旧 hub 把 remark 当私有字段，绝不能顺手拿它来顶公开备注。
 eq(publicRemark({ public_remark: "", remark: "只给管理员看" } as { public_remark: string; remark: string }), "", "私有 remark 不参与（匿名本来就拿不到）")
+
+// ── 逗号分隔＝多枚小卡片（与 1.15.x 那份「服务器备注」的写法逐字相同） ──────────
+eq(remarkTags({ public_remark: "CN2 GIA,三网优化,流媒体解锁" }), ["CN2 GIA", "三网优化", "流媒体解锁"], "三枚就是三枚")
+eq(remarkTags({ public_remark: "三网优化，备用, 高防" }), ["三网优化", "备用", "高防"], "全角逗号也认，逐枚削空白")
+eq(remarkTags({ public_remark: " a , , b ," }), ["a", "b"], "空片段丢掉、首尾逗号不算一枚")
+eq(remarkTags({ public_remark: ",,," }), [], "全是逗号＝没有备注")
+eq(remarkTags({ public_remark: "一枚" }), ["一枚"], "没有逗号就是一枚")
+eq(remarkTags({ public_remark: "   " }), [], "只有空白＝没有备注")
+eq(remarkTags({}), [], "老 hub 没这个字段＝没有备注")
+// 站长在现网后台就是这么填的（他验收时用的那串），照它断一条。
+eq(remarkTags({ public_remark: "备注1,备注测试2,备注333" }), ["备注1", "备注测试2", "备注333"], "现网后台填的那串＝三枚卡片")
 
 if (failed) {
   console.error(`\n公开备注：${failed} 条不通过`)

@@ -7,13 +7,14 @@ import {
 import { Info } from "lucide-react"
 
 import { ChartTooltip, PingTooltip } from "@/components/ChartTooltip"
+import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Country, deployed } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, osName, rate, timeTicks, uptime,
 } from "@/lib/format"
-import { publicRemark } from "@/lib/notes"
+import { remarkTags } from "@/lib/notes"
 import { rangesFor } from "@/lib/ranges"
 
 type Point = {
@@ -153,9 +154,10 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
   /** hub 的历史保留天数（`/api/me` 的 `history_days`）；老 hub 不给，按 7 天算（见 @/lib/ranges）。 */
   historyDays?: number
 }) {
-  // 公开备注：站长在 hub 后台写给访客的一行说明（见 @/lib/notes）。空串 = 没有，
-  // 此时这一页与从前逐像素相同——「备注块」不占位，量程栏那格也不多出图标。
-  const remark = publicRemark(node)
+  // 公开备注：站长在 hub 后台写给访客的说明（见 @/lib/notes）。逗号分隔＝多枚小卡片，
+  // 写法与 1.15.x 那份「服务器备注」逐字相同；一枚都没有时这一页与从前逐像素相同
+  // ——「备注块」不占位，量程栏那格也不多出图标。
+  const noteTags = remarkTags(node)
   const [peekOpen, setPeekOpen] = useState(false)
   const peekRef = useRef<HTMLSpanElement | null>(null)
   // 摊开时点别处 / Esc 收起（与「延迟」档那枚同一个做法）。
@@ -389,11 +391,17 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
         <Fact label="在线时间" value={onlineFor(node)} />
       </dl>
 
-      {/* 公开备注：站长在 hub 后台写给访客的那行说明，整页详情上**整条摊在这里**——
-          访客一眼可见，不必去悬停或点开某个图标。hub 保证它是单行（换行与控制字符直接拒收），
-          所以不必 whitespace-pre-wrap。下面那一块是私有备注（`remark`），只有登录的管理员拿得到。 */}
-      {remark !== "" && (
-        <p data-public-remark="page" className="rounded-md bg-muted px-3 py-2 text-sm">{remark}</p>
+      {/* 公开备注：整页详情上**摊在这里**——访客一眼可见，不必去悬停或点开某个图标。
+          一枚备注一枚小卡片（与卡片上同一套读法）。下面那一块是私有备注（`remark`），
+          只有登录的管理员拿得到。 */}
+      {noteTags.length > 0 && (
+        <div data-public-remark="page" className="flex flex-wrap gap-1 rounded-md bg-muted px-3 py-2">
+          {noteTags.map((tag, i) => (
+            <Badge key={`${i}-${tag}`} variant="secondary" className="max-w-full font-normal" title={tag}>
+              <span className="truncate">{tag}</span>
+            </Badge>
+          ))}
+        </div>
       )}
 
       {node.remark && (
@@ -437,21 +445,21 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
           )}
           {/* 公开备注在这一行右端：桌面（≥sm）**直接并排**在「完整详情 ›」左边（不新增行高），
               手机这一行放不下，收成一枚小图标 + 浮层（点开看全，点别处 / Esc 收起）。
-              它是站长写的一句话而不是几枚短标签，所以那格是一行文字：放不下就截断，整条挂在 title 上。
+              一枚备注一枚小卡片（逗号分隔的多枚就排成多枚，写法与 1.15.x 一致）。
               宽度上限用固定 px（内容尺寸容器里百分比会被解析成很小的值）。没写备注时这一行与从前
               逐像素相同。
               ★只有「紧凑」就地展开（embedded）才需要这条入口：整页详情把整条写在标题下面的备注块里
               （见上面），所以那一页的量程栏右边不再挂图标，免得同一句话出现两遍。 */}
-          {embedded && (remark !== "" || onOpenDetail) && (
+          {embedded && (noteTags.length > 0 || onOpenDetail) && (
             <span className="ml-auto flex min-w-0 items-center gap-x-4 gap-y-1">
-              {remark !== "" && (
+              {noteTags.length > 0 && (
                 <>
-                  <span
-                    data-note-strip
-                    title={remark}
-                    className="hidden max-w-[14rem] min-w-0 truncate text-xs text-muted-foreground sm:block"
-                  >
-                    {remark}
+                  <span data-note-strip className="hidden min-w-0 max-w-[14rem] items-center gap-1 overflow-hidden sm:flex">
+                    {noteTags.map((tag, i) => (
+                      <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
+                        <span className="min-w-0 truncate">{tag}</span>
+                      </Badge>
+                    ))}
                   </span>
                   <span
                     ref={peekRef}
@@ -462,7 +470,7 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
                     <button
                       data-note-popover
                       aria-expanded={peekOpen}
-                      aria-label={`公开备注：${remark}`}
+                      aria-label={`公开备注：${noteTags.join("、")}`}
                       onClick={(e) => {
                         // 这一块本身在展开行里，点它不该连带开合那一行。
                         e.stopPropagation()
@@ -478,9 +486,13 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
                       <span
                         data-note-panel
                         role="tooltip"
-                        className="absolute top-5 right-0 z-20 block w-max max-w-[16rem] rounded-md border bg-card px-2 py-1.5 text-xs leading-relaxed shadow-md"
+                        className="absolute top-5 right-0 z-20 flex w-max max-w-[16rem] flex-wrap gap-1 rounded-md border bg-card px-2 py-1.5 shadow-md"
                       >
-                        {remark}
+                        {noteTags.map((tag, i) => (
+                          <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
+                            <span className="min-w-0 truncate">{tag}</span>
+                          </Badge>
+                        ))}
                       </span>
                     )}
                   </span>

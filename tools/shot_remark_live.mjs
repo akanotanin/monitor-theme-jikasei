@@ -145,9 +145,9 @@ async function facts() {
     const btn = document.querySelector('[data-note-popover]')
     return {
       card: card ? Math.round(card.getBoundingClientRect().height) : null,
-      noteText: note ? note.textContent.trim() : null,
-      noteTruncated: note && note.className.includes('truncate') ? note.scrollWidth > note.clientWidth + 1 : null,
-      hasTitleAttr: !!(note && note.getAttribute('title')),
+      noteTags: note ? [...note.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()) : null,
+      noteTitles: note ? [...note.querySelectorAll('[data-slot="badge"]')].map((b) => b.getAttribute('title')) : null,
+      pageTags: page ? [...page.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()) : null,
       pageBlock: page ? page.textContent.trim().slice(0, 30) : null,
       pageBlockVisible: page ? page.getBoundingClientRect().height > 0 : null,
       popoverBtn: !!btn,
@@ -159,7 +159,8 @@ async function facts() {
   const f = JSON.parse(raw ?? '{}')
   const bits = []
   if (f.page) bits.push(`整页那块的文本「${f.pageBlock}…」`)
-  if (f.noteText !== null) bits.push(`卡片上的备注「${f.noteText}」截断=${f.noteTruncated} title=${f.hasTitleAttr}`)
+  if (f.noteTags !== null) bits.push(`卡片上 ${f.noteTags.length} 枚小卡片 ${JSON.stringify(f.noteTags)}（每枚的 title 都在=${(f.noteTitles || []).every(Boolean)}）`)
+  if (f.pageTags) bits.push(`整页那块 ${f.pageTags.length} 枚 ${JSON.stringify(f.pageTags)}`)
   if (f.pageBlock !== null) bits.push(`整页备注块「${f.pageBlock}…」可见=${f.pageBlockVisible}`)
   if (f.popoverBtn) bits.push(`信息图标在=${f.popoverBtn} 浮层已开=${f.popoverOpen}`)
   if (f.stripText !== null) bits.push(`紧凑那格「${f.stripText}…」`)

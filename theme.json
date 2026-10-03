@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -56,6 +56,10 @@
         { "value": "compact", "label": "紧凑：一行一台的表格，密度最高" }
       ],
       "help": "经典＝速率与总量各一行；简约＝网络一行、标签提亮；延迟＝加三网延迟；详细＝加时长与计费；紧凑＝表格。"
+    },
+    {
+      "type": "title",
+      "label": "备注已移到探针后台：节点 → 编辑 →「公开备注」，逗号分隔＝多枚小卡片"
     },
     {
       "type": "title",

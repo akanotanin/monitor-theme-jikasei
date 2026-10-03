@@ -26,10 +26,18 @@ mkdirSync(SHOT_DIR, { recursive: true })
 
 const GB = 1024 ** 3
 const TB = 1024 ** 4
-/** 一条短备注、一条正好 100 字的长备注（hub 的上限就是 100 字）。 */
-const SHORT = 'CN2 GIA 三网优化，晚高峰也稳'
-const LONG = '这是一条刚好一百字的公开备注，用来验证详细档标题行右端的截断与悬停提示是否按预期工作；同时检查经典档新增的那枚信息图标在没有备注时是否零占位，以及延迟与紧凑两档的浮层里这行说明会不会把价格和到期挤走。'
+/**
+ * 三种样张（站长在后台就是这么写的：逗号分隔＝多枚小卡片，写法与 1.15.x 那份「服务器备注」逐字相同）：
+ *   · SHORT —— 三枚，卡片 / 浮层 / 整页详情上都该看到三枚；
+ *   · MANY  —— 六枚，标题行与量程栏那格放不下的极端形状；
+ *   · LONG  —— 一枚正好 100 字（hub 的上限），且**不含逗号**：一枚也能被截断 + 悬停看全。
+ */
+const SHORT = 'CN2 GIA,三网优化,晚高峰也稳'
+const MANY = '备注1,备注测试2,备注333,流媒体解锁,IPv6 双栈,高防'
+const LONG = '这是一条刚好一百字的公开备注用来验证详细档标题行右端的截断与悬停提示是否按预期工作；同时检查经典档新增的那枚小卡片在没有备注时是否零占位、以及延迟与紧凑两档的浮层里这几枚卡片会不会把价格和到期挤走。。'
 if (LONG.length !== 100) throw new Error(`长备注样张必须是 100 字，现在是 ${LONG.length}`)
+if (/[,，]/.test(LONG)) throw new Error('长备注样张不能含逗号，否则会被切成多枚')
+const tagsOf = (v) => v.split(/[,，]/).map((t) => t.trim()).filter(Boolean)
 
 // ── 桩数据 ────────────────────────────────────────────────────────────────
 // 三台：① 已接入（备注挂在它身上）② 在线但还没上报 ③ 从没接入。
@@ -193,6 +201,7 @@ const CARD_PROBE = (name) => `JSON.stringify((() => {
   const row = h3 ? h3.parentElement : null
   const grid = card.querySelector('.grid.grid-cols-2')
   const note = card.querySelector('[data-public-remark="title"]')
+  const tagEls = note ? [...note.querySelectorAll('[data-slot="badge"]')] : []
   const boxes = [...card.querySelectorAll('[class*="bg-muted/60"]')]
   return {
     cardH: Math.round(c.height), cardRight: Math.round(c.right), cardTop: Math.round(c.top),
@@ -200,11 +209,12 @@ const CARD_PROBE = (name) => `JSON.stringify((() => {
     gridTop: grid ? Math.round(grid.getBoundingClientRect().top - c.top) : null,
     nameBox: h3 ? rect(h3) : null,
     nameClipped: h3 ? h3.scrollWidth > h3.clientWidth + 1 : null,
-    noteText: note ? note.textContent.trim() : null,
-    noteTitle: note ? note.getAttribute('title') : null,
-    noteBox: note ? rect(note) : null,
-    noteClipped: note ? note.scrollWidth > note.clientWidth + 1 : null,
-    noteDisplay: note ? getComputedStyle(note).display : null,
+    note: !!note,
+    noteAnchors: card.querySelectorAll('[data-public-remark]').length,
+    tags: tagEls.map((b) => b.innerText.trim()),
+    tagTitles: tagEls.map((b) => b.getAttribute('title')),
+    tagBoxes: tagEls.map((b) => rect(b)),
+    tagClipped: tagEls.map((b) => { const inner = b.querySelector('span'); return inner ? inner.scrollWidth > inner.clientWidth + 1 : null }),
     popover: !!card.querySelector('[data-note-popover]'),
     badges: card.querySelectorAll('[data-slot="badge"]').length,
     boxes: boxes.length,
@@ -225,8 +235,8 @@ const POPOVER_PROBE = (scope) => `JSON.stringify((() => {
   const rect = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left), r: Math.round(b.right), mid: Math.round(b.top + b.height / 2), bottom: Math.round(b.bottom), w: Math.round(b.width), h: Math.round(b.height) } }
   return {
     btn: btn ? { tag: btn.tagName, expanded: btn.getAttribute('aria-expanded'), label: btn.getAttribute('aria-label'), ...rect(btn) } : null,
-    panel: panel ? { text: panel.innerText.trim(), ...rect(panel) } : null,
-    strip: strip ? { text: strip.textContent.trim(), title: strip.getAttribute('title'), clipped: strip.scrollWidth > strip.clientWidth + 1, ...rect(strip) } : null,
+    panel: panel ? { tags: [...panel.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()), text: panel.innerText.trim(), ...rect(panel) } : null,
+    strip: strip ? { tags: [...strip.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()), clipped: [...strip.querySelectorAll('[data-slot="badge"] span')].map((sp) => sp.scrollWidth > sp.clientWidth + 1), overflow: strip.scrollWidth > strip.clientWidth + 1, ...rect(strip) } : null,
     path: location.pathname,
   }
 })())`
@@ -293,32 +303,33 @@ let classicBase = null
   remark = ''
   await render({ cardStyle: 'classic' }, 'classic-base')
   classicBase = await card('节点一')
-  check('经典（无备注）：卡片上没有备注元素（零占位）', classicBase.noteText === null && classicBase.noteBox === null, JSON.stringify(classicBase.noteText))
+  check('经典（无备注）：卡片上没有备注元素（零占位）', classicBase.note === false && classicBase.tags.length === 0, JSON.stringify(classicBase.tags))
 
   remark = SHORT
   await render({ cardStyle: 'classic' }, 'classic-note')
   const on = await card('节点一')
-  check('经典（有备注）：标题行右端出现备注，文本＝hub 给的原文',
-    on.noteText === SHORT, JSON.stringify(on.noteText))
-  check('经典（有备注）：整条挂在 title 上（截断时悬停可看全）', on.noteTitle === SHORT, JSON.stringify(on.noteTitle))
+  check('经典（有备注）：标题行右端出现备注，逗号分隔＝三枚小卡片（逐枚、同序）',
+    JSON.stringify(on.tags) === JSON.stringify(tagsOf(SHORT)), JSON.stringify(on.tags))
+  check('经典（有备注）：每枚都挂着整枚的 title（截断时悬停可看全）',
+    JSON.stringify(on.tagTitles) === JSON.stringify(tagsOf(SHORT)), JSON.stringify(on.tagTitles))
   check('经典（有备注）：卡片总高 / 标题行高 / 读数格上沿与无备注时逐像素相同',
     on.cardH === classicBase.cardH && on.rowH === classicBase.rowH && on.gridTop === classicBase.gridTop,
     `高 ${on.cardH}/${classicBase.cardH} 行 ${on.rowH}/${classicBase.rowH} 格上沿 ${on.gridTop}/${classicBase.gridTop}`)
   check('经典（有备注）：备注排在名字右边、不压住名字',
-    on.noteBox !== null && on.nameBox !== null && on.noteBox.x >= on.nameBox.r - 1,
-    `名字右 ${on.nameBox?.r} / 备注左 ${on.noteBox?.x}`)
-  check('经典（有备注）：卡片正文里没有把备注糊进读数（它只在标题行那一处）',
-    !on.badges && on.badges === 0, `胶囊 ${on.badges}`)
+    on.tagBoxes.length === tagsOf(SHORT).length && on.nameBox !== null && on.tagBoxes[0].x >= on.nameBox.r - 1,
+    `名字右 ${on.nameBox?.r} / 首枚左 ${on.tagBoxes[0]?.x}`)
+  check('经典（有备注）：备注在卡片上只出现一处（标题行那格），没有第二份',
+    on.noteAnchors === 1 && on.badges === tagsOf(SHORT).length, `锚点 ${on.noteAnchors} / 胶囊 ${on.badges}`)
   check('经典（有备注）：另一台没写备注的机器上仍然没有备注元素',
-    (await card('节点三')).noteText === null, '')
+    (await card('节点三')).tags.length === 0, '')
 
   // 100 字那条：标题行放不下就截断，但整条必须还能拿到（title）。
   remark = LONG
   await render({ cardStyle: 'classic' }, 'classic-long')
   const long = await card('节点一')
-  check('经典（100 字）：标题行里被截断，但整条挂在 title 上、卡片没被撑高',
-    long.noteClipped === true && long.noteTitle === LONG && long.cardH === classicBase.cardH,
-    `截断 ${long.noteClipped} / 高 ${long.cardH}/${classicBase.cardH}`)
+  check('经典（100 字）：那一枚被截断，但整枚挂在 title 上、卡片没被撑高',
+    long.tags.length === 1 && long.tagClipped[0] === true && long.tagTitles[0] === LONG && long.cardH === classicBase.cardH,
+    `枚 ${long.tags.length} / 截断 ${long.tagClipped[0]} / 高 ${long.cardH}/${classicBase.cardH}`)
   check('经典（100 字）：没有横向溢出', long.overflowX === false, `溢出 ${long.overflowX}`)
 
   // 手机 + 长名字：判据不是「名字不许截断」，而是「开备注不许让名字变短」（现站真机抓过这条）。
@@ -353,7 +364,7 @@ console.log('\n── 简约档：按站长口径不挂备注 ──')
   remark = LONG
   await render({ cardStyle: 'plain' }, 'plain-note')
   const on = await card('节点一')
-  check('简约：写了备注也不渲染备注元素（保持原样）', on.noteText === null && on.popover === false, JSON.stringify({ note: on.noteText, popover: on.popover }))
+  check('简约：写了备注也不渲染备注元素（保持原样）', on.note === false && on.tags.length === 0 && on.popover === false, JSON.stringify({ note: on.note, popover: on.popover }))
   check('简约：卡片几何与没写备注时逐像素相同',
     on.cardH === base.cardH && on.rowH === base.rowH && on.gridTop === base.gridTop,
     `高 ${on.cardH}/${base.cardH} 行 ${on.rowH}/${base.rowH} 格上沿 ${on.gridTop}/${base.gridTop}`)
@@ -371,7 +382,8 @@ let detailedBase = null
   remark = SHORT
   await render({ cardStyle: 'detailed' }, 'detailed-note')
   const on = await card('节点一')
-  check('详细（有备注）：标题行右端出现备注，文本＝hub 给的原文', on.noteText === SHORT, JSON.stringify(on.noteText))
+  check('详细（有备注）：标题行右端出现备注，三枚小卡片逐枚同序',
+    JSON.stringify(on.tags) === JSON.stringify(tagsOf(SHORT)), JSON.stringify(on.tags))
   check('详细（有备注）：卡片总高 / 标题行高 / 读数格上沿与无备注时逐像素相同（不重排、不加高）',
     on.cardH === detailedBase.cardH && on.rowH === detailedBase.rowH && on.gridTop === detailedBase.gridTop,
     `高 ${on.cardH}/${detailedBase.cardH} 行 ${on.rowH}/${detailedBase.rowH} 格上沿 ${on.gridTop}/${detailedBase.gridTop}`)
@@ -380,7 +392,8 @@ let detailedBase = null
     /^在线 /.test(on.row2 ?? '') && /¥12\.50 \/ 月付/.test(on.row2 ?? ''), on.row2)
   check('详细（有备注）：第三枚读数盒下面**仍是到期日**（不是价格）',
     Array.isArray(on.box3) && on.box3[0] === '剩余 95 天' && on.box3[1] === '2027-01-01', (on.box3 ?? []).join(' | '))
-  check('详细（有备注）：标题行上挂的是文字而不是胶囊', on.badges === 0, `胶囊 ${on.badges}`)
+  check('详细（有备注）：标题行上就是备注那三枚小卡片（卡片上没有别的胶囊）',
+    on.badges === tagsOf(SHORT).length && on.noteAnchors === 1, `胶囊 ${on.badges} / 锚点 ${on.noteAnchors}`)
   await shot('detailed-remark-1440')
 }
 
@@ -401,7 +414,7 @@ console.log('\n── 延迟档：备注收在右上角那枚信息图标里 ─
     pop.btn?.tag === 'BUTTON' && pop.btn?.expanded === 'false' && pop.panel === null,
     JSON.stringify(pop.btn))
   check('延迟（有备注）：卡片正文里没有备注文字（只在浮层里）',
-    !closed.text.includes(SHORT) && closed.noteText === null, closed.text.slice(0, 120))
+    !closed.text.includes('三网优化') && closed.note === false, closed.text.slice(0, 120))
   check('延迟（有备注）：卡片几何与无备注时逐像素相同（控件与浮层都不占位）',
     closed.cardH === base.cardH && closed.rowH === base.rowH && closed.gridTop === base.gridTop,
     `高 ${closed.cardH}/${base.cardH} 行 ${closed.rowH}/${base.rowH} 格上沿 ${closed.gridTop}/${base.gridTop}`)
@@ -414,7 +427,8 @@ console.log('\n── 延迟档：备注收在右上角那枚信息图标里 ─
   check('延迟（有备注）：悬停即弹出（aria-expanded=true，浮层渲染出来）',
     hov.btn?.expanded === 'true' && hov.panel !== null, JSON.stringify(hov.btn))
   const t = hov.panel?.text ?? ''
-  check('延迟（有备注）：浮层里备注整条都在', t.includes(SHORT), t)
+  check('延迟（有备注）：浮层里三枚小卡片都在（逐枚同序）',
+    JSON.stringify(hov.panel?.tags) === JSON.stringify(tagsOf(SHORT)), JSON.stringify(hov.panel?.tags))
   check('延迟（有备注）：浮层里另有在线时间 / 价格 / 到期（这三样没被备注挤走）',
     /在线 /.test(t) && t.includes('¥12.50 / 月付') && t.includes('剩余 95 天'), t)
   check('延迟（有备注）：悬停不会跳详情页（仍在列表页）', hov.path === '/', hov.path)
@@ -452,14 +466,14 @@ const expandFirstRow = () => evalJS(`(() => { const r = document.querySelector('
   const base = await json(`(() => { const tr = ${EXPANDED_ROW}; return JSON.stringify({ expanded: !!tr, h: tr ? Math.round(tr.getBoundingClientRect().height) : null }) })()`)
   check('紧凑（无备注）：展开行里没有备注位', openBase === true && base.expanded === true, JSON.stringify(base))
 
-  remark = LONG
+  remark = MANY
   await render({ cardStyle: 'compact' }, 'compact-note', { h: 1400 })
   await expandFirstRow()
   await sleep(2500)
   const pop = await json(POPOVER_PROBE(EXPANDED_ROW))
   const expandedH = await json(`(() => { const tr = ${EXPANDED_ROW}; return JSON.stringify({ h: tr ? Math.round(tr.getBoundingClientRect().height) : null }) })()`)
-  check('紧凑（有备注）：展开行桌面（≥sm）并排显示整条备注，并在 title 上挂全文',
-    pop.strip?.text === LONG && pop.strip?.title === LONG && pop.strip?.clipped === true,
+  check('紧凑（有备注）：展开行桌面（≥sm）并排显示六枚小卡片（逐枚同序，放不下时逐枚截断）',
+    JSON.stringify(pop.strip?.tags) === JSON.stringify(tagsOf(MANY)) && (pop.strip?.clipped ?? []).some(Boolean),
     JSON.stringify(pop.strip))
   check('紧凑（有备注）：手机那枚图标在 DOM 里但在桌面被隐藏（同一处、两套呈现）',
     pop.btn?.tag === 'BUTTON', JSON.stringify(pop.btn))
@@ -480,7 +494,8 @@ const expandFirstRow = () => evalJS(`(() => { const r = document.querySelector('
   const mOpen = await json(POPOVER_PROBE(EXPANDED_ROW))
   check('紧凑（手机 390）：桌面那条长文字收起来了，换成可见的一枚图标', mClosed.strip !== null && mVisible === true,
     JSON.stringify({ strip: mClosed.strip?.text?.slice(0, 10), visible: mVisible }))
-  check('紧凑（手机 390）：点开浮层，整条备注都在', mOpen.panel?.text === LONG, mOpen.panel?.text?.slice(0, 40))
+  check('紧凑（手机 390）：点开浮层，六枚小卡片都在（逐枚同序）',
+    JSON.stringify(mOpen.panel?.tags) === JSON.stringify(tagsOf(MANY)), JSON.stringify(mOpen.panel?.tags))
   check('紧凑（手机 390）：无横向溢出', (await evalJS('document.documentElement.scrollWidth > document.documentElement.clientWidth')) === false, '')
   await shot('compact-remark-390')
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1200, deviceScaleFactor: 1, mobile: false })
@@ -495,12 +510,14 @@ console.log('\n── 整页详情：备注在标题下面摊一块 ──')
     const p = document.querySelector('[data-public-remark="page"]')
     return {
       text: p ? p.textContent.trim() : null,
+      tags: p ? [...p.querySelectorAll('[data-slot="badge"]')].map((b) => b.innerText.trim()) : [],
       visible: p ? p.getBoundingClientRect().height > 0 : false,
       iconInTabRow: document.querySelectorAll('[data-note-popover]').length,
       tabs: /1 小时/.test(document.body.innerText),
     }
   })())`)
-  check('整页详情（有备注）：标题下面摊着一块备注，文本＝原文、可见', on.text === SHORT && on.visible === true, JSON.stringify(on))
+  check('整页详情（有备注）：标题下面摊着一块备注，三枚小卡片逐枚同序、可见',
+    JSON.stringify(on.tags) === JSON.stringify(tagsOf(SHORT)) && on.visible === true, JSON.stringify(on))
   check('整页详情（有备注）：量程栏右边不再挂那枚图标（同一句话不出现两遍）', on.iconInTabRow === 0, `图标 ${on.iconInTabRow}`)
   check('整页详情：页签与量程照旧渲染出来', on.tabs === true, '')
   await shot('detail-page-1440')

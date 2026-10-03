@@ -185,6 +185,15 @@ check('theme.json 里没有「服务器备注」这一项（备注已交给 hub�
 check('「主题设置」对话框里也不再画「服务器备注」', !everyText.includes('服务器备注'),
   everyText.includes('服务器备注') ? '对话框里仍有「服务器备注」字样' : '（没有，好）');
 
+// 原来那一格的位置现在放的是一行**指引**（`type: title`，面板画成一行加粗小标题）：备注该去哪儿设、
+// 怎么写。两个方向都要断——manifest 里写了没、面板上画出来了没；只在代码里写注释是站长看不见的。
+const GUIDE = '备注已移到探针后台';
+check('theme.json 写了「备注去哪儿设」的指引（type: title）',
+  entries.some((e) => e.type === 'title' && String(e.label).includes(GUIDE)),
+  JSON.stringify(entries.filter((e) => e.type === 'title').map((e) => e.label)));
+check('「主题设置」对话框里画出了这条指引', everyText.includes(GUIDE),
+  everyText.includes(GUIDE) ? '（在）' : '（没画出来）');
+
 // ── 下拉框（type: select）的选项文案 ──────────────────────────────────
 // 面板对 select 画的是「真 <select> 一份 + Radix combobox 一份」，两侧的选项文案都来自 manifest.config。
 // 之前这里只断过「字段名画出来了」——选项文案是盲区：改了 theme.json 里某个 option 的 label，

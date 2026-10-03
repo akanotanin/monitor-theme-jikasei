@@ -9,7 +9,7 @@ import { LatencyPanel } from "@/components/Latency"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
-import { publicRemark } from "@/lib/notes"
+import { remarkTags } from "@/lib/notes"
 
 /**
  * This period's usage as the plan meters it. The hub computes it; the switch
@@ -183,9 +183,10 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
   // 进度条压到 4px、底注降到 11px、名字加粗一档、格子间距收紧（见下方各处 plain 分支）。
   // ★ 按站长的口径，简约档**不显示公开备注**（其余四档都显示），这一档保持原样。
   const plain = cardStyle === "plain"
-  // 公开备注：站长在 hub 后台写给访客的那行说明（见 @/lib/notes）。空串 = 没有，
-  // 此时下面每一处都整个不渲染——与这次改动之前逐像素相同。
-  const remark = publicRemark(node)
+  // 公开备注：站长在 hub 后台写给访客的说明（见 @/lib/notes）。逗号分隔＝多枚小卡片，
+  // 写法与 1.15.x 那份「服务器备注」逐字相同；一枚都没有时下面每一处都整个不渲染
+  // ——与这次改动之前逐像素相同（零占位）。
+  const noteTags = remarkTags(node)
   /**
    * 「延迟」档右上角那枚信息控件：悬停或点击弹出浮层，里面是**备注 + 在线时间 + 价格 + 到期**。
    * 「延迟」档本来不写这些（它们原来只有「详细」档有），浮层让它们按需出现，卡片本身
@@ -270,6 +271,7 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
             三枚读数盒一概不动（早先那套「把价格挤进读数盒、把到期日藏起来」的重排已经取消）。
             备注是站长在 hub 后台「公开备注」里写给访客的一行说明（≤100 字、单行），所以这里是
             一行文字而不是一排胶囊：这格放不下就截断、把整条挂在 title 上供悬停看全。
+            写法与 1.15.x 那份「服务器备注」一致：逗号分隔＝多枚，一枚一枚各自成卡片。
             ★名字优先：名字那格照旧（可截断），备注这格 `grow basis-0` —— flex 基准尺寸是 0，
             所以它**从不参与「谁先被压」的竞争**：名字先拿满自己内容需要的宽度，剩下的才给备注，
             备注拿到多少由容器余量与上限（窄屏 40%、≥sm 55%）决定，不够就自己截断。
@@ -279,20 +281,28 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
             极端情况（名字特别长）下备注会被压到看不见 —— 刻意的取舍：宁可备注隐身，也不动机器名。
             「简约」档不挂（站长的口径），「延迟」「紧凑」两档收在浮层里（见本文件下面那个控件与
             NodeDetail 的量程栏）。 */}
-        {(classic || detailed) && remark !== "" && (
+        {(classic || detailed) && noteTags.length > 0 && (
           <span
             data-public-remark="title"
-            title={remark}
-            className="ml-auto min-w-0 max-w-[40%] grow basis-0 truncate text-xs font-normal text-muted-foreground sm:max-w-[55%]"
+            className="ml-auto flex min-w-0 max-w-[40%] grow basis-0 items-center justify-end gap-1 overflow-hidden sm:max-w-[55%]"
           >
-            {remark}
+            {noteTags.map((tag, i) => (
+              <Badge
+                key={`${i}-${tag}`}
+                variant="secondary"
+                className="min-w-0 max-w-[9rem] shrink font-normal text-muted-foreground"
+                title={tag}
+              >
+                <span className="min-w-0 truncate">{tag}</span>
+              </Badge>
+            ))}
           </span>
         )}
         {/* 「延迟」档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期）。
             卡片自己是 role=button，所以点击与 Enter/空格都要拦在控件里，别让它冒泡成「打开详情页」；
             浮层挂在同一个 relative 容器内，鼠标从图标移到浮层上不会把它关掉。
             ★ 没写备注就不画它（零占位）：这一档原先「有备注才有这枚图标」，规矩不变。 */}
-        {peek && remark !== "" && (
+        {peek && noteTags.length > 0 && (
           <span
             ref={peekRef}
             className="relative ml-auto shrink-0"
@@ -315,9 +325,22 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
                 data-note-panel=""
                 className="absolute right-0 top-6 z-20 block w-56 space-y-1.5 rounded-md border bg-popover px-3 py-2.5 text-xs shadow-md"
               >
-                {/* 公开备注：整段摊在这里。它是站长写的一句话（≤100 字），不是几枚短标签，
-                    所以不用胶囊——浮层是这一档唯一能读全它的地方（卡片上一个像素都不占）。 */}
-                <span data-note-remark="" className="block whitespace-pre-wrap">{remark}</span>
+                {/* 公开备注：一枚一枚小卡片（逗号分隔的多枚也就排成多枚），
+                    没有备注的机器不占这一行。浮层是这一档唯一能读到它的地方（卡片上不占位）。 */}
+                {noteTags.length > 0 && (
+                  <span data-note-remark="" className="flex min-w-0 flex-wrap items-center gap-1">
+                    {noteTags.map((tag, i) => (
+                      <Badge
+                        key={`${i}-${tag}`}
+                        variant="secondary"
+                        className="min-w-0 max-w-full shrink font-normal text-muted-foreground"
+                        title={tag}
+                      >
+                        <span className="min-w-0 truncate">{tag}</span>
+                      </Badge>
+                    ))}
+                  </span>
+                )}
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">在线时间</span>
                   <span className="tnum min-w-0 truncate">{onlineText(node) ?? "—"}</span>
