@@ -9,7 +9,7 @@ import { LatencyPanel } from "@/components/Latency"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
-import { hasNotes, tagsFor } from "@/lib/site-settings"
+import { publicRemark } from "@/lib/notes"
 
 /**
  * This period's usage as the plan meters it. The hub computes it; the switch
@@ -166,28 +166,30 @@ function trafficFoot(node: Node) {
     : `${bytes(monthUsage(node))} / ${FOREVER}`
 }
 
-export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes }: {
+export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle }: {
   node: Node
   onOpen: () => void
   /** 指针或键盘刚落到这张卡片上：先把手头这块 chunk（详情页的图表那 391KB）取回来。 */
   onWarm?: () => void
   latencyLines: string
   cardStyle: "classic" | "latency" | "detailed" | "plain"
-  /** 服务器备注清单（每行 `服务器名=备注`）；空串 = 关闭。三种形态共用这一份。 */
-  notes: string
 }) {
   const m = node.metrics
   // 详细档：图标、元信息行与三枚读数盒都只在它里面出现；配色仍与另外两档同一套灰。
   const detailed = cardStyle === "detailed"
+  // 经典档：底部是 2×2 四格、不含延迟；公开备注与「详细」档同落一处（标题行右端）。
+  const classic = cardStyle === "classic"
   // 简约档：结构、内容、位置与经典档完全一致，只换一套视觉处理——标签改用前景色、
   // 进度条压到 4px、底注降到 11px、名字加粗一档、格子间距收紧（见下方各处 plain 分支）。
+  // ★ 按站长的口径，简约档**不显示公开备注**（其余四档都显示），这一档保持原样。
   const plain = cardStyle === "plain"
-  // 两档的备注各落一处，「详细」档在标题行右端、「延迟」档在右上角浮层里；清单非空才算开。
-  const noteTags = hasNotes(notes) ? tagsFor(notes, node.name) : []
+  // 公开备注：站长在 hub 后台写给访客的那行说明（见 @/lib/notes）。空串 = 没有，
+  // 此时下面每一处都整个不渲染——与这次改动之前逐像素相同。
+  const remark = publicRemark(node)
   /**
    * 「延迟」档右上角那枚信息控件：悬停或点击弹出浮层，里面是**备注 + 在线时间 + 价格 + 到期**。
    * 「延迟」档本来不写这些（它们原来只有「详细」档有），浮层让它们按需出现，卡片本身
-   * 一个像素都不为此让位——关闭时与没有备注、没有这枚控件时逐像素相同。
+   * 一个像素都不为此让位——没写备注时与没有这枚控件时逐像素相同。
    */
   const peek = cardStyle === "latency"
   const [peekOpen, setPeekOpen] = useState(false)
@@ -264,31 +266,33 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
         <Country node={node} />
         {/* 简约档只把名字加粗一档（参考站是 600），文字与位置照旧。 */}
         <h3 className={`min-w-0 truncate ${plain ? "font-semibold" : "font-medium"}`}>{node.name}</h3>
-        {/* 「详细」档的备注：挂在**标题行右端**——名字下面那一行、读数格、三枚读数盒一概不动
-            （改版前它会把价格挤进读数盒、把到期日藏起来，那套重排已经取消）。
-            ★名字优先：名字那格照旧（可截断），标签这格给一个宽度上限（窄屏 40%、≥sm 55%）+ 极高的可压缩度
-            `[flex-shrink:100]` —— 空间不够时**先把标签压掉、名字保持原宽**，标签自己逐枚截断。
-            早先两边都设普通 `shrink`（各让一半），手机 390 上名字被挤短了：实测 175px → 135px 且出现截断
-            （现站真机验收抓出来的；桩里只有短名字时这条恒过，所以护栏里加了「临时改长名」那一组）。
-            极端情况（名字特别长）下标签会被压到看不见 —— 这是刻意的取舍：宁可备注隐身，也不动机器名。 */}
-        {detailed && noteTags.length > 0 && (
-          <span className="ml-auto flex min-w-0 max-w-[40%] items-center justify-end gap-1 overflow-hidden [flex-shrink:100] sm:max-w-[55%]">
-            {noteTags.map((tag, i) => (
-              <Badge
-                key={`${i}-${tag}`}
-                variant="secondary"
-                className="min-w-0 max-w-[9rem] shrink font-normal text-muted-foreground"
-                title={tag}
-              >
-                <span className="min-w-0 truncate">{tag}</span>
-              </Badge>
-            ))}
+        {/* 「经典」「详细」两档的公开备注：挂在**标题行右端**——名字下面那一行、读数格、
+            三枚读数盒一概不动（早先那套「把价格挤进读数盒、把到期日藏起来」的重排已经取消）。
+            备注是站长在 hub 后台「公开备注」里写给访客的一行说明（≤100 字、单行），所以这里是
+            一行文字而不是一排胶囊：这格放不下就截断、把整条挂在 title 上供悬停看全。
+            ★名字优先：名字那格照旧（可截断），备注这格 `grow basis-0` —— flex 基准尺寸是 0，
+            所以它**从不参与「谁先被压」的竞争**：名字先拿满自己内容需要的宽度，剩下的才给备注，
+            备注拿到多少由容器余量与上限（窄屏 40%、≥sm 55%）决定，不够就自己截断。
+            早先写的是「两边都让一点 + 备注 [flex-shrink:100]」：那在手机 390 + 长名字时仍会让
+            名字少 2px 并被截断（护栏实测 175 → 173px），因为 shrink 是按「收缩系数 × 基准尺寸」
+            分摊的，只要备注有基准尺寸就会分走一点。
+            极端情况（名字特别长）下备注会被压到看不见 —— 刻意的取舍：宁可备注隐身，也不动机器名。
+            「简约」档不挂（站长的口径），「延迟」「紧凑」两档收在浮层里（见本文件下面那个控件与
+            NodeDetail 的量程栏）。 */}
+        {(classic || detailed) && remark !== "" && (
+          <span
+            data-public-remark="title"
+            title={remark}
+            className="ml-auto min-w-0 max-w-[40%] grow basis-0 truncate text-xs font-normal text-muted-foreground sm:max-w-[55%]"
+          >
+            {remark}
           </span>
         )}
         {/* 「延迟」档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期）。
             卡片自己是 role=button，所以点击与 Enter/空格都要拦在控件里，别让它冒泡成「打开详情页」；
-            浮层挂在同一个 relative 容器内，鼠标从图标移到浮层上不会把它关掉。 */}
-        {peek && (
+            浮层挂在同一个 relative 容器内，鼠标从图标移到浮层上不会把它关掉。
+            ★ 没写备注就不画它（零占位）：这一档原先「有备注才有这枚图标」，规矩不变。 */}
+        {peek && remark !== "" && (
           <span
             ref={peekRef}
             className="relative ml-auto shrink-0"
@@ -311,21 +315,9 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
                 data-note-panel=""
                 className="absolute right-0 top-6 z-20 block w-56 space-y-1.5 rounded-md border bg-popover px-3 py-2.5 text-xs shadow-md"
               >
-                {/* 备注：一行一枚胶囊（逗号分隔的多枚也就排成多枚），没有备注的机器不占这一行。 */}
-                {noteTags.length > 0 && (
-                  <span className="flex min-w-0 flex-wrap items-center gap-1">
-                    {noteTags.map((tag, i) => (
-                      <Badge
-                        key={`${i}-${tag}`}
-                        variant="secondary"
-                        className="min-w-0 max-w-full shrink font-normal text-muted-foreground"
-                        title={tag}
-                      >
-                        <span className="min-w-0 truncate">{tag}</span>
-                      </Badge>
-                    ))}
-                  </span>
-                )}
+                {/* 公开备注：整段摊在这里。它是站长写的一句话（≤100 字），不是几枚短标签，
+                    所以不用胶囊——浮层是这一档唯一能读全它的地方（卡片上一个像素都不占）。 */}
+                <span data-note-remark="" className="block whitespace-pre-wrap">{remark}</span>
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">在线时间</span>
                   <span className="tnum min-w-0 truncate">{onlineText(node) ?? "—"}</span>

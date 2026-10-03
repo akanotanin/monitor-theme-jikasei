@@ -26,7 +26,9 @@ const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
 // 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行——名字与 theme.json 的 label 逐字对应。
-const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '服务器备注', '显示的延迟线路'];
+// 1.16.0 起「服务器备注」不在这一列里了（备注改由 hub 按节点管）：它的**缺席**由下面两条
+// 专门的反向断言钉住，别留在「必须画出来」的清单里——那样每次都会报两条假 FAIL。
+const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '显示的延迟线路'];
 const PORT = 9780 + Math.floor(Math.random() * 20);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe']
   .find((p) => existsSync(p)) || 'chrome';
@@ -176,13 +178,12 @@ check('「养鸡场入口」的说明不再带跨站示例', helpText !== '' && 
 check('对话框里也没有残留的旧示例句子',
   !everyText.includes('例如想直接进公开的') && !/https?:\/\/[^\s"）)]*\/chicken/.test(everyText));
 
-// 「服务器备注」的说明是站长唯一能看到的写法说明书：多标签功能上线时它必须换掉——
-// 新写法（`服务器名=备注1,备注2,备注3`）在、旧写法（光秃秃的 `服务器名=备注`）不再出现。
-// 两句一起断才是双向的：只断「新的在」会漏掉旧句子残留在别处的情形。
-const notesHelp = (entries.find((e) => e.key === 'serverNotes') || {}).help || '';
-check('「服务器备注」的说明给了多标签写法', notesHelp.includes('服务器名=备注1,备注2,备注3'), `help=${notesHelp}`);
-check('对话框里的备注说明也是新的（旧写法已无）',
-  everyText.includes('服务器名=备注1,备注2,备注3') && !everyText.includes('写成「服务器名=备注」，'), '');
+// 1.16.0 删掉了「服务器备注」这一项：备注改由 hub 的「公开备注」按节点管，主题不再有自己的清单。
+// 两个方向都要断——manifest 里没有它（我们的表单删干净了），面板里也没有它（Hub 不认旧声明）；
+// 只断一边会漏掉「字段删了、对话框还画着一格」这种半截状态，而站长会照着那一格白填。
+check('theme.json 里没有「服务器备注」这一项（备注已交给 hub）', !entries.some((e) => e.key === 'serverNotes'));
+check('「主题设置」对话框里也不再画「服务器备注」', !everyText.includes('服务器备注'),
+  everyText.includes('服务器备注') ? '对话框里仍有「服务器备注」字样' : '（没有，好）');
 
 // ── 下拉框（type: select）的选项文案 ──────────────────────────────────
 // 面板对 select 画的是「真 <select> 一份 + Radix combobox 一份」，两侧的选项文案都来自 manifest.config。

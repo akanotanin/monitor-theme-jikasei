@@ -30,7 +30,6 @@ const CHROME = [
   '/usr/bin/chromium',
 ].find((p) => existsSync(p)) || 'chrome'
 
-const EXPECTED = ['1 小时', '6 小时', '24 小时', '7 天']
 mkdirSync(OUT, { recursive: true })
 
 const chrome = spawn(CHROME, [
@@ -106,14 +105,30 @@ const openTab = async (label) => {
   await sleep(2500)
 }
 
-// 对照组：资源页一直都有 7 天（改动前它就该是 PASS，用来证明护栏不是在瞎报）。
+// 1.16.0 起量程按 hub 的保留天数生成（1 / 6 / 24 小时一直都在，够得着才多出 7 天、30 天与
+// 保留天数本身）。所以这里不再写死「四枚」——那会在默认保留 30 天的 hub 上把**正确的实现**
+// 报成 FAIL（实测 5 枚：1 小时 / 6 小时 / 24 小时 / 7 天 / 30 天）。判据换成**不变量**：
+// 前三档都在；每一枚都不超过保留天数；7 天只在这条线够得着时出现；保留天数本身那枚在。
+const me = await (await fetch(`${BASE}/api/me`)).json()
+const days = typeof me.history_days === 'number' ? Math.min(365, Math.max(1, Math.floor(me.history_days))) : 7
+const cap = days * 24
+const hoursOf = (t) => Number(t.split(' ')[0]) * (t.endsWith('小时') ? 1 : 24)
+const rangeOk = (list) =>
+  ['1 小时', '6 小时', '24 小时'].every((t) => list.includes(t)) &&
+  list.every((t) => hoursOf(t) <= cap) &&
+  (days >= 7 ? list.includes('7 天') : !list.includes('7 天')) &&
+  (days > 7 ? list.includes(`${days} 天`) : true) &&
+  list.length <= 6
+const why = `hub 保留 ${days} 天（history_days=${JSON.stringify(me.history_days)}）`
+
+// 对照组：资源页在改动前就该是 PASS，用来证明护栏不是在瞎报。
 await openTab('资源')
 const resources = JSON.parse(await evalJS(`JSON.stringify(${rangeLabels()})`))
-check('资源页签的范围 = 1/6/24 小时 + 7 天（对照组）', EXPECTED.every((t) => resources.includes(t)) && resources.length === 4, resources.join(' '))
+check(`资源页签的量程按保留天数生成（对照组）—— ${why}`, rangeOk(resources), resources.join(' '))
 
 await openTab('网络延迟')
 const latency = JSON.parse(await evalJS(`JSON.stringify(${rangeLabels()})`))
-check('延迟页签的范围 = 1/6/24 小时 + 7 天（目标）', EXPECTED.every((t) => latency.includes(t)) && latency.length === 4, latency.join(' '))
+check(`延迟页签的量程按保留天数生成（目标）—— ${why}`, rangeOk(latency), latency.join(' '))
 check('延迟页签的「削峰」开关仍在', await evalJS(`!![...document.querySelectorAll('label')].find((l) => l.textContent.trim() === '削峰')`))
 
 // 范围行（含削峰）截一张，用作改前/改后同机位对照。

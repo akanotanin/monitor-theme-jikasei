@@ -153,16 +153,22 @@ const MDHHMM = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
 })
 
+/** 只到日：一周以上的窗口一格跨几天甚至几个月，时分是噪声（见 clockFor）。 */
+const MD = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit" })
+
 export function clock(ms: number): string {
   return HHMM.format(ms)
 }
 
 /**
  * Axis ticks for a window `hours` wide. Beyond a day a bare "14:00" recurs each
- * midnight and the axis no longer indicates which day it refers to.
+ * midnight and the axis no longer indicates which day it refers to; beyond a week
+ * the minutes are noise too (hub 1.3.2 起保留天数可到 365 天，30 天那种窗口一格跨几天，
+ * 再带时分只会把标签挤成一团)，所以只留日期。
  */
 export function clockFor(hours: number): (ms: number) => string {
-  return hours <= 24 ? clock : (ms: number) => MDHHMM.format(ms)
+  if (hours <= 24) return clock
+  return hours <= 168 ? (ms: number) => MDHHMM.format(ms) : (ms: number) => MD.format(ms)
 }
 
 /**
@@ -191,7 +197,11 @@ export function cpuName(name: string): string {
 // the list explicitly: the smallest step from the ladder keeping the count under
 // `count`, phased on local midnight so a daily tick lands on the day even in a
 // zone offset by 30 or 45 minutes.
-const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440, 2880, 10080].map((m) => m * 60_000)
+const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440, 2880, 10080,
+  // 一周以上的窗口要走完这座阶梯：hub 1.3.2 起保留天数可到 365 天，而阶梯原来到 7 天为止——
+  // 365 天的窗口（525600 分钟）按 7 天一格会画出 52 条刻度（`find` 找不到就回落到最后一档），
+  // 轴上一片线。补上 14 / 30 / 60 / 90 / 180 天，最长的窗口落在 90 天那一档，八条左右。
+  20160, 43200, 86400, 129600, 259200].map((m) => m * 60_000)
 
 export function timeTicks(from: number, to: number, count = 8): number[] {
   const step = TICK_STEPS.find((s) => (to - from) / s <= count) ?? TICK_STEPS[TICK_STEPS.length - 1]

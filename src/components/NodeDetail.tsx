@@ -7,14 +7,14 @@ import {
 import { Info } from "lucide-react"
 
 import { ChartTooltip, PingTooltip } from "@/components/ChartTooltip"
-import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Country, deployed } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, osName, rate, timeTicks, uptime,
 } from "@/lib/format"
-import { hasNotes, tagsFor } from "@/lib/site-settings"
+import { publicRemark } from "@/lib/notes"
+import { rangesFor } from "@/lib/ranges"
 
 type Point = {
   ts: number
@@ -46,19 +46,12 @@ type Probes = Record<string, string>
  */
 type Loss = Record<string, number>
 
-const RANGES = [
-  { hours: 1, label: "1 小时" },
-  { hours: 6, label: "6 小时" },
-  { hours: 24, label: "24 小时" },
-  { hours: 168, label: "7 天" },
-]
-
-// 两个页签共用同一组窗口。延迟页签原先停在上面的 24 小时——理由是一周宽的桶会把抖动与丢包
-// 摊平、且「一周的探测史」超出这页的用途；但那是替访客做判断：想看一周走势的人只能在资源
-// 页签里看，而延迟恰恰是资源页签给不了的那条。窗口拉长不会让点数变多，hub 只会把桶放得更宽
-// （168 小时 ≈ 9 分钟一桶），所以七天的探测史仍画得下、也仍看得见趋势。
-const RANGES_FOR = { resources: RANGES, latency: RANGES }
-
+// 时间范围那排按钮由 hub 的保留天数生成（见 @/lib/ranges）：hub 1.3.2 起 `hours` 的上限就是
+// 保留天数本身（登录与匿名相同），1.15.x 那排写死的 1/6/24 小时 + 7 天只对老 hub 成立。
+// 两个页签共用同一组窗口——延迟页签原先停在上面的 24 小时，理由是「一周宽的桶会把抖动与丢包
+// 摊平」；但那是替访客做判断：想看一周走势的人只能在资源页签里看，而延迟恰恰是资源页签给不了的
+// 那条。窗口拉长不会让点数变多，hub 只会把桶放得更宽（168 小时 ≈ 9 分钟一桶，30 天以上走
+// 小时汇总），所以更长的探测史仍画得下、也仍看得见趋势。
 const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: false }
 
 // No grow-in animation: it would spend 1.5 s drawing a line across the panel on
@@ -151,17 +144,18 @@ function Fact({ label, value }: { label: string; value?: string | number | null 
   )
 }
 
-export function NodeDetail({ node, embedded = false, onOpenDetail, notes = "" }: {
+export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }: {
   node: Node
   /** 紧凑形态点开一行时的就地渲染：省掉身份行与规格，直接落在延迟上，高度写死。 */
   embedded?: boolean
   /** 就地展开时通往整页详情的口子。不传就不画那个链接。 */
   onOpenDetail?: () => void
-  /** 服务器备注清单（与卡片形态同一份站点配置）；空串 = 关闭。 */
-  notes?: string
+  /** hub 的历史保留天数（`/api/me` 的 `history_days`）；老 hub 不给，按 7 天算（见 @/lib/ranges）。 */
+  historyDays?: number
 }) {
-  // 备注收在这一行右端那枚小图标里（浮层）。清单为空 = 关闭：整行与没有备注时逐像素相同。
-  const noteTags = hasNotes(notes) ? tagsFor(notes, node.name) : []
+  // 公开备注：站长在 hub 后台写给访客的一行说明（见 @/lib/notes）。空串 = 没有，
+  // 此时这一页与从前逐像素相同——「备注块」不占位，量程栏那格也不多出图标。
+  const remark = publicRemark(node)
   const [peekOpen, setPeekOpen] = useState(false)
   const peekRef = useRef<HTMLSpanElement | null>(null)
   // 摊开时点别处 / Esc 收起（与「延迟」档那枚同一个做法）。
@@ -181,6 +175,9 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, notes = "" }:
   // Each tab keeps its own range: a 7-day trend and a 1-hour trace answer
   // different questions.
   const [ranges, setRanges] = useState({ resources: 6, latency: 6 })
+  // 可选窗口按保留天数生成（老 hub 按 7 天，结果与 1.15.x 那排逐字相同）。
+  const RANGES = rangesFor(historyDays)
+  const RANGES_FOR = { resources: RANGES, latency: RANGES }
   const hours = ranges[tab]
   const [smooth, setSmooth] = useState(false)
   // Probes switched off. Hiding a slow one is what makes the fast ones readable,
@@ -392,6 +389,13 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, notes = "" }:
         <Fact label="在线时间" value={onlineFor(node)} />
       </dl>
 
+      {/* 公开备注：站长在 hub 后台写给访客的那行说明，整页详情上**整条摊在这里**——
+          访客一眼可见，不必去悬停或点开某个图标。hub 保证它是单行（换行与控制字符直接拒收），
+          所以不必 whitespace-pre-wrap。下面那一块是私有备注（`remark`），只有登录的管理员拿得到。 */}
+      {remark !== "" && (
+        <p data-public-remark="page" className="rounded-md bg-muted px-3 py-2 text-sm">{remark}</p>
+      )}
+
       {node.remark && (
         <p className="rounded-md bg-muted px-3 py-2 text-sm whitespace-pre-wrap">{node.remark}</p>
       )}
@@ -431,24 +435,24 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, notes = "" }:
               削峰
             </label>
           )}
-          {/* 备注收在这一行右端的一枚小图标里（悬停或点一下摊开，点别处 / Esc 收起）——
-              与「延迟」档同一套语言，不摊开时这一行与没有备注时逐像素相同。
-              「完整详情 ›」紧跟在它右边：两个入口同处行右端，视线一个落点。 */}
-          {(noteTags.length > 0 || (embedded && onOpenDetail)) && (
+          {/* 公开备注在这一行右端：桌面（≥sm）**直接并排**在「完整详情 ›」左边（不新增行高），
+              手机这一行放不下，收成一枚小图标 + 浮层（点开看全，点别处 / Esc 收起）。
+              它是站长写的一句话而不是几枚短标签，所以那格是一行文字：放不下就截断，整条挂在 title 上。
+              宽度上限用固定 px（内容尺寸容器里百分比会被解析成很小的值）。没写备注时这一行与从前
+              逐像素相同。
+              ★只有「紧凑」就地展开（embedded）才需要这条入口：整页详情把整条写在标题下面的备注块里
+              （见上面），所以那一页的量程栏右边不再挂图标，免得同一句话出现两遍。 */}
+          {embedded && (remark !== "" || onOpenDetail) && (
             <span className="ml-auto flex min-w-0 items-center gap-x-4 gap-y-1">
-              {noteTags.length > 0 && (
+              {remark !== "" && (
                 <>
-                  {/* PC（≥sm）：**直接并排显示**在「完整详情 ›」左边——这一行右边本来就空着，不新增行高。
-                      宽度上限用固定 px（内容尺寸容器里百分比会被解析成很小的值），空间不够先压标签。 */}
-                  <span data-note-strip className="hidden min-w-0 max-w-[14rem] items-center gap-1 overflow-hidden sm:flex">
-                    {noteTags.map((tag, i) => (
-                      <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
-                        <span className="min-w-0 truncate">{tag}</span>
-                      </Badge>
-                    ))}
+                  <span
+                    data-note-strip
+                    title={remark}
+                    className="hidden max-w-[14rem] min-w-0 truncate text-xs text-muted-foreground sm:block"
+                  >
+                    {remark}
                   </span>
-                  {/* 手机（<sm）：这一行放不下那几枚标签，收成一枚图标 + 浮层（悬停或点开看全，
-                      点别处 / Esc 收起）；不摊开时这一行与没有备注时逐像素相同。 */}
                   <span
                     ref={peekRef}
                     className="relative inline-flex items-center sm:hidden"
@@ -458,7 +462,7 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, notes = "" }:
                     <button
                       data-note-popover
                       aria-expanded={peekOpen}
-                      aria-label={`服务器备注：${noteTags.join("、")}`}
+                      aria-label={`公开备注：${remark}`}
                       onClick={(e) => {
                         // 这一块本身在展开行里，点它不该连带开合那一行。
                         e.stopPropagation()
@@ -474,19 +478,15 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, notes = "" }:
                       <span
                         data-note-panel
                         role="tooltip"
-                        className="absolute top-5 right-0 z-20 flex w-max max-w-[16rem] flex-wrap gap-1 rounded-md border bg-card px-2 py-1.5 shadow-md"
+                        className="absolute top-5 right-0 z-20 block w-max max-w-[16rem] rounded-md border bg-card px-2 py-1.5 text-xs leading-relaxed shadow-md"
                       >
-                        {noteTags.map((tag, i) => (
-                          <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
-                            <span className="min-w-0 truncate">{tag}</span>
-                          </Badge>
-                        ))}
+                        {remark}
                       </span>
                     )}
                   </span>
                 </>
               )}
-              {embedded && onOpenDetail && (
+              {onOpenDetail && (
                 <button onClick={onOpenDetail} className="text-xs text-muted-foreground transition-colors hover:text-foreground">
                   完整详情 ›
                 </button>
