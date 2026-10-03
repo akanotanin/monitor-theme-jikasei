@@ -216,6 +216,10 @@ check('那一节标题紧跟一个字段（hub 会丢掉没有字段跟进的标
 const guideAt = entries.findIndex((e) => e.type === 'title' && String(e.label) === GUIDE_TITLE);
 check('说明后面跟的正是「备注显示位置」', entries[guideAt + 1]?.key === 'remarkPlacement',
   JSON.stringify(entries[guideAt + 1]));
+// 四档口径（用户 2026-10-03 要求补第四档）：默认两边都摊，另有只在卡片 / 只在整页详情 / 都不显示。
+const PLACE_OPTS = ((entries.find((e) => e.key === 'remarkPlacement') || {}).options || []).map((o) => o.value);
+check('「备注显示位置」是四档：both / card / detail / none',
+  JSON.stringify(PLACE_OPTS) === JSON.stringify(['both', 'card', 'detail', 'none']), JSON.stringify(PLACE_OPTS));
 check('「卡片形态」在「列表与卡片」那一组里（不再挂在备注标题下）',
   entries.findIndex((e) => e.key === 'cardStyle') < guideAt &&
     entries.slice(0, entries.findIndex((e) => e.key === 'cardStyle')).some((e) => e.type === 'title' && e.label === '列表与卡片'),

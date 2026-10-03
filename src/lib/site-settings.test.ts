@@ -108,6 +108,8 @@ eq(normalizeConfig({}).remarkPlacement, "both", "老站点配置里没这个键 
 eq([remarksOnCards("both"), remarksOnDetail("both")], [true, true], "both：卡片 + 详情都摊")
 eq([remarksOnCards("card"), remarksOnDetail("card")], [true, false], "card：卡片摊、详情页不摊")
 eq([remarksOnCards("detail"), remarksOnDetail("detail")], [false, true], "detail：卡片不摊、详情页摊")
+eq(normalizeConfig({ remarkPlacement: "none" }).remarkPlacement, "none", "都不显示：原样读回")
+eq([remarksOnCards("none"), remarksOnDetail("none")], [false, false], "none：两处都不摊（备注整个关掉）")
 
 if (failed) {
   console.error(`\n站点设置：${failed} 条不通过`)

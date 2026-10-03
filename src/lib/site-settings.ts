@@ -43,23 +43,26 @@ export type ThemeConfig = {
   remarkPlacement: RemarkPlacement
 }
 
-/** 「备注显示位置」：`both` 卡片与详情页（默认）/ `card` 只在卡片 / `detail` 只在整页详情。 */
-export type RemarkPlacement = "both" | "card" | "detail"
+/** 「备注显示位置」：`both` 卡片与详情页（默认）/ `card` 只在卡片 / `detail` 只在整页详情 / `none` 都不显示。 */
+export type RemarkPlacement = "both" | "card" | "detail" | "none"
 
-/** 三档取值（`normalizeConfig` 认这三样，别的都回落到 `both`）。 */
-export const REMARK_PLACEMENTS: RemarkPlacement[] = ["both", "card", "detail"]
+/** 四档取值（`normalizeConfig` 认这四样，别的都回落到 `both`）。 */
+export const REMARK_PLACEMENTS: RemarkPlacement[] = ["both", "card", "detail", "none"]
 
 /**
  * 卡片那一侧（含「紧凑」就地展开行、经典/延迟右上角那枚浮层、详细档标题行）要不要摊备注。
- * 与 `remarksOnDetail` 是一对：两处合起来恰好覆盖「备注的落点」那三条口径。
+ * 与 `remarksOnDetail` 是一对，两处合起来恰好覆盖「备注的落点」那四档口径。
+ *
+ * ★写成**白名单**（只认 `both`/`card`）而不是「不等于 detail」：后者在新增第四档「都不显示」时会
+ * 悄悄把卡片侧漏开（备注没关掉），是那种「看着改了、其实没生效」的坏实现。
  */
 export function remarksOnCards(p: RemarkPlacement): boolean {
-  return p !== "detail"
+  return p === "both" || p === "card"
 }
 
-/** 整页详情（点进去那一页）要不要摊备注。 */
+/** 整页详情（点进去那一页）要不要摊备注。同样写成白名单。 */
 export function remarksOnDetail(p: RemarkPlacement): boolean {
-  return p !== "card"
+  return p === "both" || p === "detail"
 }
 
 export const DEFAULTS: ThemeConfig = {

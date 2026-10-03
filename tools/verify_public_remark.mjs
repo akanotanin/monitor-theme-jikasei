@@ -759,7 +759,15 @@ console.log('\n── 备注显示位置：卡片与详情页 / 只在卡片 / �
   const compactDetailOnly = await json(POPOVER_PROBE(EXPANDED_ROW))
   check('只在详情页：紧凑展开行那格（算卡片那一侧）也没有备注位',
     compactDetailOnly.strip === null && compactDetailOnly.btn === null, JSON.stringify(compactDetailOnly.strip))
-  // ⑤ 不认识的取值 → 回落「两边都摊」（老站点配置 / 手改库都不该让备注消失）
+  // ⑤ 都不显示：两处一枚都不摊（卡片侧与详情页侧同时关掉）
+  await render({ cardStyle: 'detailed', remarkPlacement: 'none' }, 'place-none-card')
+  const noneCard = await card('节点一')
+  await render({ cardStyle: 'plain', remarkPlacement: 'none' }, 'place-none-detail', { path: '/node/1' })
+  const noneDetail = await json(MERGED_PROBE)
+  check('都不显示：卡片这一侧与详情页那一侧都一枚不摊',
+    noneCard.note === false && noneCard.tags.length === 0 && noneDetail.block === false && noneDetail.chips.length === 0,
+    JSON.stringify({ card: noneCard.tags, detail: noneDetail.chips }))
+  // ⑥ 不认识的取值 → 回落「两边都摊」（老站点配置 / 手改库都不该让备注消失）
   await render({ cardStyle: 'detailed', remarkPlacement: 'everywhere' }, 'place-junk')
   const junk = await card('节点一')
   check('取值不认识 → 回落两边都摊（备注不会凭空消失）',
