@@ -292,6 +292,11 @@ for (const field of entries.filter((e) => e.type === 'select' && Array.isArray(e
   check(`${where ? `「${where}」组里` : ''}「${field.label}」的选项文案与 theme.json 逐字同序一致`,
     how === 'clicked' && seen.length === want.length && seen.every((t, i) => t === want[i]),
     `${how}｜面板 ${JSON.stringify(seen)} ｜manifest ${JSON.stringify(want)}`)
+  // 「备注显示位置」留一张下拉展开的档（选项是站长看得见的东西，改档位时能一眼对照）。
+  if (field.key === 'remarkPlacement' && how === 'clicked') {
+    const png = await send('Page.captureScreenshot', { format: 'png' })
+    if (png?.result?.data) writeFileSync(`${PREFIX}-placement-options.png`, Buffer.from(png.result.data, 'base64'))
+  }
   await esc()
 }
 
