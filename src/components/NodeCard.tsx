@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react"
 import {
-  ArrowDown, ArrowDownUp, ArrowUp, CalendarClock, Cpu, HardDrive, Info, MemoryStick,
+  ArrowDown, ArrowDownUp, ArrowUp, CalendarClock, Cpu, HardDrive, Info, Lock, MemoryStick,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -9,7 +9,7 @@ import { LatencyPanel } from "@/components/Latency"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
-import { remarkTags } from "@/lib/notes"
+import { remarkChips, type RemarkChip } from "@/lib/notes"
 
 /**
  * This period's usage as the plan meters it. The hub computes it; the switch
@@ -166,6 +166,32 @@ function trafficFoot(node: Node) {
     : `${bytes(monthUsage(node))} / ${FOREVER}`
 }
 
+/**
+ * 备注小卡片：**私有那几枚带锁 + 描边**（仅自己可见），公有那几枚实心 `secondary`。
+ * 卡片（详细档标题行、经典/延迟的浮层）与整页详情、紧凑展开行共用这一套——写法只有一处，
+ * 合并后的次序（私有在前、公有在后）也由 `@/lib/notes` 的 `remarkChips` 一处决定。
+ */
+export function RemarkChips({ chips, max = "full", wrap = false }: { chips: RemarkChip[]; max?: string; wrap?: boolean }) {
+  return (
+    <>
+      {chips.map((c, i) => (
+        <Badge
+          key={i + "-" + c.text}
+          variant={c.own ? "outline" : "secondary"}
+          // wrap（详细档标题行那一格）：小卡片不许被挤扁 —— 放不下就整体换行（卡片只高一行），
+          // 否则四枚会各自缩成「仅自…」这种两个字的残片（实测踩过）。
+          className={(wrap ? "shrink-0 " : "min-w-0 shrink ") + "font-normal " + (c.own ? "gap-1 text-muted-foreground" : "")}
+          style={{ maxWidth: max === "full" ? undefined : max }}
+          title={c.own ? "仅自己可见：" + c.text : c.text}
+        >
+          {c.own && <Lock className="size-3 shrink-0" aria-hidden />}
+          <span className="min-w-0 truncate">{c.text}</span>
+        </Badge>
+      ))}
+    </>
+  )
+}
+
 export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes }: {
   node: Node
   onOpen: () => void
@@ -184,9 +210,9 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
   // 进度条压到 4px、底注降到 11px、名字加粗一档、格子间距收紧（见下方各处 plain 分支）。
   // ★ 按站长的口径，简约档**不显示公开备注**（其余四档都显示），这一档保持原样。
   const plain = cardStyle === "plain"
-  // 这台机器的备注（见 @/lib/notes）：hub 的「公开备注」优先，这台没写才用主题设置那份清单。
-  // 逗号分隔＝多枚小卡片（两边写法一致）。
-  const noteTags = remarkTags(node, notes)
+  // 这台机器的备注（见 @/lib/notes）：私有在前（仅自己可见）、公有在后，都拆成一枚枚小卡片。
+  // 公有那几枚：hub 的「公开备注」优先，这台没写才用主题设置那份清单兜底。
+  const chips = remarkChips(node, notes)
   /**
    * 「经典」「延迟」两档右上角那枚信息控件：悬停或点击弹出浮层，里面是
    * **备注（写了才有）+ 在线时间 + 价格 + 到期**。
@@ -282,21 +308,16 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
             极端情况（名字特别长）下备注会被压到看不见 —— 刻意的取舍：宁可备注隐身，也不动机器名。
             ★「经典」档不挂在这里：它与「延迟」档一样把备注收进右上角那枚浮层（见下面那个控件）。
             「简约」档不挂（站长的口径），「紧凑」档收在展开行量程栏那格（见 NodeDetail）。 */}
-        {detailed && noteTags.length > 0 && (
+        {detailed && chips.length > 0 && (
           <span
-            data-public-remark="title"
-            className="ml-auto flex min-w-0 max-w-[40%] grow basis-0 items-center justify-end gap-1 overflow-hidden sm:max-w-[55%]"
+            data-remark="title"
+            className={"ml-auto flex min-w-0 max-w-[40%] grow basis-0 items-center justify-end gap-1 sm:max-w-[55%] " +
+              // ★换行只发生在「这一串里有私有备注」时（＝只有站长自己看得到的那一侧）：私有那几枚放不下
+              //   就整体换行（卡片只高一行），不会各自缩成两个字的残片；而访客那一侧（只有公有备注）
+              //   与从前逐像素相同——挤不下就按老规矩截断。
+              (chips.some((c) => c.own) ? "flex-wrap" : "overflow-hidden")}
           >
-            {noteTags.map((tag, i) => (
-              <Badge
-                key={`${i}-${tag}`}
-                variant="secondary"
-                className="min-w-0 max-w-[9rem] shrink font-normal text-muted-foreground"
-                title={tag}
-              >
-                <span className="min-w-0 truncate">{tag}</span>
-              </Badge>
-            ))}
+            <RemarkChips chips={chips} max="9rem" wrap={chips.some((c) => c.own)} />
           </span>
         )}
         {/* 「经典」「延迟」两档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期）。
@@ -329,18 +350,9 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
               >
                 {/* 公开备注：一枚一枚小卡片（逗号分隔的多枚也就排成多枚），
                     没有备注的机器不占这一行。浮层是这一档唯一能读到它的地方（卡片上不占位）。 */}
-                {noteTags.length > 0 && (
+                {chips.length > 0 && (
                   <span data-note-remark="" className="flex min-w-0 flex-wrap items-center gap-1">
-                    {noteTags.map((tag, i) => (
-                      <Badge
-                        key={`${i}-${tag}`}
-                        variant="secondary"
-                        className="min-w-0 max-w-full shrink font-normal text-muted-foreground"
-                        title={tag}
-                      >
-                        <span className="min-w-0 truncate">{tag}</span>
-                      </Badge>
-                    ))}
+                    <RemarkChips chips={chips} />
                   </span>
                 )}
                 <span className="flex items-center justify-between gap-2">

@@ -205,7 +205,7 @@ const CARD_PROBE = (name) => `JSON.stringify((() => {
   const h3 = card.querySelector('h3')
   const row = h3 ? h3.parentElement : null
   const grid = card.querySelector('.grid.grid-cols-2')
-  const note = card.querySelector('[data-public-remark="title"]')
+  const note = card.querySelector('[data-remark="title"]')
   const tagEls = note ? [...note.querySelectorAll('[data-slot="badge"]')] : []
   const boxes = [...card.querySelectorAll('[class*="bg-muted/60"]')]
   return {
@@ -215,9 +215,12 @@ const CARD_PROBE = (name) => `JSON.stringify((() => {
     nameBox: h3 ? rect(h3) : null,
     nameClipped: h3 ? h3.scrollWidth > h3.clientWidth + 1 : null,
     note: !!note,
-    noteAnchors: card.querySelectorAll('[data-public-remark]').length,
+    noteAnchors: card.querySelectorAll('[data-remark]').length,
     tags: tagEls.map((b) => b.innerText.trim()),
     tagTitles: tagEls.map((b) => b.getAttribute('title')),
+    // 合并后备注有两种样式：私有那几枚 = outline + 锁图标，公有那几枚 = secondary。
+    tagVariants: tagEls.map((b) => b.getAttribute('data-variant')),
+    tagLocks: tagEls.map((b) => !!b.querySelector('svg')),
     tagBoxes: tagEls.map((b) => rect(b)),
     tagClipped: tagEls.map((b) => { const inner = b.querySelector('span'); return inner ? inner.scrollWidth > inner.clientWidth + 1 : null }),
     popover: !!card.querySelector('[data-note-popover]'),
@@ -234,28 +237,17 @@ const CARD_PROBE = (name) => `JSON.stringify((() => {
  * 整页详情上的**私有备注**块：那一块、几段、每段几枚、以及原文有没有被整条直出。
  * ★按结构定位（`[data-private-remark]` 的直接子元素 = 一段），别认 Tailwind 类名。
  */
-const PRIVATE_PROBE = `JSON.stringify((() => {
-  const b = document.querySelector('[data-private-remark]')
-  if (!b) return { block: false, lines: [], text: '', badges: 0 }
-  const p = b.querySelector('p')
-  const cv = document.createElement('canvas'); cv.width = cv.height = 1
-  const cx = cv.getContext('2d')
-  // 读颜色前先 clearRect：透明色 fillRect 不覆盖上一个像素，会把上一枚的颜色留在画布上（踩过）。
-  const rgb = (c) => { cx.clearRect(0, 0, 1, 1); cx.fillStyle = c; cx.fillRect(0, 0, 1, 1); const d = cx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]] }
-  const dist = (a, c) => Math.sqrt(a.reduce((s, v, i) => s + (v - c[i]) * (v - c[i]), 0))
-  const cs = getComputedStyle(b)
-  const boxRgb = rgb(cs.backgroundColor)
-  const pageRgb = rgb(getComputedStyle(document.body).backgroundColor)
+const MERGED_PROBE = `JSON.stringify((() => {
+  const b = document.querySelector('[data-remark-block]')
+  if (!b) return { block: false, chips: [], variants: [], locks: [], titles: [], text: '' }
+  const cs = [...b.querySelectorAll('[data-slot="badge"]')]
   return {
     block: true,
-    lines: (p ? p.innerText : '').split(String.fromCharCode(10)),
+    chips: cs.map((c) => c.innerText.trim()),
+    variants: cs.map((c) => c.getAttribute('data-variant')),
+    locks: cs.map((c) => !!c.querySelector('svg')),
+    titles: cs.map((c) => c.getAttribute('title') || ''),
     text: b.innerText,
-    badges: b.querySelectorAll('[data-slot="badge"]').length,
-    preWrap: p ? getComputedStyle(p).whiteSpace : '',
-    label: b.firstElementChild ? b.firstElementChild.innerText.trim() : '',
-    lock: !!b.querySelector('svg'),
-    border: cs.borderTopWidth,
-    boxRgb, pageRgb, pageGap: Number(dist(boxRgb, pageRgb).toFixed(1)),
   }
 })())`
 
@@ -541,23 +533,22 @@ const expandFirstRow = () => evalJS(`(() => { const r = document.querySelector('
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1200, deviceScaleFactor: 1, mobile: false })
 }
 
-/* ────────────────────── ⑥ 整页详情：不摊备注（站长口径） ────────────────── */
-console.log('\n── 整页详情：不显示备注（备注只在列表卡片与紧凑展开那格） ──')
+/* ─────────── ⑥ 整页详情：私有 + 公有合并成一串小卡片（列表与详情同一套） ─────────── */
+console.log('\n── 整页详情：私有 + 公有合并成一串小卡片（同一套版式） ──')
 {
+  privateNote = ''
   remark = SHORT
-  await render({ cardStyle: 'plain' }, 'detail-note', { path: '/node/1' })
-  const on = await json(`JSON.stringify((() => ({
-    page: document.querySelectorAll('[data-public-remark]').length,
-    icons: document.querySelectorAll('[data-note-popover]').length,
-    hasTags: document.body.querySelectorAll('[data-slot="badge"]').length,
-    mentions: /三网优化|CN2 GIA/.test(document.body.innerText),
-    tabs: /1 小时/.test(document.body.innerText),
-  }))())`)
-  check('整页详情（写了备注）：那一页**一个备注元素都没有**（备注块与图标都不挂）',
-    on.page === 0 && on.icons === 0, JSON.stringify(on))
-  check('整页详情（写了备注）：正文里也没有备注文字', on.mentions === false && on.hasTags === 0, JSON.stringify(on))
-  check('整页详情：规格与量程照旧渲染出来', on.tabs === true, '')
-  await shot('detail-page-1440')
+  await render({ cardStyle: 'plain' }, 'detail-merged', { path: '/node/1' })
+  const on = await json(MERGED_PROBE)
+  check('整页详情（只有公开备注）：那一块把公有的几枚摊出来了（逐枚同序）',
+    on.block === true && SAME(on.chips, tagsOf(SHORT)), JSON.stringify(on.chips))
+  check('整页详情：这几枚都是公有的样式（实心 secondary，没有锁）',
+    SAME(on.variants, tagsOf(SHORT).map(() => 'secondary')) && on.locks.every((x) => x === false),
+    `${JSON.stringify(on.variants)} / ${JSON.stringify(on.locks)}`)
+  check('整页详情：量程栏右边不再挂那枚图标（免得同一句话出现两遍）',
+    (await evalJS(`document.querySelectorAll('[data-note-popover]').length`)) === 0)
+  check('整页详情：规格与量程照旧渲染出来', /1 小时/.test(await evalJS('document.body.innerText')))
+  await shot('detail-merged-1440')
 }
 
 /* ────────── ⑦ 两个来源：公开备注优先，这台没写公开备注才用清单兜底 ────────── */
@@ -587,49 +578,65 @@ console.log('\n── 备注来源：公开备注优先，没写公开备注的�
   remark = SHORT
 }
 
-/* ───────────── ⑧ 私有备注：整页详情上「整段」展示（带「仅自己可见」标记） ───────────── */
-console.log('\n── 私有备注（hub 后台那个「仅管理员可见」的字段）：整页详情上整段展示 ──')
+/* ─────── ⑧ 合并备注：私有在前（带锁 + 描边）、公有在后，列表与详情都看得到 ─────── */
+console.log('\n── 合并备注：私有（仅自己可见）+ 公有，列表与详情同一套 ──')
 {
-  // ① 没写 → 那一块一个像素都不占（匿名访客与老 hub 就是这一态：字段根本不在）
+  // ① 两边都没写 → 那一块不挂（零占位）
   privateNote = ''
+  remark = ''
+  await render({ cardStyle: 'plain' }, 'merged-none', { path: '/node/1' })
+  const off = await json(MERGED_PROBE)
+  check('两边都没写 → 整页详情那一块不挂（零占位）', off.block === false && off.chips.length === 0, JSON.stringify(off))
+
+  // ② 私有 + 公有：私有在前、公有在后，各带自己的样式
+  privateNote = '私有甲,私有乙\n第二行的一枚'
   remark = SHORT
-  await render({ cardStyle: 'plain' }, 'priv-none', { path: '/node/1' })
-  const off = await json(PRIVATE_PROBE)
-  check('私有备注没写 → 整页详情上没有那一块（零占位）',
-    off.block === false && off.lines.length === 0, JSON.stringify(off))
+  await render({ cardStyle: 'plain' }, 'merged-detail', { path: '/node/1' })
+  const got = await json(MERGED_PROBE)
+  const want = ['私有甲', '私有乙', '第二行的一枚', ...tagsOf(SHORT)]
+  check('详情：私有在前、公有在后（逐枚同序；私有按换行 + 逗号拆）', SAME(got.chips, want), JSON.stringify(got.chips))
+  check('详情：前三枚是私有的样式（描边 outline + 锁图标）',
+    SAME(got.variants.slice(0, 3), ['outline', 'outline', 'outline']) && got.locks.slice(0, 3).every(Boolean),
+    `${JSON.stringify(got.variants)} / ${JSON.stringify(got.locks)}`)
+  check('详情：公有那几枚是实心 secondary、没有锁',
+    SAME(got.variants.slice(3), tagsOf(SHORT).map(() => 'secondary')) && got.locks.slice(3).every((x) => x === false),
+    `${JSON.stringify(got.variants)} / ${JSON.stringify(got.locks)}`)
+  check('详情：私有那几枚挂的是「仅自己可见」的悬停提示', got.titles.slice(0, 1)[0].indexOf('仅自己可见：') === 0, JSON.stringify(got.titles.slice(0, 3)))
+  await shot('detail-merged-private-1440')
 
-  // ② 多行 + 逗号：**按探针原本的设定整段展示**（保留换行、不做逗号拆分）
-  privateNote = '私有甲,私有乙\n第二行的一枚，带全角逗号\n\n第三行'
-  await render({ cardStyle: 'plain' }, 'priv-lines', { path: '/node/1' })
-  const got = await json(PRIVATE_PROBE)
-  check('私有备注：整段展示——原文逐字都在（逗号也照旧留着）',
-    got.text.includes('私有甲,私有乙') && got.text.includes('第二行的一枚，带全角逗号') && got.text.includes('第三行'),
-    JSON.stringify(got.text))
-  check('私有备注：换行保留（含中间那个空行，行数与原文一致）',
-    SAME(got.lines, ['私有甲,私有乙', '第二行的一枚，带全角逗号', '', '第三行']), JSON.stringify(got.lines))
-  check('私有备注：没有拆成小卡片（那一块里一个 badge 都没有）', got.badges === 0, `badge ${got.badges}`)
-  check('私有备注：靠 whitespace-pre-wrap 保留换行（不是 <br>）', got.preWrap === 'pre-wrap', got.preWrap)
-  check('私有备注：顶部那行标记在（锁图标 + 「私有备注 · 仅自己可见」）',
-    got.lock === true && got.label.includes('私有备注') && got.label.includes('仅自己可见'), JSON.stringify(got.label))
-  check('私有备注：那一块有 1px 描边、且底色与页面底色有可见差别（不是无边界的一块浅灰）',
-    got.border === '1px' && got.pageGap >= 6,
-    `border ${got.border}｜块 ${JSON.stringify(got.boxRgb)} vs 页 ${JSON.stringify(got.pageRgb)}（${got.pageGap}）`)
-  check('私有备注：公开备注照旧不在整页详情上（这一页只摊私有那条）',
-    !/CN2 GIA|三网优化/.test(got.text), got.text)
-  await shot('detail-private-remark-1440')
+  // ③ 访客（hub 不下发私有备注）：同一套版式，只剩公有那几枚
+  privateNote = ''
+  await render({ cardStyle: 'plain' }, 'merged-visitor', { path: '/node/1' })
+  const vis = await json(MERGED_PROBE)
+  check('访客视角（没有私有备注字段）：只剩公有那几枚，且都是实心样式',
+    SAME(vis.chips, tagsOf(SHORT)) && vis.locks.every((x) => x === false), JSON.stringify(vis.chips))
 
-  // ③ hub 面板给的就是单行输入框：单行也整段
-  privateNote = '单行甲,单行乙'
-  await render({ cardStyle: 'plain' }, 'priv-single', { path: '/node/1' })
-  const one = await json(PRIVATE_PROBE)
-  check('私有备注：单行带逗号也整段展示（不拆成两枚）',
-    one.lines.length === 1 && one.text.includes('单行甲,单行乙'), JSON.stringify(one.lines))
-
-  // ④ 列表卡片上不许出现私有备注：它只在整页详情那一块（hub 也只把它下发给登录的管理员）
-  await render({ cardStyle: 'detailed' }, 'priv-not-on-card')
+  // ④ 列表页也看得到私有那几枚（详细档标题行右端）
+  privateNote = '仅自己可见的一条'
+  await render({ cardStyle: 'detailed' }, 'merged-card')
   const list = await card('节点一')
-  check('私有备注不出现在列表卡片上（只有整页详情那一块）',
-    !list.text.includes('单行甲') && !list.text.includes('私有甲'), list.text.slice(0, 140))
+  check('列表卡片（详细档）也能看到私有那枚，且标成 own（描边 + 锁）',
+    SAME(list.tags.slice(0, 1), ['仅自己可见的一条']) && SAME(list.tagVariants.slice(0, 1), ['outline']) && list.tagLocks[0] === true,
+    `${JSON.stringify(list.tags)} / ${JSON.stringify(list.tagVariants)} / ${JSON.stringify(list.tagLocks)}`)
+  check('列表卡片：公有那几枚照旧跟在后面（实心）',
+    SAME(list.tags.slice(1), tagsOf(SHORT)) && list.tagVariants.slice(1).every((v) => v === 'secondary'),
+    JSON.stringify(list.tags))
+  check('列表卡片（详细档）：四枚都留得住（每枚不窄于 40px，没有被挤成「仅自…」那种两个字）',
+    list.tagBoxes.length === 4 && list.tagBoxes.every((b) => b.w >= 40),
+    JSON.stringify(list.tagBoxes.map((b) => b.w)))
+  check('列表卡片（详细档）：私有那枚在场时标题行整体换行（卡片只高一行），而不是把每枚挤扁',
+    list.rowH > 24, `标题行高 ${list.rowH}px`)
+  await shot('card-merged-remark-1440')
+
+  // ⑤ 经典档的浮层里同样读到合并后的那串
+  await render({ cardStyle: 'classic' }, 'merged-popover')
+  // 浮层要点开才有内容：先读控件、悬停上去再读一次（控件不在时跳过，让断言自己报 FAIL）。
+  const pop0 = await json(POPOVER_PROBE(CARD('节点一')))
+  if (pop0.btn) await hover(pop0.btn.x + pop0.btn.w / 2, pop0.btn.mid)
+  const pop = await json(POPOVER_PROBE(CARD('节点一')))
+  check('列表卡片（经典档浮层）：私有 + 公有都在（逐枚同序）',
+    SAME(pop.panel?.tags, ['仅自己可见的一条', ...tagsOf(SHORT)]), JSON.stringify(pop.panel?.tags))
+  await hover(4, 4)
 
   privateNote = ''
   remark = SHORT

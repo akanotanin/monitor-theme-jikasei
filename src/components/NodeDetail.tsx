@@ -4,17 +4,16 @@ import {
   Tooltip, XAxis, YAxis,
 } from "recharts"
 
-import { Info, Lock } from "lucide-react"
+import { Info } from "lucide-react"
 
 import { ChartTooltip, PingTooltip } from "@/components/ChartTooltip"
-import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Country, deployed } from "@/components/NodeCard"
+import { Country, deployed, RemarkChips } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, osName, rate, timeTicks, uptime,
 } from "@/lib/format"
-import { privateRemark, remarkTags } from "@/lib/notes"
+import { remarkChips } from "@/lib/notes"
 import { rangesFor } from "@/lib/ranges"
 
 type Point = {
@@ -156,13 +155,12 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   /** 主题设置里那份「服务器备注」清单（与卡片形态同一份）；它是兜底，只对没写公开备注的机器生效。 */
   notes?: string
 }) {
-  // 这台机器的备注（见 @/lib/notes）：hub 的「公开备注」优先，这台没写才用主题设置那份清单。
-  // ★**公开**备注在整页详情上不摊（站长 2026-10-03 定的）：这一页只留规格与图表，公开备注在列表
-  // 卡片上（经典/延迟收在右上角浮层里、详细挂标题行右端）与「紧凑」展开行那格看。
-  // 下面那枚控件与备注条都只在 embedded（紧凑展开）时才出现；私有备注见再下面那个块。
-  const noteTags = remarkTags(node, notes)
-  // 私有备注（hub 后台那个「仅管理员可见」的字段）：hub 只在登录态下发，匿名访客拿不到这个键。
-  const privateNote = privateRemark(node)
+  // 这台机器的备注（见 @/lib/notes）：私有在前（仅自己可见）、公有在后，都拆成一枚枚小卡片。
+  // ★**公开**备注在整页详情上不单独摊（站长 2026-10-03 定的口径）：这一页只留规格与图表，
+  // 列表卡片上那几处（经典/延迟的右上角浮层、详细档标题行右端、紧凑展开行那格）才摊它们；
+  // 而**私有**备注在整页详情那一块里跟它一起摊（见下面那个块）。
+  // 下面那枚控件与备注条都只在 embedded（紧凑展开）时才出现。
+  const chips = remarkChips(node, notes)
   const [peekOpen, setPeekOpen] = useState(false)
   const peekRef = useRef<HTMLSpanElement | null>(null)
   // 摊开时点别处 / Esc 收起（与「延迟」档那枚同一个做法）。
@@ -396,19 +394,15 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
         <Fact label="在线时间" value={onlineFor(node)} />
       </dl>
 
-      {/* 私有备注（hub 后台那个「仅管理员可见」的字段，只在登录态下发）：**整段展示**（探针原本的
-          设定）——`whitespace-pre-wrap` 保留站长自己分好的换行，不做逗号拆分（逗号＝多枚是**公开**
-          备注的写法）。顶部一行「私有备注 · 仅自己可见」标记：一眼分清它不是公开备注（访客看不到
-          这个字段，所以这一块只有站长自己看得到）。
+      {/* 整页详情那一块备注：**私有 + 公有合并成一串小卡片**（私有在前、带锁与描边 = 仅自己可见）。
+          hub 只把私有备注下发给登录的管理员，所以访客在这一块里看到的就只有公有那几枚——同一套版式，
+          不需要两套分支（见 `@/lib/notes` 的 `remarkChips`）。
           ★容器用 `bg-card border` 而不是 `bg-muted`：页面底是 `background`（0.985），块底用 `card`
-          （1.0）再加 1px 描边才立得住；护栏里有一条按**像素距离**断「块底色 ≠ 页面底色」+「有 1px
-          描边」，别再改回无边界的一块浅灰。没写时一个像素都不占。 */}
-      {privateNote !== "" && (
-        <div data-private-remark className="space-y-1 rounded-md border border-border bg-card px-3 py-2">
-          <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Lock className="size-3" />私有备注 · 仅自己可见
-          </div>
-          <p className="text-sm whitespace-pre-wrap">{privateNote}</p>
+          （1.0）再加 1px 描边才立得住；小卡片是 `secondary` 底，铺在同色的 `muted` 上会糊成一块文字
+          （视觉复核踩过）。没写备注时一个像素都不占。 */}
+      {chips.length > 0 && (
+        <div data-remark-block className="flex min-w-0 flex-wrap items-center gap-1 rounded-md border border-border bg-card px-3 py-2">
+          <RemarkChips chips={chips} />
         </div>
       )}
       </>
@@ -447,23 +441,19 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
               削峰
             </label>
           )}
-          {/* 公开备注在这一行右端：桌面（≥sm）**直接并排**在「完整详情 ›」左边（不新增行高），
+          {/* 备注在这一行右端：桌面（≥sm）**直接并排**在「完整详情 ›」左边（不新增行高），
               手机这一行放不下，收成一枚小图标 + 浮层（点开看全，点别处 / Esc 收起）。
-              一枚备注一枚小卡片（逗号分隔的多枚就排成多枚）。
+              一枚备注一枚小卡片（私有 + 公有合并成一串，私有那几枚带锁与描边）。
               宽度上限用固定 px（内容尺寸容器里百分比会被解析成很小的值）。没写备注时这一行与从前
               逐像素相同。
-              ★只有「紧凑」就地展开（embedded）才需要这条入口：整页详情不摊**公开**备注（见上面那段），
+              ★只有「紧凑」就地展开（embedded）才需要这条入口：整页详情把整串摊在规格下面（见上面那段），
               所以那一页的量程栏右边不再挂图标，免得同一句话出现两遍。 */}
-          {embedded && (noteTags.length > 0 || onOpenDetail) && (
+          {embedded && (chips.length > 0 || onOpenDetail) && (
             <span className="ml-auto flex min-w-0 items-center gap-x-4 gap-y-1">
-              {noteTags.length > 0 && (
+              {chips.length > 0 && (
                 <>
                   <span data-note-strip className="hidden min-w-0 max-w-[14rem] items-center gap-1 overflow-hidden sm:flex">
-                    {noteTags.map((tag, i) => (
-                      <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
-                        <span className="min-w-0 truncate">{tag}</span>
-                      </Badge>
-                    ))}
+                    <RemarkChips chips={chips} />
                   </span>
                   <span
                     ref={peekRef}
@@ -474,7 +464,7 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
                     <button
                       data-note-popover
                       aria-expanded={peekOpen}
-                      aria-label={`公开备注：${noteTags.join("、")}`}
+                      aria-label={`备注：${chips.map((c) => c.text).join("、")}`}
                       onClick={(e) => {
                         // 这一块本身在展开行里，点它不该连带开合那一行。
                         e.stopPropagation()
@@ -492,11 +482,7 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
                         role="tooltip"
                         className="absolute top-5 right-0 z-20 flex w-max max-w-[16rem] flex-wrap gap-1 rounded-md border bg-card px-2 py-1.5 shadow-md"
                       >
-                        {noteTags.map((tag, i) => (
-                          <Badge key={`${i}-${tag}`} variant="secondary" className="min-w-0 max-w-full shrink font-normal" title={tag}>
-                            <span className="min-w-0 truncate">{tag}</span>
-                          </Badge>
-                        ))}
+                        <RemarkChips chips={chips} />
                       </span>
                     )}
                   </span>
