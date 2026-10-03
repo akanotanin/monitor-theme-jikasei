@@ -14,7 +14,7 @@ import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, osName, rate, timeTicks, uptime,
 } from "@/lib/format"
-import { hubTags, privateRemark } from "@/lib/notes"
+import { privateRemark, remarkTags } from "@/lib/notes"
 import { rangesFor } from "@/lib/ranges"
 
 type Point = {
@@ -145,7 +145,7 @@ function Fact({ label, value }: { label: string; value?: string | number | null 
   )
 }
 
-export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }: {
+export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, notes = "" }: {
   node: Node
   /** 紧凑形态点开一行时的就地渲染：省掉身份行与规格，直接落在延迟上，高度写死。 */
   embedded?: boolean
@@ -153,12 +153,14 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays }
   onOpenDetail?: () => void
   /** hub 的历史保留天数（`/api/me` 的 `history_days`）；老 hub 不给，按 7 天算（见 @/lib/ranges）。 */
   historyDays?: number
+  /** 主题设置里那份「服务器备注」清单（与卡片形态同一份）；它是兜底，只对没写公开备注的机器生效。 */
+  notes?: string
 }) {
-  // 这台机器的公开备注（见 @/lib/notes）：hub 后台按节点填的那条，逗号分隔＝多枚小卡片。
+  // 这台机器的备注（见 @/lib/notes）：hub 的「公开备注」优先，这台没写才用主题设置那份清单。
   // ★**公开**备注在整页详情上不摊（站长 2026-10-03 定的）：这一页只留规格与图表，公开备注在列表
   // 卡片上（经典/延迟收在右上角浮层里、详细挂标题行右端）与「紧凑」展开行那格看。
   // 下面那枚控件与备注条都只在 embedded（紧凑展开）时才出现；私有备注见再下面那个块。
-  const noteTags = hubTags(node)
+  const noteTags = remarkTags(node, notes)
   // 私有备注（hub 后台那个「仅管理员可见」的字段）：hub 只在登录态下发，匿名访客拿不到这个键。
   const privateNote = privateRemark(node)
   const [peekOpen, setPeekOpen] = useState(false)

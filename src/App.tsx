@@ -328,9 +328,9 @@ export default function App() {
             <DetailSkeleton />
           ) : selected ? (
             <Suspense fallback={<DetailSkeleton />}>
-              {/* 整页详情与紧凑展开里是同一个组件：保留天数也要一起给它，
-                  否则「展开里有 30 天、点进去只有 7 天」会显得不一致。 */}
-              <NodeDetail node={selected} historyDays={me.history_days} />
+              {/* 整页详情与紧凑展开里是同一个组件：保留天数与备注清单也要一起给它，
+                  否则「展开里有 30 天、点进去只有 7 天」、或「展开里有备注、点进去没有」会显得不一致。 */}
+              <NodeDetail node={selected} historyDays={me.history_days} notes={config.serverNotes} />
             </Suspense>
           ) : (
             <p className="py-16 text-center text-sm text-muted-foreground">
@@ -360,7 +360,8 @@ export default function App() {
             <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail} showTabs={hasGroupTabs(config.listTop)}
               latencyLines={config.pingLines}
               cardStyle={config.cardStyle}
-              historyDays={me.history_days} />
+              historyDays={me.history_days}
+              notes={config.serverNotes} />
           </>
         )}
       </main>
@@ -399,7 +400,7 @@ function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | nu
 // without groups keeps the page it always had. The operator can also keep the
 // row off outright (theme setting `listTop`), which leaves the page as one
 // flat list.
-function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLines, cardStyle, historyDays }: {
+function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLines, cardStyle, historyDays, notes }: {
   nodes: Node[]
   /** null is every node, "" the ungrouped. */
   group: string | null
@@ -414,6 +415,8 @@ function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLine
   cardStyle: "classic" | "latency" | "detailed" | "plain" | "compact"
   /** hub 的历史保留天数：透给「紧凑」形态展开行里那块详情图（时间范围那排按钮按它生成）。 */
   historyDays?: number
+  /** 主题设置里那份「服务器备注」清单（每行 `服务器名=备注`）；它是兜底，只对没写公开备注的机器生效。 */
+  notes: string
 }) {
   const groups = groupsOf(nodes)
   const ungrouped = nodes.filter((n) => !n.group).length
@@ -456,11 +459,11 @@ function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLine
       {nodes.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
       ) : cardStyle === "compact" ? (
-        <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} />
+        <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} notes={notes} />
       ) : (
         <div className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
           {shown.map((n) => (
-            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} latencyLines={latencyLines} cardStyle={cardStyle} />
+            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} latencyLines={latencyLines} cardStyle={cardStyle} notes={notes} />
           ))}
         </div>
       )}

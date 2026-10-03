@@ -7,7 +7,8 @@
 //     `{nodes:[…]}`，喂错形状整页当场崩（症状是页面上只剩一行 TypeError 文案）。
 //
 // 站长 2026-10-03 定的口径（这一份护栏就是它的判据）：
-//   · 备注只有一个来源：hub 后台按节点填的字段（主题设置里那份「服务器备注」清单 1.18.0 起彻底删掉）；
+//   · 备注有两个来源：hub 后台按节点填的「公开备注」**优先**，这台**没写公开备注**才用主题设置里的
+//     「服务器备注」清单兜底（写法两边一致：逗号分隔＝多枚小卡片）；
 //   · 「经典」「延迟」两档**右上角常驻**一枚信息图标：点开是在线时间/价格/到期，写了公开备注就多一排小卡片；
 //   · 「详细」档公开备注挂在标题行右端（多枚小卡片）；「简约」档不显示备注、也不挂那枚图标；
 //   · 「紧凑」档并排在展开行量程栏右端（手机收成一枚图标 + 浮层）；
@@ -559,7 +560,34 @@ console.log('\n── 整页详情：不显示备注（备注只在列表卡片�
   await shot('detail-page-1440')
 }
 
-/* ───────────── ⑦ 私有备注：整页详情上「整段」展示（带「仅自己可见」标记） ───────────── */
+/* ────────── ⑦ 两个来源：公开备注优先，这台没写公开备注才用清单兜底 ────────── */
+console.log('\n── 备注来源：公开备注优先，没写公开备注的机器用主题设置那份清单兜底 ──')
+{
+  remark = SHORT
+  // ① 两边都有 → 公开备注优先（清单那条让位）
+  await render({ cardStyle: 'detailed', serverNotes: '节点一=清单里的备注,第二枚' }, 'src-hub-wins')
+  const both = await card('节点一')
+  check('两边都有 → 公开备注优先（清单那条让位）',
+    SAME(both.tags, tagsOf(SHORT)) && !both.text.includes('清单里的备注'), JSON.stringify(both.tags))
+  // ② 这台没写公开备注 → 用清单（照样按逗号拆）
+  remark = ''
+  await render({ cardStyle: 'detailed', serverNotes: '节点一=清单里的备注,第二枚' }, 'src-fallback')
+  const fb = await card('节点一')
+  check('这台没写公开备注 → 用清单兜底（两枚）', SAME(fb.tags, ['清单里的备注', '第二枚']), JSON.stringify(fb.tags))
+  // ③ 清单里写的是别的机器 → 这台两边都没有（零占位）
+  await render({ cardStyle: 'detailed', serverNotes: '节点二=别的机器的备注' }, 'src-none')
+  const none = await card('节点一')
+  check('清单里没写这台、公开备注也没有 → 详细档零占位',
+    none.note === false && none.tags.length === 0, JSON.stringify(none.tags))
+  // ④ 老 hub（没有公开备注字段）+ 清单里写了 → 照样显示
+  await render({ cardStyle: 'detailed', serverNotes: '节点一=老 hub 上的兜底备注' }, 'src-oldhub')
+  const old = await card('节点一')
+  check('老 hub（没有公开备注字段）+ 清单里写了 → 照样显示',
+    SAME(old.tags, ['老 hub 上的兜底备注']), JSON.stringify(old.tags))
+  remark = SHORT
+}
+
+/* ───────────── ⑧ 私有备注：整页详情上「整段」展示（带「仅自己可见」标记） ───────────── */
 console.log('\n── 私有备注（hub 后台那个「仅管理员可见」的字段）：整页详情上整段展示 ──')
 {
   // ① 没写 → 那一块一个像素都不占（匿名访客与老 hub 就是这一态：字段根本不在）
@@ -607,7 +635,7 @@ console.log('\n── 私有备注（hub 后台那个「仅管理员可见」的
   remark = SHORT
 }
 
-/* ────────────────────── ⑧ 时间范围按保留天数生成 ────────────────────── */
+/* ────────────────────── ⑨ 时间范围按保留天数生成 ────────────────────── */
 console.log('\n── 时间范围：按 hub 的 history_days 生成 ──')
 const PILLS = `JSON.stringify([...document.querySelectorAll('button')].map((b) => b.textContent.trim()).filter((t) => /小时$|天$/.test(t)))`
 const clickPill = (label) => evalJS(`(() => { const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return 'no-pill'; b.click(); return 'ok' })()`)

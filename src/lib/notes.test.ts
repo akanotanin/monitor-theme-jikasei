@@ -1,7 +1,8 @@
 // 备注的取值与切分：公开备注（hub 下发给访客的那条）与私有备注（只下发给登录的管理员）。
 // 空 / 空白 / 没有这个字段都算「没写」；逗号分隔＝多枚小卡片；私有备注先按换行分段、段内再拆。
 // 跑法同另外几个：`npm test`（Node 自己剥类型，不需要 runner）。没有任何东西 import 它，不进 bundle。
-import { hubTags, privateRemark, publicRemark, splitTags } from "./notes.ts"
+import { hubTags, privateRemark, publicRemark, remarkTags } from "./notes.ts"
+import { splitTags } from "./site-settings.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -52,6 +53,22 @@ eq(privateRemark({ remark: "   \n  " }), "", "只有空白＝没写（不能渲�
 eq(privateRemark({ remark: null }), "", "null＝没写")
 eq(privateRemark({}), "", "字段不在（老 hub / 匿名视图）＝没写")
 eq(privateRemark({ remark: "私有那条", public_remark: "公开那条" } as { remark: string; public_remark: string }), "私有那条", "只读私有字段")
+
+// ── 两个来源的取舍：公开备注优先，没写公开备注的机器才用主题设置那份清单 ──
+const NODE = { name: "东京机", public_remark: "hub备注A,hub备注B" }
+eq(remarkTags(NODE, ""), ["hub备注A", "hub备注B"], "只有公开备注 → 用它")
+eq(remarkTags(NODE, "东京机=清单里的备注"), ["hub备注A", "hub备注B"], "两边都有 → 公开备注优先（清单那条让位）")
+eq(remarkTags({ name: "东京机" }, "东京机=清单里的备注"), ["清单里的备注"], "这台没写公开备注 → 用清单兜底")
+eq(remarkTags({ name: "东京机", public_remark: "" }, "东京机=清单里的备注"), ["清单里的备注"], "公开备注是空串＝没写 → 用清单")
+eq(remarkTags({ name: "东京机", public_remark: "   " }, "东京机=清单里的备注"), ["清单里的备注"], "公开备注只有空白＝没写 → 用清单")
+eq(remarkTags({ name: "东京机", public_remark: ",,," }, "东京机=清单里的备注"), ["清单里的备注"], "公开备注全是逗号＝没写 → 用清单")
+eq(remarkTags({ name: "东京机" }, "别的机器=别的备注"), [], "清单里没写这台、公开备注也没有 → 空数组（零占位）")
+eq(remarkTags({ name: "东京机" }, ""), [], "清单留空 + 没有公开备注 → 空数组")
+eq(remarkTags({ name: "东京机", public_remark: "hub 一条" }, "东京机=一,二"), ["hub 一条"], "公开备注那串按逗号拆")
+eq(remarkTags({ name: "东京机" }, "东京机=一,二"), ["一", "二"], "清单那串同样按逗号拆")
+eq(remarkTags({ name: "东京机" }, " 东京机 = 带空白 "), ["带空白"], "清单里名字两侧空白削掉后照样命中")
+eq(remarkTags({ name: "东京机" }, "# 东京机=注释里的不算"), [], "# 开头的行是注释")
+eq(remarkTags({ name: "东京机" }, "东京机=后一行\n东京机=前一行覆盖"), ["前一行覆盖"], "同一台写多行时后一行覆盖前一行")
 
 // ── splitTags 本身 ────────────────────────────────────────────────────
 eq(splitTags("a, b ，c"), ["a", "b", "c"], "半角 / 全角逗号都拆，逐枚削空白")

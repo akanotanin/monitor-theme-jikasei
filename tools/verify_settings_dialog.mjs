@@ -25,13 +25,12 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
-// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行、按名字挑延迟线路——名字与
-// theme.json 的 label 逐字对应。
-// ★备注（1.15.x 的「服务器备注」清单）1.16.0 删过、1.17.0 请了回来、**1.18.0 起彻底删掉**：
-// 备注只在 hub 后台按节点填（公开备注给访客、私有备注只给管理员，见 src/lib/notes.ts）。
-// 所以下面不但不要求它出现，还反过来断「它不许再回来」。
-// **字段数 5**（≤6）：到 7 个才会让面板切两列 + 分组导航（下面有排版断言）。
-const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '显示的延迟线路'];
+// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行、按节点补兜底备注、
+// 按名字挑延迟线路——名字与 theme.json 的 label 逐字对应。
+// ★备注（「服务器备注」清单）：1.15.x 起、1.16.0 删过、1.17.0 请回来、1.18.0 删掉、**1.19.0 又加回来**
+// ——这一版是**公开备注优先、这台没写公开备注才用这份清单兜底**（取舍在 src/lib/notes.ts 的 remarkTags）。
+// **字段数 6**（≤6，正好卡在门槛上）：到 7 个就会让面板切两列 + 分组导航（下面有排版断言）。
+const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '服务器备注', '显示的延迟线路'];
 const PORT = 9780 + Math.floor(Math.random() * 20);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe']
   .find((p) => existsSync(p)) || 'chrome';
@@ -181,12 +180,18 @@ check('「养鸡场入口」的说明不再带跨站示例', helpText !== '' && 
 check('对话框里也没有残留的旧示例句子',
   !everyText.includes('例如想直接进公开的') && !/https?:\/\/[^\s"）)]*\/chicken/.test(everyText));
 
-// 「服务器备注」这一格（1.15.x 起、1.16.0 删过、1.17.0 请回、**1.18.0 起彻底删掉**）：
-// 两个方向都断——manifest 不许再声明、面板也不许再画出来。只断一边会漏掉「字段删了、
-// 对话框还画着一格」这种半截状态，而站长会照着那一格白填（备注现在只在 hub 后台节点里填）。
-check('theme.json 里不再声明「服务器备注」（serverNotes）', !entries.some((e) => e.key === 'serverNotes'));
-check('「主题设置」对话框里也没有「服务器备注」这一格', !everyText.includes('服务器备注'),
-  everyText.includes('服务器备注') ? '（还在！）' : '（已撤掉）');
+// 「服务器备注」这一格（1.15.x 起、1.16.0 删过、1.17.0 请回、1.18.0 删掉、1.19.0 又加回来）：
+// 两个方向都断——manifest 声明了没、面板画出来了没。只断一边会漏掉「字段回来了、对话框却没画」
+// （或反过来）这种半截状态，而站长会照着那一格白填。
+check('theme.json 里声明了「服务器备注」（serverNotes）', entries.some((e) => e.key === 'serverNotes'));
+check('「主题设置」对话框里画出了「服务器备注」', everyText.includes('服务器备注'),
+  everyText.includes('服务器备注') ? '（在）' : '（没画出来）');
+// 它的说明要给出写法（`服务器名=备注`）并讲清**兜底**口径（公开备注优先）。
+const NOTE_HELP = (entries.find((e) => e.key === 'serverNotes') || {}).help || '';
+check('「服务器备注」的说明给出了 `服务器名=备注` 的写法', /服务器名\s*=\s*备注/.test(NOTE_HELP), `help=${NOTE_HELP}`);
+check('「服务器备注」的说明讲清了兜底口径（没写公开备注的机器才用它）',
+  /公开备注/.test(NOTE_HELP) && /兜底|没写/.test(NOTE_HELP), `help=${NOTE_HELP}`);
+check('对话框里也画出了这条说明', everyText.includes(NOTE_HELP.slice(0, 8)), `找「${NOTE_HELP.slice(0, 8)}…」`);
 
 // 「备注怎么填」那一行说明（1.18.0 加的）：它是 `type: title`（hub 只给 title 画纯文字、没有输入框），
 // 所以**必须紧跟一个字段**——hub 的 configForm() 会把「紧跟另一个标题的标题」和「列表里最后一个标题」
@@ -194,7 +199,7 @@ check('「主题设置」对话框里也没有「服务器备注」这一格', !
 const GUIDE = (entries.find((e) => e.type === 'title' && /公开备注/.test(String(e.label))) || {}).label || '';
 check('theme.json 里声明了「备注怎么填」那一行说明', GUIDE !== '',
   JSON.stringify(entries.filter((e) => e.type === 'title').map((e) => e.label)));
-check('那一行说明里给出了后台字段名「公开备注」与逗号写法', /公开备注/.test(GUIDE) && /逗号/.test(GUIDE), GUIDE);
+check('那一行说明里给出了后台字段名「公开备注」与「优先」口径', /公开备注/.test(GUIDE) && /优先/.test(GUIDE), GUIDE);
 check('那一行说明紧跟一个字段（hub 会丢掉没有字段跟进的标题）',
   entries.some((e, i) => e.type === 'title' && String(e.label) === GUIDE && entries[i + 1] && entries[i + 1].type !== 'title'),
   JSON.stringify(entries.map((e) => e.type)));

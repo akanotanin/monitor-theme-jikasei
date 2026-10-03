@@ -39,6 +39,14 @@ export type ThemeConfig = {
   listTop: "none" | "groups" | "summary" | "budget" | "both" | "bothBudget"
   /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */
   pingLines: string
+  /**
+   * 「服务器备注」清单：每行一台，`服务器名=备注`（逗号分隔 = 多枚小卡片；`#` 开头的行是注释）。
+   *
+   * 它是**兜底**：hub 后台按节点填的「公开备注」（hub ≥ 1.3.2）优先——**那台写了公开备注就用它的**，
+   * 没写（空串 / 只有空白 / 老 hub 没这个字段）才用这里这份清单（见 `@/lib/notes` 的 `remarkTags`）。
+   * 写法与 1.15.x 那份清单逐字相同，从旧版迁过来不用改写。
+   */
+  serverNotes: string
 }
 
 export const DEFAULTS: ThemeConfig = {
@@ -55,6 +63,9 @@ export const DEFAULTS: ThemeConfig = {
   // 延迟线路：留空 = 按后台顺序自动显示前几条；填了名字就只显示这些（一行一个）。
   // 名字是 ping 任务的名字，不是节点名——对不上的行会被跳过。
   pingLines: "",
+  // 备注清单：留空 = 只读 hub 后台按节点填的「公开备注」（hub ≥ 1.3.2）。
+  // 写在这里的机器，只有在它**没有**公开备注时才会用到这份清单。
+  serverNotes: "",
 }
 
 /**
@@ -129,10 +140,9 @@ function farmEntryOf(s: Record<string, unknown>): string {
  * 收窄 Hub 存回来的设置。逐项收窄类型：Hub 存的是自由 JSON，站长清空输入框可能留下空串或 null，
  * 直接展开会让一个空串把默认图标顶掉。
  *
- * 备注不在这一层：它由 hub 按节点下发——「公开备注」给访客、「私有备注」只给登录的管理员，
- * 主题这边没有对应的设置项（见 `@/lib/notes`）。老站点配置里若还留着 1.15.x 那份「服务器备注」
- * 清单，它只是 Hub 站点配置里一个没人读的键（Hub 保存的是整对象，删字段不会去动已存的键）——
- * 无害，也不会再渲染出任何东西。
+ * 备注的两条来源不都在这层：hub 按节点下发的「公开备注」（给访客）与「私有备注」（只给登录的
+ * 管理员）走 `/api/nodes`，见 `@/lib/notes`；主题这边的「服务器备注」清单是**兜底**——只对
+ * **没写公开备注**的机器生效。
  */
 export function normalizeConfig(saved: unknown): ThemeConfig {
   const s = (saved && typeof saved === "object" ? saved : {}) as Record<string, unknown>
@@ -148,5 +158,40 @@ export function normalizeConfig(saved: unknown): ThemeConfig {
     listTop: listTopOf(s.listTop, { showSummary: s.showSummary, showGroupTabs: s.showGroupTabs }),
     // 留空是有意义的值（= 自动取前几条），空串不能当「没填过」；只有类型不对时才回落。
     pingLines: typeof s.pingLines === "string" ? s.pingLines : DEFAULTS.pingLines,
+    // 同理：备注清单的空串是有意义的值（= 没写公开备注的机器也没有兜底备注）。
+    serverNotes: typeof s.serverNotes === "string" ? s.serverNotes : DEFAULTS.serverNotes,
   }
+}
+
+/**
+ * 「服务器备注」清单里这台机器的备注。逐行读 `服务器名=备注`，`#` 开头的行是注释；
+ * 名字按去掉首尾空白后逐字匹配节点名。同一台写多行时后面一行覆盖前面。
+ *
+ * 备注里用逗号分隔＝多枚小卡片（半角 `,` 与全角 `，` 都认，两侧空白削掉、空片段丢掉）：
+ * `东京机=三网优化,备用` 就是两枚，而不是一枚写着「三网优化,备用」的。
+ * 没有匹配、或值里全是空片段，都返回空数组——**空数组的含义是「这台没在这里写」**，
+ * 由 `@/lib/notes` 的 `remarkTags` 决定要不要再往上看（公开备注才是优先来源）。
+ *
+ * 放在这里（而不是组件里）是因为它是纯函数：能脱开 React 单测，改起来不怕漏。
+ */
+export function tagsFor(notes: string, name: string): string[] {
+  let found: string[] = []
+  for (const raw of notes.split("\n")) {
+    const line = raw.trim()
+    if (!line || line.startsWith("#")) continue
+    const at = line.indexOf("=")
+    if (at <= 0) continue
+    if (line.slice(0, at).trim() !== name) continue
+    // 后一行覆盖前一行——包括「后一行写成空值」这种就是「这台不在这里写」。
+    found = splitTags(line.slice(at + 1))
+  }
+  return found
+}
+
+/** 备注值 → 小卡片列表：逗号（半角 / 全角）分隔，削首尾空白、丢掉空片段。 */
+export function splitTags(value: string): string[] {
+  return value
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
 }
