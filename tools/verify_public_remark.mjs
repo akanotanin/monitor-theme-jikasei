@@ -8,7 +8,7 @@
 //
 // 站长 2026-10-03 定的口径（这一份护栏就是它的判据）：
 //   · 备注有两个来源：hub 后台按节点填的「公开备注」**优先**，这台**没写公开备注**才用主题设置里的
-//     「服务器备注」清单兜底（写法两边一致：逗号分隔＝多枚小卡片）；
+//     （主题设置里那份「服务器备注」清单 1.19.0 已删：备注只来自 hub 这两个字段）；
 //   · 「经典」「延迟」两档**右上角常驻**一枚信息图标：点开是在线时间/价格/到期，写了公开备注就多一排小卡片；
 //   · 「详细」档公开备注挂在标题行右端（多枚小卡片）；「简约」档不显示备注、也不挂那枚图标；
 //   · 「紧凑」档并排在展开行量程栏右端（手机收成一枚图标 + 浮层）；
@@ -523,8 +523,13 @@ const expandFirstRow = () => evalJS(`(() => { const r = document.querySelector('
   await sleep(2500)
   const pop = await json(POPOVER_PROBE(EXPANDED_ROW))
   const expandedH = await json(`(() => { const tr = ${EXPANDED_ROW}; return JSON.stringify({ h: tr ? Math.round(tr.getBoundingClientRect().height) : null }) })()`)
-  check('紧凑（写了备注）：展开行桌面（≥sm）并排显示六枚小卡片（逐枚同序，放不下时逐枚截断）',
-    SAME(pop.strip?.tags, tagsOf(MANY)) && (pop.strip?.clipped ?? []).some(Boolean), JSON.stringify(pop.strip))
+  check('紧凑（写了备注）：展开行桌面（≥sm）并排显示六枚小卡片（逐枚同序）',
+    SAME(pop.strip?.tags, tagsOf(MANY)), JSON.stringify(pop.strip))
+  // ★用户 2026-10-03 指出的：这一行的左边本来是空的（量程按钮 + 削峰只占一小段），早先给这格压了个
+  //   `max-w-[14rem]` 上限，四枚备注就被压成「测…」。改成 flex-1 吃满空档之后，六枚都不该被截断。
+  check('紧凑（写了备注）：这格把左边的空档吃满（不再被 14rem 上限压扁：六枚都不截断）',
+    (pop.strip?.clipped ?? [true]).every((c) => !c) && (pop.strip?.w ?? 0) > 260,
+    JSON.stringify({ clipped: pop.strip?.clipped, w: pop.strip?.w }))
   check('紧凑（写了备注）：手机那枚图标在 DOM 里（桌面被隐藏，同一处两套呈现）', pop.btn?.tag === 'BUTTON', JSON.stringify(pop.btn))
   check('紧凑（写了备注）：不新增行高（展开行高度与没写备注时相同，±2px）',
     expandedH.h !== null && base.h !== null && Math.abs(expandedH.h - base.h) <= 2, `开 ${expandedH.h} / 关 ${base.h}`)
@@ -567,30 +572,21 @@ console.log('\n── 整页详情：私有 + 公有合并成一串小卡片（�
   await shot('detail-merged-1440')
 }
 
-/* ────────── ⑦ 两个来源：公开备注优先，这台没写公开备注才用清单兜底 ────────── */
-console.log('\n── 备注来源：公开备注优先，没写公开备注的机器用主题设置那份清单兜底 ──')
+/* ────────── ⑦ 备注只来自 hub：主题设置那份清单已删（老配置里留着也不许再显示） ────────── */
+console.log('\n── 备注只来自 hub：主题设置里的「服务器备注」清单已删，老配置里留着那个键也不许再显示 ──')
 {
-  remark = SHORT
-  // ① 两边都有 → 公开备注优先（清单那条让位）
-  await render({ cardStyle: 'detailed', serverNotes: '节点一=清单里的备注,第二枚' }, 'src-hub-wins')
-  const both = await card('节点一')
-  check('两边都有 → 公开备注优先（清单那条让位）',
-    SAME(both.tags, tagsOf(SHORT)) && !both.text.includes('清单里的备注'), JSON.stringify(both.tags))
-  // ② 这台没写公开备注 → 用清单（照样按逗号拆）
   remark = ''
-  await render({ cardStyle: 'detailed', serverNotes: '节点一=清单里的备注,第二枚' }, 'src-fallback')
-  const fb = await card('节点一')
-  check('这台没写公开备注 → 用清单兜底（两枚）', SAME(fb.tags, ['清单里的备注', '第二枚']), JSON.stringify(fb.tags))
-  // ③ 清单里写的是别的机器 → 这台两边都没有（零占位）
-  await render({ cardStyle: 'detailed', serverNotes: '节点二=别的机器的备注' }, 'src-none')
+  // 老站点配置里可能还留着 serverNotes 那个键（1.15.x ~ 1.19.0 试用过几版）：它现在是个**没人读的键**，
+  // 不许再变成备注——否则「删掉的那一格」会从旧配置里阴魂不散地回来。
+  await render({ cardStyle: 'detailed', serverNotes: '节点一=清单里的备注,第二枚' }, 'src-dead-key')
+  const dead = await card('节点一')
+  check('老配置里留着的 serverNotes 不再显示（那个键已经没人读）',
+    dead.note === false && dead.tags.length === 0 && !dead.text.includes('清单里的备注'),
+    JSON.stringify({ note: dead.note, tags: dead.tags }))
+  // hub 那两处来源都没写 → 零占位（写了的那几档在上面几节已断）。
+  await render({ cardStyle: 'detailed' }, 'src-hub-only')
   const none = await card('节点一')
-  check('清单里没写这台、公开备注也没有 → 详细档零占位',
-    none.note === false && none.tags.length === 0, JSON.stringify(none.tags))
-  // ④ 老 hub（没有公开备注字段）+ 清单里写了 → 照样显示
-  await render({ cardStyle: 'detailed', serverNotes: '节点一=老 hub 上的兜底备注' }, 'src-oldhub')
-  const old = await card('节点一')
-  check('老 hub（没有公开备注字段）+ 清单里写了 → 照样显示',
-    SAME(old.tags, ['老 hub 上的兜底备注']), JSON.stringify(old.tags))
+  check('hub 两个字段都没写 → 详细档零占位', none.note === false && none.tags.length === 0, JSON.stringify(none.tags))
   remark = SHORT
 }
 

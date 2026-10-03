@@ -1,8 +1,6 @@
-import { splitTags, tagsFor } from "./site-settings.ts"
-
 /**
- * 节点备注：hub 后台按节点填的两个字段（随 `/api/nodes` 下发）+ 主题设置里那份兜底清单。
- * **卡片与详情页显示的是合并后的一份**（私有在前、公有在后，见 `remarkChips`）。
+ * 节点备注：hub 后台按节点填的两个字段，随 `/api/nodes` 一起下发；**卡片与详情页显示的是合并后的
+ * 一份**（私有在前、公有在后，见 `remarkChips`）。主题设置里没有备注设置项。
  *
  *   · **公开备注**（`public_remark`）——站长写给访客的一行说明（hub 1.3.2 起）：单行、≤100 字、
  *     留空就是没写；hub 存的时候就 trim 过，换行与控制字符直接拒收，所以这边拿到的一定是一行
@@ -10,8 +8,6 @@ import { splitTags, tagsFor } from "./site-settings.ts"
  *   · **私有备注**（`remark`）——站长写给自己的那个（面板里的 placeholder 就是「仅管理员可见」），
  *     **只在登录态下发**，匿名视图里根本没有这个键。hub 对它不做长度与控制字符校验（面板虽是
  *     单行输入框，历史数据与接口写入都可能带换行）。
- *   · 主题设置里的「服务器备注」清单（`serverNotes`，每行 `服务器名=备注`）——**兜底**：只对
- *     **没写公开备注**的机器生效（取舍见 `remarkChips`）。
  *
  * **两边的写法一致**：逗号（半角 `,` 与全角 `，`）分隔＝多枚小卡片；私有那条多一手「按换行也
  * 拆」（hub 对它没有单行约束，站长常把几件事分行写）。与 1.15.x 那份「服务器备注」清单逐字相同，
@@ -23,6 +19,14 @@ export function publicRemark(node: { public_remark?: string | null }): string {
   // 再削一次空白：旧数据、手工改库都可能带空白，而「只有空白」应当与「没写」等价，
   // 否则会渲染出一个空的备注位（零占位的结论就假了）。
   return (node.public_remark ?? "").trim()
+}
+
+/** 备注值 → 小卡片列表：逗号（半角 / 全角）分隔，削首尾空白、丢掉空片段。 */
+export function splitTags(value: string): string[] {
+  return value
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
 }
 
 /** hub 那条公开备注 → 一枚枚小卡片。 */
@@ -44,18 +48,13 @@ export type RemarkChip = { text: string; own: boolean }
  * 卡片与详情页共用的那一份备注：**私有在前、公有在后**，都拆成一枚枚小卡片。
  *
  * 合并的好处是「一处写、处处看得到」：站长给自己标的那些（私有）与写给访客的那些（公开）排在同
- * 一行，列表与详情页用的是同一套版式。而 hub 只把私有备注下发给**登录的管理员**，所以同一个函数
+ * 一处，列表与详情页用的是同一套版式。而 hub 只把私有备注下发给**登录的管理员**，所以同一个函数
  * 在访客那边拿到的就只有公有那几枚——不需要两套分支，也不会漏泄。
  *
- * 公有那几枚的来源仍按站长定的规矩：**公开备注优先**，这台没写公开备注（空串 / 只有空白 /
- * 老 hub 没这个字段）才用主题设置里那份「服务器备注」清单兜底。两边都没有 → 空数组，零占位。
+ * 两个字段都没有（或只有空白）→ 空数组，页面上一个像素都不占。
  */
-export function remarkChips(
-  node: { public_remark?: string | null; remark?: string | null; name: string },
-  notes = "",
-): RemarkChip[] {
+export function remarkChips(node: { public_remark?: string | null; remark?: string | null }): RemarkChip[] {
   const own = ownTags(node).map((text) => ({ text, own: true }))
-  const hub = hubTags(node)
-  const pub = (hub.length > 0 ? hub : tagsFor(notes, node.name)).map((text) => ({ text, own: false }))
+  const pub = hubTags(node).map((text) => ({ text, own: false }))
   return [...own, ...pub]
 }

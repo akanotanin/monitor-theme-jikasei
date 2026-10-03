@@ -7,7 +7,7 @@
 //   3. farmUrl：≤1.5.0 是两个键（showFarmEntry + farmUrl），1.6.0 并成一个三态键。
 // 下面双向断「theme.json 声明了没 / DEFAULTS 兜底了没」——半截状态（字段删了、对话框还画着一格）
 // 最难发现。备注不在这一层：它由 hub 按节点下发（公开备注给访客、私有备注只给管理员，见
-// notes.test.ts），1.18.0 起主题设置里那份「服务器备注」清单已删，所以这里反过来断「它不许回来」。
+// notes.test.ts），主题设置里那份「服务器备注」清单已删（试过一版又删掉），所以这里反过来断「它不许回来」。
 // 读不出来的表现不是报错，而是「站长开着的那一项自己关了」。
 import { readFileSync } from "node:fs"
 
@@ -90,15 +90,11 @@ if (fields.length > 6) {
 const keys = fields.map((f: { key: string }) => f.key).sort()
 eq(keys, Object.keys(DEFAULTS).sort(), "theme.json 的字段与 DEFAULTS 的键一致")
 
-// 「服务器备注」（serverNotes）：1.15.x 起、1.16.0 删过、1.17.0 请回来、1.18.0 删掉、**1.19.0 又加回来**。
-// 这一版的口径是**公开备注优先、这台没写公开备注才用这份清单兜底**（取舍在 @/lib/notes 的 remarkTags）。
-// 两个方向都断：manifest 声明了没、DEFAULTS 兜底了没——只断一边会漏掉「字段回来了、页面却没读它」。
-eq(keys.includes("serverNotes"), true, "theme.json 里声明了 serverNotes（服务器备注）")
-eq(Object.keys(DEFAULTS).includes("serverNotes"), true, "DEFAULTS 里有 serverNotes 的兜底值")
-eq(DEFAULTS.serverNotes, "", "serverNotes 默认空串（= 没写公开备注的机器也没有兜底备注）")
-eq(normalizeConfig({ serverNotes: "" }).serverNotes, "", "备注清单空串保留（空串＝没兜底）")
-eq(normalizeConfig({ serverNotes: "东京机=三网优化" }).serverNotes, "东京机=三网优化", "备注清单原样读回")
-eq(normalizeConfig({ serverNotes: 42 }).serverNotes, "", "备注清单类型不对 → 回落空串")
+// 「服务器备注」（serverNotes）：1.15.x 起、1.16.0 删过、1.17.0 请回来、1.18.0 删掉、1.19.0 试过又删掉
+// ——备注只读 hub 后台按节点填的「公开备注」与「私有备注」（见 @/lib/notes）。两个方向都断：manifest
+// 不许再声明、DEFAULTS 不许再有兜底值。只断一边会漏掉「字段删了、对话框还画着一格」这种半截状态。
+eq(keys.includes("serverNotes"), false, "theme.json 里不再声明 serverNotes（服务器备注）")
+eq(Object.keys(DEFAULTS).includes("serverNotes"), false, "DEFAULTS 里也没有 serverNotes 的兜底值")
 
 if (failed) {
   console.error(`\n站点设置：${failed} 条不通过`)

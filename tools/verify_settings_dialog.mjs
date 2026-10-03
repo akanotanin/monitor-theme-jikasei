@@ -25,12 +25,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
-// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行、按节点补兜底备注、
-// 按名字挑延迟线路——名字与 theme.json 的 label 逐字对应。
-// ★备注（「服务器备注」清单）：1.15.x 起、1.16.0 删过、1.17.0 请回来、1.18.0 删掉、**1.19.0 又加回来**
-// ——这一版是**公开备注优先、这台没写公开备注才用这份清单兜底**（取舍在 src/lib/notes.ts 的 remarkTags）。
-// **字段数 6**（≤6，正好卡在门槛上）：到 7 个就会让面板切两列 + 分组导航（下面有排版断言）。
-const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '服务器备注', '显示的延迟线路'];
+// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行、按名字挑延迟线路
+// ——名字与 theme.json 的 label 逐字对应。
+// ★备注没有设置项：「服务器备注」那份清单 1.15.x 起、1.16.0 删过、1.17.0 请回来、1.18.0 删掉、
+// 1.19.0 试过又删掉——备注只读 hub 后台按节点填的「公开备注」与「私有备注」（见 src/lib/notes.ts），
+// 主题这边只留一行 `type: title` 的**展示说明**。
+// **字段数 5**（≤6 就不会让面板切两列 + 分组导航；到 7 个才会，下面有排版断言）。
+const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '显示的延迟线路'];
 const PORT = 9780 + Math.floor(Math.random() * 20);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe']
   .find((p) => existsSync(p)) || 'chrome';
@@ -180,31 +181,46 @@ check('「养鸡场入口」的说明不再带跨站示例', helpText !== '' && 
 check('对话框里也没有残留的旧示例句子',
   !everyText.includes('例如想直接进公开的') && !/https?:\/\/[^\s"）)]*\/chicken/.test(everyText));
 
-// 「服务器备注」这一格（1.15.x 起、1.16.0 删过、1.17.0 请回、1.18.0 删掉、1.19.0 又加回来）：
-// 两个方向都断——manifest 声明了没、面板画出来了没。只断一边会漏掉「字段回来了、对话框却没画」
-// （或反过来）这种半截状态，而站长会照着那一格白填。
-check('theme.json 里声明了「服务器备注」（serverNotes）', entries.some((e) => e.key === 'serverNotes'));
-check('「主题设置」对话框里画出了「服务器备注」', everyText.includes('服务器备注'),
-  everyText.includes('服务器备注') ? '（在）' : '（没画出来）');
-// 它的说明要给出写法（`服务器名=备注`）并讲清**兜底**口径（公开备注优先）。
-const NOTE_HELP = (entries.find((e) => e.key === 'serverNotes') || {}).help || '';
-check('「服务器备注」的说明给出了 `服务器名=备注` 的写法', /服务器名\s*=\s*备注/.test(NOTE_HELP), `help=${NOTE_HELP}`);
-check('「服务器备注」的说明讲清了兜底口径（没写公开备注的机器才用它）',
-  /公开备注/.test(NOTE_HELP) && /兜底|没写/.test(NOTE_HELP), `help=${NOTE_HELP}`);
-check('对话框里也画出了这条说明', everyText.includes(NOTE_HELP.slice(0, 8)), `找「${NOTE_HELP.slice(0, 8)}…」`);
+// 「服务器备注」那一格（serverNotes）：1.15.x 起、1.16.0 删过、1.17.0 请回来、1.18.0 删掉、
+// 1.19.0 试过又删掉——备注只读 hub 后台按节点填的两个字段。两个方向都断（manifest 声明了没、
+// 面板画出来了没），并且**反过来断「它不许回来」**：半截状态（字段删了、对话框还画着一格）最难发现，
+// 而站长会照着那一格白填。
+check('theme.json 里不再声明「服务器备注」（serverNotes）', !entries.some((e) => e.key === 'serverNotes'),
+  JSON.stringify(entries.filter((e) => e.type !== 'title').map((e) => e.key)));
+check('「主题设置」对话框里也没有那一格', !everyText.includes('服务器备注'));
 
-// 「备注怎么填」那一行说明（1.18.0 加的）：它是 `type: title`（hub 只给 title 画纯文字、没有输入框），
-// 所以**必须紧跟一个字段**——hub 的 configForm() 会把「紧跟另一个标题的标题」和「列表里最后一个标题」
-// 静默丢掉（踩过：放在原位的那行谁也没看见）。三件事都断：声明了没、后面跟没跟字段、画出来了没。
-const GUIDE = (entries.find((e) => e.type === 'title' && /公开备注/.test(String(e.label))) || {}).label || '';
-check('theme.json 里声明了「备注怎么填」那一行说明', GUIDE !== '',
+// 「备注的展示说明」（1.18.0 起、1.19.0 改口径）：它是 `type: title`（hub 只给 title 画纯文字、
+// 没有输入框），所以**必须紧跟一个字段**——hub 的 configForm() 会把「紧跟另一个标题的标题」和
+// 「列表里最后一个标题」静默丢掉（踩过：放在原位的那行谁也没看见）。四件事都断：声明了没、
+// 讲清了「两个来源 + 谁看得见 + 在哪儿看」、后面跟没跟字段、画出来了没。
+const GUIDE = (entries.find((e) => e.type === 'title' && /备注/.test(String(e.label))) || {}).label || '';
+check('theme.json 里声明了「备注的展示说明」那一行', GUIDE !== '',
   JSON.stringify(entries.filter((e) => e.type === 'title').map((e) => e.label)));
-check('那一行说明里给出了后台字段名「公开备注」与「优先」口径', /公开备注/.test(GUIDE) && /优先/.test(GUIDE), GUIDE);
+check('说明里讲清了两个来源与可见性（公开备注给访客、私有备注只有自己看得到）',
+  /公开备注/.test(GUIDE) && /私有备注/.test(GUIDE) && /访客|别人|只有自己/.test(GUIDE), GUIDE);
+check('说明里讲清了展示位置（卡片与详情页）', /卡片/.test(GUIDE) && /详情/.test(GUIDE), GUIDE);
 check('那一行说明紧跟一个字段（hub 会丢掉没有字段跟进的标题）',
   entries.some((e, i) => e.type === 'title' && String(e.label) === GUIDE && entries[i + 1] && entries[i + 1].type !== 'title'),
   JSON.stringify(entries.map((e) => e.type)));
 check('「主题设置」对话框里画出了那一行说明', GUIDE !== '' && everyText.includes(GUIDE.slice(0, 12)),
   `找「${GUIDE.slice(0, 12)}…」`);
+// 说明那一行的**观感**：hub 里唯一能放纯文字的类型就是 `type: title`——画出来是一行加粗小标题，
+// 没有输入框，而且**不认 help**（实测给 title 加 help，面板一个像素都不画）。所以文案必须短到
+// **只占一行**，读起来像小节标题；长到折两行就会变成末行只剩几个字的「半截段落」（用户 2026-10-03
+// 要的「美观」）。这里按**渲染出来的行数**断，不看字符数（字体宽度不是我们能算准的）。
+const GUIDE_MEASURE = (label) => `JSON.stringify((() => {
+  const dlg = document.querySelector('[role="dialog"]')
+  if (!dlg) return { missing: 'dialog' }
+  const head = ${JSON.stringify(label.slice(0, 8))}
+  const el = [...dlg.querySelectorAll('*')].filter((e) => e.children.length === 0 && e.textContent.trim().startsWith(head)).pop()
+  if (!el) return { missing: 'text', head }
+  const cs = getComputedStyle(el)
+  const r = el.getBoundingClientRect()
+  const lh = parseFloat(cs.lineHeight) || 0
+  return { text: el.textContent.trim().slice(0, 12), w: Math.round(r.width), h: Math.round(r.height), lh: Math.round(lh), lines: lh ? Math.round(r.height / lh) : null, weight: cs.fontWeight, size: cs.fontSize }
+})())`
+const guideBox = JSON.parse((await js(GUIDE_MEASURE(GUIDE))) || '{}')
+check('说明那一行只占一行（不折成半截段落）', guideBox.lines === 1, JSON.stringify(guideBox));
 
 // 1.16.0 临时放在那一格位置上的**指引标题**（「备注已移到探针后台…」）已撤掉：设置项回来了，
 // 再挂一行「去后台设」会跟它自相矛盾。它占的是 `type: title` 那一行，而 Hub 会**静默丢掉**
