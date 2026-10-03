@@ -215,6 +215,10 @@ const CARD_PROBE = (name) => `JSON.stringify((() => {
     nameBox: h3 ? rect(h3) : null,
     nameClipped: h3 ? h3.scrollWidth > h3.clientWidth + 1 : null,
     note: !!note,
+    noteBox: note ? rect(note) : null,
+    noteOverflow: note ? note.scrollWidth > note.clientWidth + 1 : null,
+    noteScroll: note ? note.scrollWidth : null,
+    noteClient: note ? note.clientWidth : null,
     noteAnchors: card.querySelectorAll('[data-remark]').length,
     tags: tagEls.map((b) => b.innerText.trim()),
     tagTitles: tagEls.map((b) => b.getAttribute('title')),
@@ -247,8 +251,18 @@ const MERGED_PROBE = `JSON.stringify((() => {
     variants: cs.map((c) => c.getAttribute('data-variant')),
     locks: cs.map((c) => !!c.querySelector('svg')),
     titles: cs.map((c) => c.getAttribute('title') || ''),
+    border: getComputedStyle(b).borderTopWidth,
+    bg: getComputedStyle(b).backgroundColor,
     text: b.innerText,
   }
+})())`
+
+/** 「详细」档标题行那一格悬停后弹出来的悬浮层（放不下的备注在这里看全）。 */
+const TITLE_PANEL_PROBE = `JSON.stringify((() => {
+  const p = document.querySelector('[data-remark-panel]')
+  if (!p) return { open: false, chips: [], variants: [], locks: [] }
+  const cs = [...p.querySelectorAll('[data-slot="badge"]')]
+  return { open: true, chips: cs.map((c) => c.innerText.trim()), variants: cs.map((c) => c.getAttribute('data-variant')), locks: cs.map((c) => !!c.querySelector('svg')) }
 })())`
 
 /** 经典 / 延迟 / 紧凑 那枚浮层控件：控件本身、浮层内容、以及「点它不跳页」。 */
@@ -545,6 +559,8 @@ console.log('\n── 整页详情：私有 + 公有合并成一串小卡片（�
   check('整页详情：这几枚都是公有的样式（实心 secondary，没有锁）',
     SAME(on.variants, tagsOf(SHORT).map(() => 'secondary')) && on.locks.every((x) => x === false),
     `${JSON.stringify(on.variants)} / ${JSON.stringify(on.locks)}`)
+  check('整页详情那一块**没有白框**（无描边、底色透明，小卡片直接落在页面上）',
+    on.border === '0px' && on.bg === 'rgba(0, 0, 0, 0)', `border ${on.border} / bg ${on.bg}`)
   check('整页详情：量程栏右边不再挂那枚图标（免得同一句话出现两遍）',
     (await evalJS(`document.querySelectorAll('[data-note-popover]').length`)) === 0)
   check('整页详情：规格与量程照旧渲染出来', /1 小时/.test(await evalJS('document.body.innerText')))
@@ -611,7 +627,11 @@ console.log('\n── 合并备注：私有（仅自己可见）+ 公有，列�
   check('访客视角（没有私有备注字段）：只剩公有那几枚，且都是实心样式',
     SAME(vis.chips, tagsOf(SHORT)) && vis.locks.every((x) => x === false), JSON.stringify(vis.chips))
 
-  // ④ 列表页也看得到私有那几枚（详细档标题行右端）
+  // ④ 列表页也看得到私有那几枚（详细档标题行右端）：只占一行，放不下的悬停看
+  //    先量基准：只有公有备注时这一格多高（一行），用来断「加了私有那枚也没把它撑成两行」。
+  privateNote = ''
+  await render({ cardStyle: 'detailed' }, 'merged-card-base')
+  const baseRowH = (await card('节点一')).rowH
   privateNote = '仅自己可见的一条'
   await render({ cardStyle: 'detailed' }, 'merged-card')
   const list = await card('节点一')
@@ -621,12 +641,20 @@ console.log('\n── 合并备注：私有（仅自己可见）+ 公有，列�
   check('列表卡片：公有那几枚照旧跟在后面（实心）',
     SAME(list.tags.slice(1), tagsOf(SHORT)) && list.tagVariants.slice(1).every((v) => v === 'secondary'),
     JSON.stringify(list.tags))
-  check('列表卡片（详细档）：四枚都留得住（每枚不窄于 40px，没有被挤成「仅自…」那种两个字）',
-    list.tagBoxes.length === 4 && list.tagBoxes.every((b) => b.w >= 40),
-    JSON.stringify(list.tagBoxes.map((b) => b.w)))
-  check('列表卡片（详细档）：私有那枚在场时标题行整体换行（卡片只高一行），而不是把每枚挤扁',
-    list.rowH > 24, `标题行高 ${list.rowH}px`)
+  check('列表卡片（详细档）：这一格**只占一行**（与没写备注时同高，不把卡片撑高）',
+    list.rowH === baseRowH, `写备注 ${list.rowH}px vs 不写 ${baseRowH}px`)
+  check('列表卡片（详细档）：放不下的部分确实被裁在边缘外（机制断言，不是恒真）',
+    list.noteOverflow === true, `scrollWidth ${list.noteScroll} vs clientWidth ${list.noteClient}`)
+  // 鼠标移到这一格上 → 悬浮层里把被裁掉的那几枚也列出来
+  if (list.noteBox) await hover(list.noteBox.x + Math.round(list.noteBox.w / 2), list.noteBox.mid)
+  const tip = await json(TITLE_PANEL_PROBE)
+  check('列表卡片（详细档）：悬停这一格弹出悬浮层，四枚全在（逐枚同序）',
+    SAME(tip.chips, ['仅自己可见的一条', ...tagsOf(SHORT)]), JSON.stringify(tip.chips))
+  check('列表卡片（详细档）：悬浮层里私有那枚仍带锁、公有那几枚仍实心',
+    SAME(tip.variants, ['outline', 'secondary', 'secondary', 'secondary']) && SAME(tip.locks, [true, false, false, false]),
+    `${JSON.stringify(tip.variants)} / ${JSON.stringify(tip.locks)}`)
   await shot('card-merged-remark-1440')
+  await hover(4, 4)
 
   // ⑤ 经典档的浮层里同样读到合并后的那串
   await render({ cardStyle: 'classic' }, 'merged-popover')

@@ -171,16 +171,16 @@ function trafficFoot(node: Node) {
  * 卡片（详细档标题行、经典/延迟的浮层）与整页详情、紧凑展开行共用这一套——写法只有一处，
  * 合并后的次序（私有在前、公有在后）也由 `@/lib/notes` 的 `remarkChips` 一处决定。
  */
-export function RemarkChips({ chips, max = "full", wrap = false }: { chips: RemarkChip[]; max?: string; wrap?: boolean }) {
+export function RemarkChips({ chips, max = "full", keep = false }: { chips: RemarkChip[]; max?: string; keep?: boolean }) {
   return (
     <>
       {chips.map((c, i) => (
         <Badge
           key={i + "-" + c.text}
           variant={c.own ? "outline" : "secondary"}
-          // wrap（详细档标题行那一格）：小卡片不许被挤扁 —— 放不下就整体换行（卡片只高一行），
-          // 否则四枚会各自缩成「仅自…」这种两个字的残片（实测踩过）。
-          className={(wrap ? "shrink-0 " : "min-w-0 shrink ") + "font-normal " + (c.own ? "gap-1 text-muted-foreground" : "")}
+          // keep（详细档标题行那一格）：小卡片保持自然宽度、不许被挤扁 —— 否则四枚会各自缩成
+          // 「仅自…」这种两个字的残片（实测踩过）。放不下的部分由外层裁掉、在悬浮层里看全。
+          className={(keep ? "shrink-0 " : "min-w-0 shrink ") + "font-normal " + (c.own ? "gap-1 text-muted-foreground" : "")}
           style={{ maxWidth: max === "full" ? undefined : max }}
           title={c.own ? "仅自己可见：" + c.text : c.text}
         >
@@ -224,6 +224,9 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
   const peek = cardStyle === "classic" || cardStyle === "latency"
   const [peekOpen, setPeekOpen] = useState(false)
   const peekRef = useRef<HTMLSpanElement>(null)
+  // 「详细」档标题行那一格：悬停弹悬浮层，把放不下的备注看全（只有这一档有，另两档收在 ⓘ 里）。
+  const [titlePeek, setTitlePeek] = useState(false)
+  const titlePeekRef = useRef<HTMLSpanElement>(null)
   // 钉住（点开）之后点别处要能收起；点卡片别的地方会跳详情页，所以只在浮层外按下时收。
   useEffect(() => {
     if (!peekOpen) return
@@ -309,15 +312,28 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, notes 
             ★「经典」档不挂在这里：它与「延迟」档一样把备注收进右上角那枚浮层（见下面那个控件）。
             「简约」档不挂（站长的口径），「紧凑」档收在展开行量程栏那格（见 NodeDetail）。 */}
         {detailed && chips.length > 0 && (
+          /* 「详细」档的备注：**只占一行**（零行高、名字不受影响），放不下的部分裁在边缘外，
+             鼠标移到这一格上弹悬浮层看全（多枚、完整文字）。★悬浮层必须挂在这个**没有 overflow-hidden**
+             的外层上，否则会被裁掉看不见；内层才是那条会裁的一行。 */
           <span
-            data-remark="title"
-            className={"ml-auto flex min-w-0 max-w-[40%] grow basis-0 items-center justify-end gap-1 sm:max-w-[55%] " +
-              // ★换行只发生在「这一串里有私有备注」时（＝只有站长自己看得到的那一侧）：私有那几枚放不下
-              //   就整体换行（卡片只高一行），不会各自缩成两个字的残片；而访客那一侧（只有公有备注）
-              //   与从前逐像素相同——挤不下就按老规矩截断。
-              (chips.some((c) => c.own) ? "flex-wrap" : "overflow-hidden")}
+            ref={titlePeekRef}
+            className="relative ml-auto flex min-w-0 max-w-[40%] grow basis-0 items-center justify-end sm:max-w-[55%]"
+            onPointerEnter={() => setTitlePeek(true)}
+            onPointerLeave={() => setTitlePeek(false)}
           >
-            <RemarkChips chips={chips} max="9rem" wrap={chips.some((c) => c.own)} />
+            {/* ★`justify-start`（不是 end）：右对齐时溢出会往**左**跑，被裁掉的就成了排在最前面的
+                私有那枚——而它是站长最想一眼看到的；左对齐则是尾巴被裁，前几枚完整。 */}
+            <span data-remark="title" className="flex min-w-0 items-center justify-start gap-1 overflow-hidden">
+              <RemarkChips chips={chips} max="9rem" keep />
+            </span>
+            {titlePeek && (
+              <span
+                data-remark-panel
+                className="absolute right-0 top-5 z-20 flex w-max max-w-[18rem] flex-wrap justify-end gap-1 rounded-md border bg-popover px-2 py-1.5 shadow-md"
+              >
+                <RemarkChips chips={chips} />
+              </span>
+            )}
           </span>
         )}
         {/* 「经典」「延迟」两档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期）。

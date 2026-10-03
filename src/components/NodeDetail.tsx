@@ -397,11 +397,11 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
       {/* 整页详情那一块备注：**私有 + 公有合并成一串小卡片**（私有在前、带锁与描边 = 仅自己可见）。
           hub 只把私有备注下发给登录的管理员，所以访客在这一块里看到的就只有公有那几枚——同一套版式，
           不需要两套分支（见 `@/lib/notes` 的 `remarkChips`）。
-          ★容器用 `bg-card border` 而不是 `bg-muted`：页面底是 `background`（0.985），块底用 `card`
-          （1.0）再加 1px 描边才立得住；小卡片是 `secondary` 底，铺在同色的 `muted` 上会糊成一块文字
-          （视觉复核踩过）。没写备注时一个像素都不占。 */}
+          ★**不加容器**（没有底、没有描边、没有内边距）：小卡片直接落在页面上，与列表卡片那几处同一副
+          面孔。早先那层「白框」是给整段文字当底用的，改成小卡片之后它只是多余的一圈边（用户 2026-10-03
+          要求去掉）。护栏里有一条断「那一块没有描边、底色是透明的」。没写备注时一个像素都不占。 */}
       {chips.length > 0 && (
-        <div data-remark-block className="flex min-w-0 flex-wrap items-center gap-1 rounded-md border border-border bg-card px-3 py-2">
+        <div data-remark-block className="flex min-w-0 flex-wrap items-center gap-1">
           <RemarkChips chips={chips} />
         </div>
       )}
