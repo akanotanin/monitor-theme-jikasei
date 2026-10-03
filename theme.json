@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.16.1",
+  "version": "1.16.2",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -60,10 +60,6 @@
     {
       "type": "title",
       "label": "备注已移到探针后台：节点 → 编辑 →「公开备注」，逗号分隔＝多枚小卡片"
-    },
-    {
-      "type": "title",
-      "label": "三网延迟"
     },
     {
       "type": "text",
