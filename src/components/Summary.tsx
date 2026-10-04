@@ -22,6 +22,11 @@ import { summarize, type Fleet } from "@/lib/summary"
  * `speedHistory`，每 2 秒一个采样、留最近 60 个 ≈ 2 分钟）：hub 没有「全站速率历史」
  * 这种接口，刷新页面就得重新攒，所以冷启动头几秒那里是空的。
  *
+ * ★口径跟着分组标签走：传进来的是**当前分组筛选出的节点**（`group` 也跟着一起来，
+ * 用来取那一条分组自己的速率走势线），与下面那批卡片是同一批机器。参考站（monitor 内置
+ * default 主题）的概览四格也是拿筛选后的节点算的；只让列表变、这一行不动，会出现
+ * 「上面写着 3 / 4 · Node B，下面只剩一个分组那两张卡片」。
+ *
  * 默认不显示（主题设置的「列表页顶部」没选它）。站点本来就有每台机器自己的卡片，
  * 不需要概览的站不必为此让出首屏；没选时这个组件整个不挂载。
  */
@@ -196,12 +201,14 @@ function BusiestBlock({ fleet }: { fleet: Fleet }) {
   )
 }
 
-export function SummaryCards({ nodes, finance = false }: { nodes: Node[]; finance?: boolean }) {
+export function SummaryCards({ nodes, group, finance = false }: { nodes: Node[]; group: string | null; finance?: boolean }) {
   const fleet = summarize(nodes)
   const budget = budgetOf(nodes)
   // 模块级的采样缓冲：`useNodes` 每次收到推送（或轮询回来）就追加一个点，
-  // 所以这里读到的是「打开页面到现在」的全站速率，与分组筛选无关。
-  const series = speedHistory.get(null) ?? []
+  // 所以这里读到的是「打开页面到现在」的速率。**按分组取**（`group` = 当前选中的那一档，
+  // null = 全部）：同一个缓冲里每个分组各有一条线（api.ts 的 sample），拿全站那条线画在
+  // 分组标签下面，会出现「读数是这一组的、走势线是全站的」这种对不上的画面。
+  const series = speedHistory.get(group) ?? []
   // 折算说明：只列真的用到过的币种——各站的账混着 USD / EUR / CNY 记，合起来必须说明口径。
   const note = fxNote(budget.used, budget.skipped)
 

@@ -6,7 +6,7 @@ import { CompactList } from "@/components/CompactList"
 import { SummaryCards } from "@/components/Summary"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { api, groupsOf, useNodes, type Node } from "@/lib/api"
+import { api, groupView, useNodes } from "@/lib/api"
 import { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, isBudgetLayout, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
 import type { RemarkPlacement } from "@/lib/site-settings"
 import { FarmIcon } from "@/components/FarmIcon"
@@ -244,6 +244,9 @@ export default function App() {
 
   const sorted = [...(nodes ?? [])].sort((a, b) => a.sort - b.sort || a.id - b.id)
   const selected = sorted.find((n) => n.id === open)
+  // 分组筛选只求值一次（@/lib/api 的 groupView）：概览卡片与下面的列表吃的是同一份
+  // 「该显示哪几台」，切分组时两边一起变——参考站的内置 default 主题就是这个口径。
+  const view = groupView(sorted, group, hasGroupTabs(config.listTop))
 
   // `/node/{id}` is a page people bookmark and share, so the tab needs the node's
   // name. The site name rather than a fixed string, since the hub lets an operator
@@ -357,8 +360,8 @@ export default function App() {
           <>
             {/* 概览卡片行：设置里没选它时整个不挂载（不是藏起来），首屏与没有这个功能时一致。
                 「月度预算剩余价值版」只是同一行换一副面孔，组件另收一个 finance 开关。 */}
-            {hasSummary(config.listTop) && <SummaryCards nodes={sorted} finance={isBudgetLayout(config.listTop)} />}
-            <NodeList nodes={sorted} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail} showTabs={hasGroupTabs(config.listTop)}
+            {hasSummary(config.listTop) && <SummaryCards nodes={view.shown} group={view.current} finance={isBudgetLayout(config.listTop)} />}
+            <NodeList view={view} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail}
               latencyLines={config.pingLines}
               cardStyle={config.cardStyle}
               historyDays={me.history_days}
@@ -401,15 +404,18 @@ function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | nu
 // without groups keeps the page it always had. The operator can also keep the
 // row off outright (theme setting `listTop`), which leaves the page as one
 // flat list.
-function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLines, cardStyle, historyDays, remarkPlacement }: {
-  nodes: Node[]
-  /** null is every node, "" the ungrouped. */
+//
+// 「该显示哪几台」与标签行的内容都在 App 里算好（`view`，见 @/lib/api 的 groupView）：
+// 概览卡片吃的是同一份，切分组时上面那行与下面这批卡片一起变。
+function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyle, historyDays, remarkPlacement }: {
+  /** 分组求值的结果：groups / current / shown / tabs / total（App 与概览卡片共用一份）。 */
+  view: ReturnType<typeof groupView>
+  /** 原始选中值（null = 全部，"" = 未分组）：只在归一化后回写时用，见下面的 effect。 */
   group: string | null
   onGroup: (group: string | null) => void
   onOpen: (id: number) => void
   /** 指针/键盘刚落到某一张卡片上：把详情那块 chunk 先取回来（见 App 的 warmDetail）。 */
   onWarm: () => void
-  showTabs: boolean
   /** 卡片延迟块要显示哪几条线路（ping 任务名，换行分隔）；空串 = 自动。 */
   latencyLines: string
   /** 卡片形态：compact = 一行一台的表格；detailed = 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟；plain 与 classic 版式相同、只换一套视觉处理。 */
@@ -419,23 +425,11 @@ function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLine
   /** 主题设置里的「备注显示位置」：卡片那一侧要不要摊备注（见 @/lib/site-settings）。 */
   remarkPlacement: RemarkPlacement
 }) {
-  const groups = groupsOf(nodes)
-  const ungrouped = nodes.filter((n) => !n.group).length
-  // A tab that has since emptied or been renamed -- 未分组 included -- falls back
-  // to every node rather than to an empty page, and is forgotten, so a later
-  // group of the same name does not take the page over.
-  //
-  // 关掉标签行时同样回到全部：站长在后台一关，访客手里的分组选中态就作废。
-  const current = !showTabs ? null : group === null || (group === "" ? ungrouped > 0 : groups.includes(group)) ? group : null
+  const { groups, current, shown, tabs, total, showTabs } = view
+  // 归一化后的值回写给 App（悬空的选中态被回落时纠正一次，见 groupView 的注释）。
   useEffect(() => {
     if (current !== group) onGroup(current)
   }, [current, group, onGroup])
-  const shown = current === null ? nodes : nodes.filter((n) => (n.group ?? "") === current)
-  const tabs = [
-    [null, "全部", nodes.length] as const,
-    ...groups.map((g) => [g, g, nodes.filter((n) => n.group === g).length] as const),
-    ...(ungrouped ? [["", "未分组", ungrouped] as const] : []),
-  ]
   return (
     <>
       {showTabs && groups.length > 0 && (
@@ -457,7 +451,7 @@ function NodeList({ nodes, group, onGroup, onOpen, onWarm, showTabs, latencyLine
           ))}
         </div>
       )}
-      {nodes.length === 0 ? (
+      {total === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
       ) : cardStyle === "compact" ? (
         <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} remarkPlacement={remarkPlacement} />

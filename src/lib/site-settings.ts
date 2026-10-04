@@ -35,6 +35,9 @@ export type ThemeConfig = {
    * 列表页顶部显示什么：none = 都不显示；groups = 分组标签行；summary = 概览卡片行（原版）；
    * budget = 概览卡片行（月度预算剩余价值版）；both = 分组标签行 + 原版概览卡片；
    * bothBudget = 分组标签行 + 预算版概览卡片。
+   *
+   * 带标签行的两档里，**概览卡片算的是当前分组**（与下面的列表同一批机器，见 api.ts 的
+   * groupView）；只有概览卡片的两档没有筛选入口，那它一直是全站口径。
    */
   listTop: "none" | "groups" | "summary" | "budget" | "both" | "bothBudget"
   /** 卡片「三网延迟」要显示的线路，按名字指定（ping 任务名），一行一个。 */

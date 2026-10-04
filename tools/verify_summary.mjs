@@ -12,6 +12,8 @@
 //      （一个可计的都没有时写「—」而不是 ¥0.00）；
 //   ⑤ 走势线要等采样攒到两个点才画，冷启动那儿是空的——这条得等出来，不能看着空就当坏了；
 //   ⑥ 全站掉线时的降级（「—」「无在线节点」而不是 0%）。
+//   ⑦ 切分组时这一行跟着当前分组重算（第 12 组）：判据是「与『站点里只有这个分组那几台』
+//      逐字相同」，不是硬编码金额——顺带钉住标签行仍在概览卡片下面、手机不横向滚。
 //
 // 判据全部走 DOM 文本、子元素计数与矩形，不靠看图。
 import { createServer } from 'node:http'
@@ -125,7 +127,10 @@ const MAX_KB = { nodes: [base(1, 'Node A', { online: true, metrics: metrics({ cp
 // MB 档同理：1023.9 MB/s（≈1 GB/s）。
 const MAX_MB = { nodes: [base(1, 'Node A', { online: true, metrics: metrics({ cpu: 12.5, net_rx: 1023.9 * MB, net_tx: 1023.9 * MB }) })] }
 
-const VARIANTS = { mixed: MIXED, down: ALL_DOWN, tied: TIED, free: NO_PRICE, exotic: EXOTIC, once: ONCE_ONLY, long: LONG_KB, maxkb: MAX_KB, maxmb: MAX_MB }
+const VARIANTS = { mixed: MIXED, down: ALL_DOWN, tied: TIED, free: NO_PRICE, exotic: EXOTIC, once: ONCE_ONLY, long: LONG_KB, maxkb: MAX_KB, maxmb: MAX_MB,
+  // 分组跟随（第 12 组）：站点里**只有某一个分组那几台**——当对照用。
+  // 概览卡片在「全部」档切到某个分组时的数字，必须与「站点里只有这几台」时逐字相同。
+  gusa: { nodes: [MIXED.nodes[0]] }, geu: { nodes: [MIXED.nodes[1], MIXED.nodes[2]] }, gnone: { nodes: [MIXED.nodes[3]] } }
 
 let config = {}
 let variant = 'mixed'
@@ -255,6 +260,22 @@ const PROBE = `JSON.stringify((() => {
     polylines: tiles.reduce((n, c) => n + c.querySelectorAll('svg polyline').length, 0),
     tileHeights: [...new Set(tiles.map((c) => Math.round(c.getBoundingClientRect().height)))],
     above: tiles.length && nodes.length ? tiles[0].getBoundingClientRect().top < nodes[0].getBoundingClientRect().top : null,
+    // 分组标签行：位置与每一档的文案 / 台数 / 选中态（第 12 组断言用）
+    groupRow: (() => {
+      const r = document.querySelector('[role=group][aria-label=分组]')
+      if (!r) return null
+      const b = r.getBoundingClientRect()
+      return {
+        top: Math.round(b.top), bottom: Math.round(b.bottom), h: Math.round(b.height),
+        tabs: [...r.querySelectorAll('button')].map((x) => ({ text: x.textContent.trim(), pressed: x.getAttribute('aria-pressed') === 'true' })),
+      }
+    })(),
+    // 走势线两条折线的首点（"x,y"）：用来判它画的是哪一条序列（第 12 组断言）
+    sparkFirst: (() => {
+      const t = tiles.find((c) => first(c) === '实时网速')
+      if (!t) return null
+      return [...t.querySelectorAll('svg polyline')].map((p) => (p.getAttribute('points') || '').split(' ')[0])
+    })(),
     scroll: [document.documentElement.scrollWidth, document.documentElement.clientWidth],
     body: document.body.innerText.replace(/\\n/g, ' | '),
   }
@@ -288,6 +309,20 @@ async function waitForSparkline(timeoutMs = 26000) {
     if (Date.now() - started > timeoutMs) return { dom, waited: Date.now() - started }
     await sleep(1000)
   }
+}
+
+/** 点分组标签行里的某一档，等一拍读一份探针（找不到那一档时照样回一份，让断言自己报 FAIL）。 */
+async function clickGroup(label) {
+  const clicked = await evalJS(`(() => {
+    const row = document.querySelector('[role=group][aria-label=分组]')
+    if (!row) return 'no-row'
+    const b = [...row.querySelectorAll('button')].find((x) => x.textContent.trim().startsWith(${JSON.stringify(label)}))
+    if (!b) return 'no-tab'
+    b.click()
+    return 'ok'
+  })()`)
+  await sleep(400)
+  return { clicked, dom: JSON.parse(await evalJS(PROBE)) }
 }
 
 const results = []
@@ -587,6 +622,93 @@ let classicNet = null
         rows.map((r) => `${r.n} ${r.text} 截断${JSON.stringify(r.clip)}`).join('；'))
     }
   }
+}
+
+/* 12) 切分组：概览卡片跟着当前分组重算（口径对齐参考站内置 default 主题） ----------------
+   参考站的内置 default 主题里，概览四格拿的就是**筛选后**的节点（`group===null ? nodes :
+   nodes.filter(...)` → `<Summary nodes={shown}/>`）。本站这一行摆在分组标签**上面**，
+   更得跟着走——否则上面写着「3 / 4 · Node B」，下面却只剩某一个分组那两张卡片。
+   判据不硬编码金额：另渲一个「站点里只有这个分组那几台」的页面当对照，两者必须逐字相同
+   （金额口径以后改了也不会假红）。 */
+{
+  const soloUsa = await render({ listTop: 'budget' }, 'solo-usa', 'gusa')
+  const soloEu = await render({ listTop: 'budget' }, 'solo-eu', 'geu')
+  const soloNone = await render({ listTop: 'budget' }, 'solo-none', 'gnone')
+
+  // 一行概览里六块读数的文本拼成一个签名：两副面孔都盖得住。
+  const sig = (dom) => ['月度预算', '剩余价值', '节点', '最忙节点', '今日流量', '实时网速'].map((t) => block(dom, t).text).join(' ‖ ')
+  const labels = (dom) => (dom.groupRow?.tabs ?? []).map((t) => t.text)
+
+  const ui = await render({ listTop: 'bothBudget', cardStyle: 'latency', pingLines: '北京电信' }, 'group-follow')
+  const fleetSig = sig(ui)
+  const tilesBottom = Math.max(...ui.tiles.map((t) => t.top + t.h))
+  check('分组跟随：标签行仍在概览卡片下面（这一版没顺手改位置）',
+    !!ui.groupRow && ui.tiles.length > 0 && ui.groupRow.top >= tilesBottom - 1,
+    `标签行 top ${ui.groupRow?.top} ／ 概览底 ${tilesBottom}`)
+  check('分组跟随：标签是 全部4 / 美国1 / 欧洲2 / 未分组1，默认选中「全部」',
+    JSON.stringify(labels(ui)) === JSON.stringify(['全部4', '美国1', '欧洲2', '未分组1']) &&
+    (ui.groupRow?.tabs ?? []).every((t, i) => t.pressed === (i === 0)),
+    labels(ui).join(' / '))
+
+  const usa = await clickGroup('美国')
+  check('分组跟随：点「美国」后概览六块读数 = 只放美国这一台的站点（逐字相同）',
+    usa.clicked === 'ok' && sig(usa.dom) === sig(soloUsa),
+    `点击 ${usa.clicked} ／ 页面上 ${sig(usa.dom)} ／ 对照 ${sig(soloUsa)}`)
+  check('分组跟随：点「美国」后节点 = 1 / 1 全部在线、最忙 = Node A 12.5%',
+    block(usa.dom, '节点').text === '节点 | 1 / 1 | 全部在线' && block(usa.dom, '最忙节点').text === '最忙节点 | 12.5% | Node A',
+    `${block(usa.dom, '节点').text} ／ ${block(usa.dom, '最忙节点').text}`)
+  check('分组跟随：点「美国」后确实变了（不是原地不动）', sig(usa.dom) !== fleetSig, `先 ${fleetSig} ／ 后 ${sig(usa.dom)}`)
+
+  const eu = await clickGroup('欧洲')
+  check('分组跟随：点「欧洲」后概览 = 只放欧洲那两台的站点', sig(eu.dom) === sig(soloEu),
+    `页面上 ${sig(eu.dom)} ／ 对照 ${sig(soloEu)}`)
+  check('分组跟随：点「欧洲」后节点 = 2 / 2、最忙 = Node B 51.0%（没上报指标那台不参与）',
+    block(eu.dom, '节点').text === '节点 | 2 / 2 | 全部在线' && block(eu.dom, '最忙节点').text === '最忙节点 | 51.0% | Node B',
+    `${block(eu.dom, '节点').text} ／ ${block(eu.dom, '最忙节点').text}`)
+
+  const un = await clickGroup('未分组')
+  check('分组跟随：点「未分组」后概览 = 只放未分组那一台的站点（掉线机的降级也在其中）',
+    un.clicked === 'ok' && sig(un.dom) === sig(soloNone),
+    `点击 ${un.clicked} ／ 页面上 ${sig(un.dom)} ／ 对照 ${sig(soloNone)}`)
+  check('分组跟随：点「未分组」后最忙 = 「— / 无在线节点」、月度预算只算这一台',
+    block(un.dom, '最忙节点').text === '最忙节点 | — | 无在线节点' && block(un.dom, '月度预算').text === '月度预算 | ≈¥30.00 | 1 台计费',
+    `${block(un.dom, '最忙节点').text} ／ ${block(un.dom, '月度预算').text}`)
+
+  const back = await clickGroup('全部')
+  check('分组跟随：点回「全部」后概览逐字复原', sig(back.dom) === fleetSig, `复原后 ${sig(back.dom)}`)
+
+  // 走势线取的是**当前分组**那条序列：数字跟着走、线却画全站的话，上面那些文本断言看不见。
+  // 夹具里「美国」那台是 rx 512KB > tx 128KB，而全站合计是 rx 20.5MB < tx 40.125MB ——
+  // 两条折线的上下关系正好相反，拿首点的 y 就能判它画的是哪一条（first point 是下行）。
+  const yOf = (dom) => (dom.sparkFirst ?? []).map((pt) => Number(String(pt).split(',')[1]))
+  await clickGroup('美国')
+  const { dom: sparkUsa, waited: waitedUsa } = await waitForSparkline()
+  check('分组跟随：实时网速的走势线也取当前分组（美国那台 下行 > 上行，两条线的上下关系与全站相反）',
+    (sparkUsa.sparkFirst ?? []).length === 2 && yOf(sparkUsa)[0] < yOf(sparkUsa)[1],
+    `polyline ${sparkUsa.polylines} ／ 首点 ${JSON.stringify(sparkUsa.sparkFirst)}（等 ${(waitedUsa / 1000).toFixed(1)}s）`)
+  await clickGroup('全部')
+  const { dom: sparkFleet } = await waitForSparkline()
+  check('分组跟随：切回「全部」后走势线回到全站那条（下行 < 上行）',
+    (sparkFleet.sparkFirst ?? []).length === 2 && yOf(sparkFleet)[0] > yOf(sparkFleet)[1],
+    `首点 ${JSON.stringify(sparkFleet.sparkFirst)}`)
+
+  // 原版面孔（四张各一块读数）也要跟着走
+  await render({ listTop: 'both' }, 'group-follow-plain')
+  const plainEu = await clickGroup('欧洲')
+  check('分组跟随·原版面孔：四张卡片各一块读数、节点 2 / 2、最忙 Node B',
+    plainEu.dom.tiles.length === 4 && plainEu.dom.tiles.every((t) => t.blocks.length === 1) &&
+    tile(plainEu.dom, '节点').text === '节点 | 2 / 2 | 全部在线' && tile(plainEu.dom, '最忙节点').text === '最忙节点 | 51.0% | Node B',
+    `${plainEu.dom.tiles.map((t) => t.titles.join('+')).join(' / ')} ／ ${tile(plainEu.dom, '节点').text}`)
+
+  // 手机：切分组后四张卡还在、不横向滚
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true })
+  await render({ listTop: 'bothBudget', cardStyle: 'latency' }, 'group-follow-phone')
+  const phoneEu = await clickGroup('欧洲')
+  check('分组跟随 @390：切分组后四张卡都在、无横向滚动',
+    phoneEu.dom.tiles.length === 4 && phoneEu.dom.scroll[0] <= phoneEu.dom.scroll[1] &&
+    block(phoneEu.dom, '节点').text === '节点 | 2 / 2 | 全部在线',
+    `概览 ${phoneEu.dom.tiles.length} 张 ／ scrollWidth ${phoneEu.dom.scroll[0]} / clientWidth ${phoneEu.dom.scroll[1]} ／ ${block(phoneEu.dom, '节点').text}`)
+  await send('Emulation.setDeviceMetricsOverride', WIDE)
 }
 
 ws.close()

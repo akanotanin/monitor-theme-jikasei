@@ -81,6 +81,32 @@ export function groupsOf(nodes: Pick<Node, "group">[]): string[] {
   return [...new Set(nodes.map((n) => n.group ?? "").filter(Boolean))]
 }
 
+/**
+ * 分组筛选的一次求值：把「选中的那一档」归一化，并给出要显示的节点、标签行的内容与总台数。
+ *
+ * 归一化：选中的分组被改名/解散、或「未分组」里已经没人了，都回落「全部」而不是停在一个
+ * 什么都看不见的筛选上，且不记住——以后出现同名分组也不会自己接手这个页面。
+ * 标签行整行关掉（listTop 不含 groups）时 `current` 恒为 null：站长在后台一关，
+ * 访客手里的分组选中态就作废。
+ *
+ * ★App 与 NodeList 读**同一次**求值：概览卡片取 `shown`、下面的列表也取 `shown`，
+ * 两边不可能各说一套。早先概览卡片拿的是全量节点，切了分组后上面写着「3 / 4 · Node B」、
+ * 下面却只剩一个分组那两张卡片 —— 参考站（monitor 内置 default 主题）的概览四格拿的
+ * 就是筛选后的节点，这里对齐它。
+ */
+export function groupView(nodes: Node[], group: string | null, showTabs: boolean) {
+  const groups = groupsOf(nodes)
+  const ungrouped = nodes.filter((n) => !n.group).length
+  const current = !showTabs ? null : group === null || (group === "" ? ungrouped > 0 : groups.includes(group)) ? group : null
+  const shown = current === null ? nodes : nodes.filter((n) => (n.group ?? "") === current)
+  const tabs = [
+    [null, "全部", nodes.length] as const,
+    ...groups.map((g) => [g, g, nodes.filter((n) => n.group === g).length] as const),
+    ...(ungrouped ? [["", "未分组", ungrouped] as const] : []),
+  ]
+  return { groups, ungrouped, current, shown, tabs, total: nodes.length, showTabs }
+}
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
