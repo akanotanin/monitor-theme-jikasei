@@ -167,6 +167,25 @@ function Sparkline({ values, className }: { values: Array<number | null>; classN
 }
 
 /**
+ * 卡面与浮层共用的一份行选择：站长在后台「三网延迟」里填了名字就按名字取、按填写的顺序，
+ * 留空则按后台顺序自动取前三条；两处都卡在三条以内（与设置项里写的「最多三个」一致）。
+ * 匹配用的是 ping 任务的名字，改过名、删过任务的那一行自然落空、不占位——三条的上限卡在
+ * **真正渲染出来的行**上，所以先按名字取、再截断（反过来写的话，填写清单里前三个名字有一个
+ * 对不上，访客就只看到两行，而设置项里明明写着三条）。
+ */
+function pickRows(probes: Probe[] | null, lines: string): Probe[] {
+  const all = probes ?? []
+  const wanted = [...new Set(lines.split("\n").map((s) => s.trim()).filter(Boolean))]
+  if (wanted.length === 0) return all.slice(0, 3)
+  const byName = new Map<string, Probe>()
+  for (const p of all) if (!byName.has(p.name)) byName.set(p.name, p)
+  return wanted
+    .map((name) => byName.get(name))
+    .filter((p): p is Probe => p !== undefined)
+    .slice(0, 3)
+}
+
+/**
  * 卡片底部那组「三网延迟」：一条线路一行——线路名、当前延迟、一小时走势、丢包率。
  * 数据来自 hub 的 ping 历史（同详情页的延迟图），按 `task_id` 一条一条摊开；线路名用的是
  * 站长在后台给 ping 任务起的名字，所以「广东电信」这类带地域的叫法原样呈现。
@@ -176,22 +195,7 @@ function Sparkline({ values, className }: { values: Array<number | null>; classN
  */
 export function LatencyPanel({ node, lines }: { node: Node; lines: string }) {
   const probes = useNodePing(node.id)
-  // 填了名字就只显示这些、按填写的顺序；留空则按后台顺序自动取前三条。
-  // 两档都卡在三条以内（与设置项里写的「最多三个」一致），匹配用的是 ping 任务的名字，
-  // 改过名、删过任务的那一行自然落空，不占位——三条的上限卡在**真正渲染出来的行**上，
-  // 所以先按名字取、再截断（反过来写的话，填写清单里前三个名字有一个对不上，访客就只
-  // 看到两行，而设置项里明明写着三条）。
-  const rows = useMemo(() => {
-    const all = probes ?? []
-    const wanted = [...new Set(lines.split("\n").map((s) => s.trim()).filter(Boolean))]
-    if (wanted.length === 0) return all.slice(0, 3)
-    const byName = new Map<string, Probe>()
-    for (const p of all) if (!byName.has(p.name)) byName.set(p.name, p)
-    return wanted
-      .map((name) => byName.get(name))
-      .filter((p): p is Probe => p !== undefined)
-      .slice(0, 3)
-  }, [probes, lines])
+  const rows = useMemo(() => pickRows(probes, lines), [probes, lines])
   if (rows.length === 0) return null
   return (
     <div className="mt-4 space-y-1.5 border-t pt-4">
@@ -214,5 +218,44 @@ export function LatencyPanel({ node, lines }: { node: Node; lines: string }) {
         )
       })}
     </div>
+  )
+}
+
+/**
+ * 经典档浮层底部那三网延迟：一条线路一行——线路名、当前延迟、一小时走势、丢包率，
+ * 与「延迟」档卡面同一套（同一个 `useNodePing`、同一套灰阶与走势线）。
+ *
+ * 两条口径：
+ * ① **只有浮层打开时才会挂载**（调用处写在 `peekOpen` 里）⇒ 经典档默认一个 ping 请求都不发，
+ *    点开哪台才取哪台；取不到、或这台没有延迟数据就整块不渲染（连分隔线一起没有）。
+ * ② 行选择与卡面共用 `pickRows`：站长在后台「三网延迟」里指定、最多三条，留空取前三条。
+ *
+ * 这一块自带顶部分隔线（`border-t`）——它排在「到期」下面，靠这条线把「计费那几行」与
+ * 「现在通不通」分开；没有数据时整块不渲染，所以也不会留下一条孤零零的线。
+ */
+export function PeekLatency({ node, lines }: { node: Node; lines: string }) {
+  const probes = useNodePing(node.id)
+  const rows = useMemo(() => pickRows(probes, lines), [probes, lines])
+  if (rows.length === 0) return null
+  return (
+    <span data-peek-latency="" className="block space-y-1 border-t pt-2">
+      {rows.map((p) => {
+        // 最新一个非空样本 = 浮层里那个数字（与卡面同一口径：ping 每 60 秒一跳）。
+        const ms = [...p.points].reverse().find((pt) => pt.latency !== null)?.latency ?? null
+        const gray = toneClass(toneOf(ms, p.loss))
+        return (
+          <span key={p.id} className="flex items-center gap-2">
+            <span className="w-14 shrink-0 truncate text-muted-foreground">{p.name}</span>
+            <span className={`tnum w-12 shrink-0 text-right font-medium ${gray}`}>
+              {ms === null ? "超时" : `${ms} ms`}
+            </span>
+            <Sparkline values={p.points.map((pt) => pt.latency)} className={gray} />
+            <span className="tnum w-9 shrink-0 text-right text-muted-foreground">
+              {p.loss > 0 ? `${p.loss.toFixed(1)}%` : "0.0%"}
+            </span>
+          </span>
+        )
+      })}
+    </span>
   )
 }

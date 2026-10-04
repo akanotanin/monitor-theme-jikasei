@@ -5,7 +5,7 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { LatencyPanel } from "@/components/Latency"
+import { LatencyPanel, PeekLatency } from "@/components/Latency"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
@@ -337,9 +337,10 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remark
             )}
           </span>
         )}
-        {/* 「经典」「延迟」两档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期）。
-            卡片自己是 role=button，所以点击与 Enter/空格都要拦在控件里，别让它冒泡成「打开详情页」；
-            浮层挂在同一个 relative 容器内，鼠标从图标移到浮层上不会把它关掉。
+        {/* 「经典」「延迟」两档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期，
+            经典档最下面还有一条分隔线 + 三网延迟）。卡片自己是 role=button，所以点击与
+            Enter/空格都要拦在控件里，别让它冒泡成「打开详情页」；浮层挂在同一个 relative 容器内，
+            鼠标从图标移到浮层上不会把它关掉。
             ★ 这两档常驻这枚控件（20px，挂在标题行右端）：没写备注时它照样在，
             点开是在线时间/价格/到期；「详细」档不挂它——那几项本来就在卡面上写着。 */}
         {peek && (
@@ -353,7 +354,7 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remark
               type="button"
               data-note-popover=""
               aria-expanded={peekOpen}
-              aria-label="在线时间、备注、价格与到期"
+              aria-label="备注、在线时间、价格、到期与三网延迟"
               onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") setPeekOpen(false) }}
               onClick={(e) => { e.stopPropagation(); setPeekOpen((v) => !v) }}
               className="grid size-5 place-items-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -363,7 +364,9 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remark
             {peekOpen && (
               <span
                 data-note-panel=""
-                className="absolute right-0 top-6 z-20 block w-56 space-y-1.5 rounded-md border bg-popover px-3 py-2.5 text-xs shadow-md"
+                // 「经典」档最下面多一块三网延迟（名 / 延迟 / 走势线 / 丢包），要宽一点才装得下
+                // ——顺带让备注小卡片少折一行；「延迟」档这一档不带那块，也就保持原来的宽度。
+                className={`absolute right-0 top-6 z-20 block ${cardStyle === "classic" ? "w-72" : "w-56"} space-y-1.5 rounded-md border bg-popover px-3 py-2.5 text-xs shadow-md`}
               >
                 {/* 公开备注：一枚一枚小卡片（逗号分隔的多枚也就排成多枚），
                     没有备注的机器不占这一行。浮层是这一档唯一能读到它的地方（卡片上不占位）。 */}
@@ -386,6 +389,8 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remark
                   <span className="text-muted-foreground">到期</span>
                   <span className="tnum min-w-0 truncate">{expiryText(node) ?? "无期限"}</span>
                 </span>
+                {/* 三网延迟排在计费那几行下面、自带一条分隔线；只有「经典」档挂它，且要打开浮层才取数。 */}
+                {cardStyle === "classic" && <PeekLatency node={node} lines={latencyLines} />}
               </span>
             )}
           </span>
