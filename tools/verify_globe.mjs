@@ -1,6 +1,6 @@
 // 「节点地球」的验收：本机伺服 dist/ + 桩 /api/nodes，用 headless Chrome 跑一遍，把地球的
 // **结构**（岸线/经纬网/针/引线/标签/地区）与**行为**（自转、拖拽、点针开机、地区筛选、开关）
-// 逐条断言。上游是 mm-design（mm.shzt.de），几何在 src/lib/globe.ts 里逐点比对过
+// 逐条断言。几何在 src/lib/globe.ts 里与上游逐点比对过
 // （见 src/lib/globe.test.ts 的第①组），这里管的是"装进页面之后还对不对"。
 //
 // 用法：node tools/verify_globe.mjs [截图目录=shots/globe]

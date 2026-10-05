@@ -75,7 +75,7 @@ eq(camera(120, 30).at(-60, -30), null, "换视角后旧中心转到反面")
 
 /**
  * ① 向量化投影 vs 上游公式：拿真实岸线上的每一个点，逐个比对。
- * 上游（mm-design `js/app.js` 的 `ortho`）：
+ * 上游（它的 `js/app.js` 的 `ortho`）：
  *   cosc = sin(lat0)sin(lat) + cos(lat0)cos(lat)cos(lon-lon0)
  *   x = cx + R·cos(lat)·sin(lon-lon0)
  *   y = cy − R·(cos(lat0)·sin(lat) − sin(lat0)·cos(lat)·cos(lon-lon0))
