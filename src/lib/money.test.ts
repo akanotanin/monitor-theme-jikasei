@@ -109,7 +109,7 @@ eq(round(legacy.remaining), 15, "旧 hub 按 expires_at 自己数（剩 15 天 �
 eq(cny(1234.5), "¥1,234.50", "人民币金额带千分位")
 eq(cny(0), "¥0.00", "零也写两位小数")
 eq(fxNote(["CNY"]), "按固定汇率折算成人民币", "只用人民币时不列汇率")
-eq(fxNote(["CNY", "USD"]), `按固定汇率折算（1 USD = ¥${FX_CNY.USD}，2026-09-30 取自 open.er-api.com）`, "列用到的汇率")
+eq(fxNote(["CNY", "USD"]), `按固定汇率折算（1 USD = ¥${FX_CNY.USD}，2026-09-30）`, "列用到的汇率与取价日期")
 eq(fxNote(["CNY"], ["XYZ"]), "按固定汇率折算成人民币；XYZ 没有汇率，未计入", "没有汇率的币种要点名")
 
 if (failed) {

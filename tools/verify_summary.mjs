@@ -332,7 +332,7 @@ async function clickGroup(label) {
   return { clicked, dom: JSON.parse(await evalJS(PROBE)) }
 }
 
-// 这套皮肤真的会缩号的那一档（rakugaki 640 / jikasei 1024）：第 13 组拿它量「行高不动」
+// 这套皮肤真的会缩号的那一档（本站 1024；换皮肤时这一档会变，第 13 组拿它量「行高不动」）
 const SHRINK_W = 1024
 
 const results = []
@@ -490,7 +490,7 @@ let classicNet = null
     budgetHint)
   check('预算版：剩余价值的提示写明口径（价格 × 剩余天数 ÷ 周期天数）',
     valueHint.includes('剩余天数') && valueHint.includes('无到期日') && valueHint.includes('折算'), valueHint)
-  check('预算版：折算日期与来源写在提示里', budgetHint.includes('2026-09-30') && budgetHint.includes('open.er-api.com'), budgetHint)
+  check('预算版：折算日期写在提示里（不写来源站点）', budgetHint.includes('2026-09-30') && !/https?:\/\/|[a-z0-9-]+\.(com|net|org|io)/.test(budgetHint), budgetHint)
 }
 
 /* 4) 一块都没有 / 一次性买断 / 没有汇率的降级 */

@@ -47,12 +47,11 @@ export function cycleDaysOf(cycle: string): number {
  *
  * 主题是一个离线的静态包，访客的浏览器里不会（也不该）去查实时汇率，所以这里写死一份，
  * 只用来把站长填的各币种账折成同一把尺子求合计——卡片上的数字因此是「≈」。改这张表
- * 就够了，别处不用动（`FX_DATE` 与 `FX_SOURCE` 只是给悬停提示用来自报家门）。
+ * 就够了，别处不用动（`FX_DATE` 只是给悬停提示用来自报取价日期）。
  *
- * 取值：open.er-api.com，2026-09-30。
+ * 取值：2026-09-30 的公开汇率参考价，四舍五入到四位小数。
  */
 export const FX_DATE = "2026-09-30"
-export const FX_SOURCE = "open.er-api.com"
 
 export const FX_CNY: Record<string, number> = {
   CNY: 1,
@@ -142,7 +141,7 @@ export function fxNote(used: string[], skipped: string[] = []): string {
     .filter((code) => code !== "CNY")
     .map((code) => `1 ${code} = ¥${trimRate(FX_CNY[code])}`)
   const head = rates.length
-    ? `按固定汇率折算（${rates.join("，")}，${FX_DATE} 取自 ${FX_SOURCE}）`
+    ? `按固定汇率折算（${rates.join("，")}，${FX_DATE}）`
     : "按固定汇率折算成人民币"
   const miss = skipped.length ? `；${skipped.join("、")} 没有汇率，未计入` : ""
   return head + miss
