@@ -127,7 +127,12 @@ const MAX_KB = { nodes: [base(1, 'Node A', { online: true, metrics: metrics({ cp
 // MB 档同理：1023.9 MB/s（≈1 GB/s）。
 const MAX_MB = { nodes: [base(1, 'Node A', { online: true, metrics: metrics({ cpu: 12.5, net_rx: 1023.9 * MB, net_tx: 1023.9 * MB }) })] }
 
-const VARIANTS = { mixed: MIXED, down: ALL_DOWN, tied: TIED, free: NO_PRICE, exotic: EXOTIC, once: ONCE_ONLY, long: LONG_KB, maxkb: MAX_KB, maxmb: MAX_MB,
+/* 大额读数夹具（第 13 组断言用）：站长实拍那组数字——月度预算 ≈¥250.00 / 剩余价值 ≈¥2,802.74。
+   价值版那两格各占一半卡宽，千位数量级的大数字在「列数刚换」的窄列机位最容易被 `truncate`
+   打成省略号（实拍 ≈¥2,803.… ）。 */
+const BIG_MONEY = { nodes: [base(1, 'Node A', { online: true, price: 3000, currency: 'CNY', billing_cycle: 'yearly', expires_in: 341, metrics: metrics({ cpu: 12.5, net_rx: KB, net_tx: KB }) })] }
+
+const VARIANTS = { mixed: MIXED, down: ALL_DOWN, tied: TIED, free: NO_PRICE, exotic: EXOTIC, once: ONCE_ONLY, long: LONG_KB, maxkb: MAX_KB, maxmb: MAX_MB, bigmoney: BIG_MONEY,
   // 分组跟随（第 12 组）：站点里**只有某一个分组那几台**——当对照用。
   // 概览卡片在「全部」档切到某个分组时的数字，必须与「站点里只有这几台」时逐字相同。
   gusa: { nodes: [MIXED.nodes[0]] }, geu: { nodes: [MIXED.nodes[1], MIXED.nodes[2]] }, gnone: { nodes: [MIXED.nodes[3]] } }
@@ -232,6 +237,8 @@ const PROBE = `JSON.stringify((() => {
         innerCol: inner ? Math.round(inner.getBoundingClientRect().left) : null,
         // 主数字那个盒子带 truncate：真装不下时 scrollWidth 会大于 clientWidth。
         clip: num ? num.scrollWidth - num.clientWidth : 0,
+        // 读数盒子**自身**的行高：缩号时它该纹丝不动（卡片高度是栅格行给的，量卡片量不出这件事）
+        numH: num ? Math.round(num.getBoundingClientRect().height) : null,
         // 主数字那行是两列小栅格时，两个格子里各自的截断量——栅格自己不溢出，格子里的
         // truncate 会静默把「40.1 MB/s」变省略号，只看上面那个 clip 是看不见的。
         cellClip: num && num.children.length === 2
@@ -324,6 +331,9 @@ async function clickGroup(label) {
   await sleep(400)
   return { clicked, dom: JSON.parse(await evalJS(PROBE)) }
 }
+
+// 这套皮肤真的会缩号的那一档（rakugaki 640 / jikasei 1024）：第 13 组拿它量「行高不动」
+const SHRINK_W = 1024
 
 const results = []
 const check = (name, ok, detail) => { results.push({ name, ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`) }
@@ -708,6 +718,32 @@ let classicNet = null
     phoneEu.dom.tiles.length === 4 && phoneEu.dom.scroll[0] <= phoneEu.dom.scroll[1] &&
     block(phoneEu.dom, '节点').text === '节点 | 2 / 2 | 全部在线',
     `概览 ${phoneEu.dom.tiles.length} 张 ／ scrollWidth ${phoneEu.dom.scroll[0]} / clientWidth ${phoneEu.dom.scroll[1]} ／ ${block(phoneEu.dom, '节点').text}`)
+  await send('Emulation.setDeviceMetricsOverride', WIDE)
+}
+
+/* 13) 大额读数：价值版那两格的大数字在窄列机位不许被截断（站长实拍 ≈¥2,803.13 变成省略号） ----
+   `Big` 是 truncate + 固定字号，而价值版两格各占一半卡宽；千位数量级的数字比「≈¥277.01」
+   宽 14px，640 / 1280 / 1440（列数刚换那几档）实测溢出 9~14px。判据只认
+   「scrollWidth ≤ clientWidth」+「文本里确实是那串完整的金额」，不写具体字号——
+   修法可以换，结果必须是「看得见完整的数」。 */
+{
+  for (const w of [640, 768, 1024, 1280, 1440]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: w, height: 1000, deviceScaleFactor: 1, mobile: w < 700 })
+    const dom = await render({ listTop: 'budget' }, `money-${w}`, 'bigmoney')
+    const cells = ['月度预算', '剩余价值'].map((n) => ({ n, b: block(dom, n) }))
+    check(`大额读数 @${w}：月度预算与剩余价值两格都没被截断`,
+      cells.every((c) => c.b.clip <= 0) && cells.every((c) => /≈¥[\d,]+\.\d{2}/.test(c.b.text)),
+      cells.map((c) => `${c.n} ${c.b.text}（截断 ${c.b.clip}px）`).join('；'))
+  }
+  // 缩号不许改变**读数盒子自身**的行高：卡片高度是栅格行给的（同行卡片一起撑），量卡片量不出
+  // 这件事——量盒子才对得上「钉行高」这条保证（去掉钉行高，这条就红）。
+  await send('Emulation.setDeviceMetricsOverride', { width: SHRINK_W, height: 1000, deviceScaleFactor: 1, mobile: SHRINK_W < 700 })
+  const shortW = await render({ listTop: 'budget' }, 'money-short-shrink')
+  const bigW = await render({ listTop: 'budget' }, 'money-big-shrink', 'bigmoney')
+  check('大额读数：缩号只改字号，读数盒子的行高纹丝不动',
+    block(bigW, '剩余价值').numH === block(shortW, '剩余价值').numH &&
+    block(bigW, '剩余价值').clip <= 0,
+    `大额 ${block(bigW, '剩余价值').numH}px ／ 短读数 ${block(shortW, '剩余价值').numH}px`)
   await send('Emulation.setDeviceMetricsOverride', WIDE)
 }
 
