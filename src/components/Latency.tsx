@@ -198,7 +198,9 @@ export function LatencyPanel({ node, lines }: { node: Node; lines: string }) {
   const rows = useMemo(() => pickRows(probes, lines), [probes, lines])
   if (rows.length === 0) return null
   return (
-    <div className="mt-4 space-y-1.5 border-t pt-4">
+    // `data-latency` 是给护栏认「这一档摊没摊三网延迟」的锚点（`data-net` 同一套做法：
+    // 按类名找会在改版后失配，而失配的表现是"看着没坏"）。
+    <div data-latency="" className="mt-4 space-y-1.5 border-t pt-4">
       {rows.map((p) => {
         const last = [...p.points].reverse().find((pt) => pt.latency !== null)
         const ms = last?.latency ?? null

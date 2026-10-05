@@ -10,6 +10,8 @@
 // ★配置桩必须自己回答：静态走本机、配置去问上游时，上游那台根本没装这一版主题 → 回 `{}`，
 //   桩里设的 cardStyle 一个字不生效（踩过：整轮都拍成默认的「简约」档）。
 import { spawn } from 'node:child_process'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 
@@ -46,7 +48,7 @@ const BASE = HUB_MODE ? UPSTREAM : `http://127.0.0.1:${PORT}`
 
 const chrome = spawn(CHROME, [
   '--headless=new', `--remote-debugging-port=${CDP_PORT}`, '--remote-allow-origins=*',
-  `--user-data-dir=C:/Users/desup/AppData/Local/Temp/remarklive-${Date.now()}`,
+  `--user-data-dir=${join(tmpdir(), `remarklive-${Date.now()}`)}`,
   '--no-first-run', '--disable-gpu', '--hide-scrollbars', '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--no-proxy-server', 'about:blank',
 ], { stdio: 'ignore' })

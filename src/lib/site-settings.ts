@@ -74,11 +74,12 @@ export const DEFAULTS: ThemeConfig = {
   // 「装主题」与「部署养鸡场」是两件事，站长没装就不该多出一枚点了没反应的图标；
   // 想固定指向别处（包括别人的公开那座）就填地址，想一律不显示就填 `off`。
   farmUrl: "",
-  // 默认「经典」：紧凑、不发延迟请求；想带三网延迟的在后台切「延迟」，机器多想一屏看全的切「紧凑」。
-  cardStyle: "plain",
-  // 默认「都不显示」：这两行都是「一眼看全站」的补充，站点本来就有每台机器的卡片；
-  // 关着时它们整个不挂载，首屏与没有这个功能时一模一样。
-  listTop: "none",
+  // 默认「详细」（2026-10-06 站长定的）：在「延迟」之上再摊在线时长、价格与到期，一眼看全一台机器。
+  // 想更轻的站切「简约」（底部收成一行两段、不发延迟请求）；机器多、想一屏看全的切「紧凑」（一行一台的表格）。
+  cardStyle: "detailed",
+  // 默认「两个都显示·概览卡片价值版」（2026-10-06 站长定的）：分组标签行 + 预算版概览卡片。
+  // 这两行都是「一眼看全站」的补充，数据取自节点列表本身、不多发请求；站点没分组时标签行自然不出现。
+  listTop: "bothBudget",
   // 延迟线路：留空 = 按后台顺序自动显示前几条；填了名字就只显示这些（一行一个）。
   // 名字是 ping 任务的名字，不是节点名——对不上的行会被跳过。
   pingLines: "",
@@ -86,16 +87,28 @@ export const DEFAULTS: ThemeConfig = {
   remarkPlacement: "both",
 }
 
+/** 卡片形态的五档，**按界面上要显示的顺序**（顶栏那枚菜单、后台那格下拉都照它排）。 */
+export const CARD_STYLES: ThemeConfig["cardStyle"][] = ["classic", "plain", "latency", "detailed", "compact"]
+
 /**
- * 卡片形态这一档的取值。它在上一版（≤1.2.9）叫 "detail"，现在改叫 "latency"
- * ——「延迟」才是这一档真正展示的东西，也把「详细」这个名字腾给后面那一档。
- * 读到旧值就迁过来：不迁的话，存过 "detail" 的站会被当成从没保存过、悄悄掉回经典。
+ * 卡片形态这一档的取值，认不出来就 `null`。
+ *
+ * 两处用：
+ *   · `cardStyleOf`（站点设置）：认不出 → 回落默认档；
+ *   · 访客自己在顶栏选的那一档：认不出 → `null` = **没选过**，于是跟着站长的设置走。
+ *     两者差别就在这一步：设置读坏了要退回一个能用的值，访客的偏好读坏了应该视为"没选"。
+ *
+ * 还在迁一个旧值：它在上一版（≤1.2.9）叫 "detail"，现在改叫 "latency"——「延迟」才是这一档
+ * 真正展示的东西，也把「详细」这个名字腾给后面那一档。不迁的话，存过 "detail" 的站会被
+ * 当成从没保存过、悄悄掉回经典。
  */
+export function cardStyleOrNull(v: unknown): ThemeConfig["cardStyle"] | null {
+  const style = v === "detail" ? "latency" : v
+  return CARD_STYLES.includes(style as ThemeConfig["cardStyle"]) ? (style as ThemeConfig["cardStyle"]) : null
+}
+
 export function cardStyleOf(v: unknown): ThemeConfig["cardStyle"] {
-  // ≤1.2.9 的值：那时候这一档叫「详细」，现在叫「延迟」——同一档，只是换了名字。
-  if (v === "detail") return "latency"
-  if (v === "classic" || v === "latency" || v === "detailed" || v === "plain" || v === "compact") return v
-  return DEFAULTS.cardStyle
+  return cardStyleOrNull(v) ?? DEFAULTS.cardStyle
 }
 
 /**
@@ -115,12 +128,16 @@ export function cardStyleOf(v: unknown): ThemeConfig["cardStyle"] {
 export function listTopOf(v: unknown, saved: { showSummary?: unknown; showGroupTabs?: unknown } = {}): ThemeConfig["listTop"] {
   if (v === "none" || v === "groups" || v === "summary" || v === "budget" || v === "both" || v === "bothBudget") return v
   // 旧版（≤1.4.0）：两个布尔开关，四种组合正好对应这一档的四个取值。
+  // ★「键在不在」本身也是信息：站长保存过旧表单才有键。两个都是 false 是**明确把两行都关掉**（→ none），
+  //   与「从没配过」必须分开——后者才跟着默认档走。混在一起的话，默认档一旦不是 none，
+  //   老站明明关掉的两行会在升级后悄悄冒出来（就是本文件开头警告的那种静默改观感）。
+  const configured = saved.showSummary !== undefined || saved.showGroupTabs !== undefined
   const summary = saved.showSummary === true
   const tabs = saved.showGroupTabs === true
   if (summary && tabs) return "both"
   if (summary) return "summary"
   if (tabs) return "groups"
-  return DEFAULTS.listTop
+  return configured ? "none" : DEFAULTS.listTop
 }
 
 /** 表单是六选一，页面只关心这三个布尔：分组标签行、概览卡片行、那行是不是预算版。 */

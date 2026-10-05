@@ -1,13 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
-import { Moon, Sun, Wrench } from "lucide-react"
+import { Globe as GlobeIcon, Moon, Sun, Wrench } from "lucide-react"
 
+import { CardStyleMenu } from "@/components/CardStyleMenu"
 import { NodeCard } from "@/components/NodeCard"
 import { CompactList } from "@/components/CompactList"
+import { Globe } from "@/components/Globe"
 import { SummaryCards } from "@/components/Summary"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupView, useNodes } from "@/lib/api"
-import { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, isBudgetLayout, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
+import { regionView } from "@/lib/globe"
+import { hasDetailRemarks } from "@/lib/notes"
+import { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, isBudgetLayout, useCardStyle, useGlobeVisible, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
 import type { RemarkPlacement } from "@/lib/site-settings"
 import { FarmIcon } from "@/components/FarmIcon"
 
@@ -32,15 +36,21 @@ const loadDetail = () => import("@/components/NodeDetail").then((m) => ({ defaul
 const NodeDetail = lazy(loadDetail)
 
 /**
- * 详情页的骨架：按详情页真实的那几块摆（标题行 + 规格格 + 页签行 + 四张图），
+ * 详情页的骨架：按详情页真实的那几块摆（标题行 + 规格格 + 备注块 + 页签行 + 四张图），
  * 不是一枚 `h-96`。它露面的场景只有一个 —— 点开时图表 chunk 还没到（见下面 warmDetail），
  * 所以它的高度必须跟加载完的内容一样，否则那一下会「先塌再撑」。
  *
  * 尺寸不另立一套，全跟着详情页自己那几块的类走：`dt` text-xs(16) + `dd` text-sm(20)、
  * 页签 py-1 + text-xs = 24、图块 = 小标题 mb-2 + `h-40`、四张图之间 space-y-5、
  * 规格格那层用同一套 grid 断点。于是手机上（一列六行）与桌面上（三列两行）都自动对上。
+ *
+ * ★两处「差一块就差 46px」的地方（2026-10-06 修，护栏 verify_detail_preload 一直在红）：
+ *   ① **备注块**（22px）—— 真实页里那台机器有备注才占位，所以这里得按 `hasRemarks` 判一次，
+ *      不能无条件画（没备注的机器会反过来高出 38px）；
+ *   ② **四张图是页签块的兄弟、不是孩子** —— 嵌进去的话，页签与图之间那 16px 变成 8px，
+ *      整页少 8px。①+② = 22+16+8 = 46px，正是当年那 46px 的差额。
  */
-function DetailSkeleton() {
+function DetailSkeleton({ hasRemarks = false }: { hasRemarks?: boolean }) {
   return (
     <div className="detail-skeleton space-y-4" aria-busy="true">
       <div className="flex items-center gap-2">
@@ -55,6 +65,14 @@ function DetailSkeleton() {
           </div>
         ))}
       </div>
+      {/* 备注那一块：真实页里是 `flex flex-wrap items-center gap-1` 的一行小卡片（整行 22px），
+          没写备注时一个像素都不占 —— 所以这里也按同一条件决定画不画（判据见 @/lib/notes）。 */}
+      {hasRemarks && (
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          <Skeleton className="h-[22px] w-24 rounded-full" />
+          <Skeleton className="h-[22px] w-16 rounded-full" />
+        </div>
+      )}
       <div className="space-y-2 border-t pt-4">
         <div className="flex gap-1">
           <Skeleton className="h-6 w-12" />
@@ -65,15 +83,16 @@ function DetailSkeleton() {
           <Skeleton className="h-6 w-16" />
           <Skeleton className="h-6 w-16" />
         </div>
-        {/* 四张资源图：整页详情的默认页签就是它，所以骨架照它的高度来。 */}
-        <div className="space-y-5">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i}>
-              <Skeleton className="mb-2 h-4 w-16" />
-              <Skeleton className="h-40 w-full" />
-            </div>
-          ))}
-        </div>
+      </div>
+      {/* 四张资源图：整页详情的默认页签就是它，所以骨架照它的高度来。
+          ★它是上面那个页签块的**兄弟**（真实页里也是），别嵌进去。 */}
+      <div className="space-y-5">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i}>
+            <Skeleton className="mb-2 h-4 w-16" />
+            <Skeleton className="h-40 w-full" />
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -173,6 +192,12 @@ export default function App() {
   const [open, go] = useNodeRoute()
   // The list's group tab, held here so it survives a visit to a node's page.
   const [group, setGroup] = useState<string | null>(null)
+  // 地球侧栏里选中的地区：同理留在这儿，进详情页再回来不丢。
+  const [region, setRegion] = useState<string | null>(null)
+  // 访客自己的两个偏好（都只存在他自己浏览器里，见 @/lib/theme-config）：
+  // 地球看不看，以及列表用哪种卡片形态 —— 后者没选过时跟着站长的设置走。
+  const [globeOn, toggleGlobe] = useGlobeVisible()
+  const [cardStyle, chooseStyle] = useCardStyle(config.cardStyle)
 
   const loadMe = useCallback(() => {
     // `|| "..."` because an empty message reads as no error: api() falls back to
@@ -247,6 +272,13 @@ export default function App() {
   // 分组筛选只求值一次（@/lib/api 的 groupView）：概览卡片与下面的列表吃的是同一份
   // 「该显示哪几台」，切分组时两边一起变——参考站的内置 default 主题就是这个口径。
   const view = groupView(sorted, group, hasGroupTabs(config.listTop))
+  // 地区筛选叠在分组之上，两层是同一套「该显示哪几台」的延续：
+  //   · 地球与右侧那列地区吃的是**当前分组**（`view.shown`）—— 与概览卡片同一口径，
+  //     切分组时地球上的针与地区台数一起变；
+  //   · 下面的列表再按地区收窄一层（`listView`）。
+  // 这样「上头写着 JP 4 台、下面只剩 2 张卡片」不会出现：地球是分组的地图，不是列表的地图。
+  const regions = regionView(view.shown, region)
+  const listView = { ...view, shown: regions.shown }
 
   // `/node/{id}` is a page people bookmark and share, so the tab needs the node's
   // name. The site name rather than a fixed string, since the hub lets an operator
@@ -309,6 +341,31 @@ export default function App() {
               <Wrench />
             </a>
           </Button>
+          {/* 卡片形态：访客自己挑列表用哪种排法（只长在列表页 —— 它就只影响那一页）。 */}
+          {open === null && (
+            <CardStyleMenu value={cardStyle} siteDefault={config.cardStyle} onPick={chooseStyle} />
+          )}
+          {/* 地球开关：只长在列表页 —— 地球就在那一页的顶上，站在某台机器页里按它没有落点。
+              与养鸡场入口、主题开关同规格（图标 + 悬停提示，不带文字，见 memory 里的顶栏惯例）。 */}
+          {open === null && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="globe-toggle"
+              aria-pressed={globeOn}
+              onClick={() => {
+                // ★关掉地球时**顺手把地区筛选清掉**：地区那列长在地球里，地球一藏，
+                // 「怎么取消」就没地方点了（列表会一直只剩那个地区的机器，看着像站点坏了）。
+                // 反过来说，地区筛选本来就属于那张地图，地图收起来它就该跟着走。
+                if (globeOn) setRegion(null)
+                toggleGlobe()
+              }}
+              title={globeOn ? "隐藏节点地球" : "显示节点地球"}
+              aria-label={globeOn ? "隐藏节点地球" : "显示节点地球"}
+            >
+              <GlobeIcon />
+            </Button>
+          )}
           {/* 养鸡场入口：站长填了地址就指向那里；留空则本站 `/chicken/` 上真装了养鸡场
               才出现（自动探测，见 useLocalFarm）；填 `off` 则一律不出现。 */}
           {farmUrl && (
@@ -331,7 +388,7 @@ export default function App() {
           !nodes ? (
             <DetailSkeleton />
           ) : selected ? (
-            <Suspense fallback={<DetailSkeleton />}>
+            <Suspense fallback={<DetailSkeleton hasRemarks={hasDetailRemarks(selected, config.remarkPlacement)} />}>
               {/* 整页详情与紧凑展开里是同一个组件：保留天数也要一起给它，
                   否则「展开里有 30 天、点进去只有 7 天」会显得不一致。 */}
               <NodeDetail node={selected} historyDays={me.history_days} remarkPlacement={config.remarkPlacement} />
@@ -343,7 +400,7 @@ export default function App() {
           )
         ) : !nodes ? (
           // 还在等节点列表：骨架按当前形态画。紧凑形态是一行一台，用几根细条比三张大卡片更像它。
-          config.cardStyle === "compact" ? (
+          cardStyle === "compact" ? (
             <div className="space-y-2">
               {[0, 1, 2, 3, 4, 5].map((i) => (
                 <Skeleton key={i} className="h-9" />
@@ -360,10 +417,21 @@ export default function App() {
           <>
             {/* 概览卡片行：设置里没选它时整个不挂载（不是藏起来），首屏与没有这个功能时一致。
                 「月度预算剩余价值版」只是同一行换一副面孔，组件另收一个 finance 开关。 */}
-            {hasSummary(config.listTop) && <SummaryCards nodes={view.shown} group={view.current} finance={isBudgetLayout(config.listTop)} />}
-            <NodeList view={view} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail}
+            {hasSummary(config.listTop) && <SummaryCards nodes={regions.shown} group={view.current} finance={isBudgetLayout(config.listTop)} />}
+            {/* 节点地球：概览卡片之下、列表之上（上游 mm-design 就是这个次序）。 */}
+            {globeOn && (
+              <Globe nodes={view.shown} dark={dark} region={regions.current} onRegion={setRegion} onOpen={go} onWarm={warmDetail} />
+            )}
+            {/* 按地区筛完一台都不剩：说清楚是筛选造成的，并指回去哪儿取消 ——
+                否则访客只看到一大片空白，会以为站点坏了。 */}
+            {globeOn && regions.shown.length === 0 && view.shown.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                这个地区里当前没有节点 —— 点上面那一列的「全部」取消筛选。
+              </p>
+            )}
+            <NodeList view={listView} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail}
               latencyLines={config.pingLines}
-              cardStyle={config.cardStyle}
+              cardStyle={cardStyle}
               historyDays={me.history_days}
               remarkPlacement={config.remarkPlacement} />
           </>
@@ -456,7 +524,7 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
       ) : cardStyle === "compact" ? (
         <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} remarkPlacement={remarkPlacement} />
       ) : (
-        <div className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
+        <div data-card-style={cardStyle} className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
           {shown.map((n) => (
             <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} latencyLines={latencyLines} cardStyle={cardStyle} remarkPlacement={remarkPlacement} />
           ))}

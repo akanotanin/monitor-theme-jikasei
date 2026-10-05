@@ -1,3 +1,5 @@
+import { remarksOnDetail, type RemarkPlacement } from "./site-settings.ts"
+
 /**
  * 节点备注：hub 后台按节点填的两个字段，随 `/api/nodes` 一起下发；**卡片与详情页显示的是合并后的
  * 一份**（私有在前、公有在后，见 `remarkChips`）。主题设置里没有备注设置项。
@@ -53,6 +55,24 @@ export type RemarkChip = { text: string; own: boolean }
  *
  * 两个字段都没有（或只有空白）→ 空数组，页面上一个像素都不占。
  */
+/**
+ * 整页详情那一块会不会占位：**这台机器有备注** 且 站长把备注摊在详情页（`remarksOnDetail`）。
+ *
+ * 两处共用它，免得各写一遍、改一处漏一处：
+ *   · `NodeDetail` 决定画不画那一行小卡片；
+ *   · `DetailSkeleton`（`src/App.tsx`）决定骨架里给不给它留位 —— 那一块 22px ＋ 上下 16px 间距，
+ *     骨架漏了它整页就少 38px，点开时会「先塌再撑」。
+ *
+ * 相对路径 import 是照 `src/lib` 里的惯例（`globe.ts` → `./world.ts`）：单测用 Node 直接跑，
+ * 认不了 `@/` 这个别名（见 notes.test.ts 顶上的跑法说明）。
+ */
+export function hasDetailRemarks(
+  node: { public_remark?: string | null; remark?: string | null },
+  placement: RemarkPlacement,
+): boolean {
+  return remarksOnDetail(placement) && remarkChips(node).length > 0
+}
+
 export function remarkChips(node: { public_remark?: string | null; remark?: string | null }): RemarkChip[] {
   const own = ownTags(node).map((text) => ({ text, own: true }))
   const pub = hubTags(node).map((text) => ({ text, own: false }))

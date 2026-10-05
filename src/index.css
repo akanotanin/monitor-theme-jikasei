@@ -51,30 +51,57 @@
   /* 进度条按"越满越危险"上色，所以这里有真正的绿与琥珀：单色阶表达不了严重度。 */
   --ok: oklch(0.6 0.15 155);
   --warn: oklch(0.62 0.15 70);
+  /* 节点地球那三块颜色（见 index.css 末尾的 .globe-*）：海面与陆地的淡染、圆盘边缘
+     的暗影。数值取自上游 mm-design 的亮色一套 —— 它是暖纸底，本站是近白底，所以
+     透明度各抬了一点，否则淡到看不见。 */
+  --globe-ocean: rgba(72, 118, 136, 0.18);
+  --globe-land: rgba(118, 86, 40, 0.16);
+  --globe-rim: rgba(42, 33, 20, 0.2);
   /* The status dot. Each clears 3:1 against the card (3.7 and 5.5), and 1.5:1
      against the other, the separation red-green colour blindness still
      perceives. */
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.98 0 0);
-  --card: oklch(0.2 0 0);
-  --card-foreground: oklch(0.98 0 0);
-  --popover: oklch(0.2 0 0);
-  --popover-foreground: oklch(0.98 0 0);
-  --primary: oklch(0.92 0 0);
-  --primary-foreground: oklch(0.2 0 0);
-  --secondary: oklch(0.27 0 0);
-  --secondary-foreground: oklch(0.98 0 0);
-  --muted: oklch(0.27 0 0);
-  --muted-foreground: oklch(0.7 0 0);
-  --accent: oklch(0.27 0 0);
-  --accent-foreground: oklch(0.98 0 0);
-  --destructive: oklch(0.95 0 0);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.55 0 0);
+  /* ── 暗色的文字与底色：对着 mm-design（mm.shzt.de）实测过的那一套调过 ──────────
+     站长 2026-10-06 反馈「全暗模式下字的颜色有些刺眼」。把原站 :root 里那几档取出来算成
+     OKLCH，问题就很清楚 —— 它不是"亮一点/暗一点"，而是**对比度差了一档，而且它是暖的**：
+
+       原站  void #15130f = oklch(0.188 0.0085 84.6)   ← 暖的近黑（比本站更亮一点）
+             ink  #ddd6c8 = oklch(0.878 0.020 84.6)   ← 暖的米白，不是纯白
+             ink-dim       = oklch(0.752 0.027 87)    ← 次级文字比本站的还亮
+             正文/底 = 12.83:1，主次两级亮度差 0.125
+       本站（改前）正文 oklch(0.98 0 0) / 底 0.145 → **18.6:1**，主次亮度差 0.28
+
+     纯白 0.98 配近黑底是"能看清"但"盯着累"：对比度 18.6:1 远超需要的量，且中性白在暖色
+     的机器读数里显得生硬。改法是两条：**把正文压到原站那一档（≈12.5:1）**、**整体偏暖一档
+     （H≈85°、C≈0.012~0.018）**，同时把次级文字提亮，让主次两级收拢到原站那种 0.12 左右。
+     底色跟着暖一点点、亮一点点（0.145 → 0.155），免得"暖字配冷底"看着脏。
+
+     改完的实测（卡片底 vs 文字）：正文 **12.72:1**、弱化文字 **8.21:1**、主次亮度差 0.130
+     （原站 12.83:1 / 8.41:1 / 0.125，基本重合）—— 仍远高于 WCAG AA 的 4.5:1，只是不再刺眼。
+     亮色一套**没动**（站长只提了全暗模式；亮色那套是 0.18/0.985）。 */
+  --background: oklch(0.155 0.004 85);
+  --foreground: oklch(0.885 0.012 85);
+  /* 卡片与"抬升面"各比改前抬 0.01：底色 0.145→0.155 之后，原来那两档间距会被压掉 9%
+     （0.055→0.050），卡片边界看着就"塌"了一点。补回去仍是改前的 0.055 / 0.07。 */
+  --card: oklch(0.21 0.004 85);
+  --card-foreground: oklch(0.885 0.012 85);
+  --popover: oklch(0.21 0.004 85);
+  --popover-foreground: oklch(0.885 0.012 85);
+  --primary: oklch(0.885 0.012 85);
+  --primary-foreground: oklch(0.21 0.004 85);
+  --secondary: oklch(0.28 0.005 85);
+  --secondary-foreground: oklch(0.885 0.012 85);
+  --muted: oklch(0.28 0.005 85);
+  --muted-foreground: oklch(0.755 0.018 85);
+  --accent: oklch(0.28 0.005 85);
+  --accent-foreground: oklch(0.885 0.012 85);
+  --destructive: oklch(0.885 0.012 85);
+  /* 描边也跟着换成那支暖墨：纯白 12% 在暖色文字旁边会显出一道冷边。 */
+  --border: oklch(0.885 0.012 85 / 13%);
+  --input: oklch(0.885 0.012 85 / 16%);
+  --ring: oklch(0.6 0.008 85);
   /* 与亮色同一份色相，只抬亮度：深色底上压暗的线会糊在一起。 */
   --chart-1: oklch(0.72 0.15 250);
   --chart-2: oklch(0.78 0.14 55);
@@ -87,6 +114,10 @@
   --chart-9: oklch(0.72 0.16 335);
   --ok: oklch(0.74 0.14 155);
   --warn: oklch(0.8 0.13 75);
+  /* 深色这一套与上游逐值相同（它的暗底就是 oklch(0.145) 那一档，跟本站几乎同色）。 */
+  --globe-ocean: rgba(86, 138, 160, 0.15);
+  --globe-land: rgba(186, 154, 102, 0.14);
+  --globe-rim: rgba(8, 8, 8, 0.36);
   /* 7.8 and 3.7 against the card, 2.1 apart. The muted grey would sit 1.15 from
      the green. */
 }
@@ -137,3 +168,131 @@
 
 /* Tabular figures keep live numbers from shifting as they update. */
 .tnum { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- 节点地球
+
+   复刻自上游 mm-design 的 `.home-globe` / `.atlas` / `.atlas-side` 三块（值都对着抄），
+   换成本站的设计 token。规则**故意不放进 `@layer`**：SVG 内部那些类（.globe-land 等）
+   上游是直接写的，不套层才能稳稳盖住 Tailwind 的工具类。
+
+   两列的比例 1.35fr / 0.65fr 与圆盘高度 280px 都照上游；窄到 900px 以下改成上下两段
+   （上游是干脆不画，本站留着，窄屏自动降到 low 档）。 */
+.globe-panel {
+  display: grid;
+  grid-template-columns: 1fr;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  color: var(--card-foreground);
+}
+@media (min-width: 900px) {
+  .globe-panel { grid-template-columns: 1.35fr 0.65fr; }
+}
+
+.globe-atlas {
+  position: relative;
+  height: 280px;
+  overflow: hidden;
+  cursor: grab;
+  /* 只让出竖向：手机上在地球上竖着划是滚页面（见组件注释），横着划才是转地球。 */
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.globe-atlas[data-drag="true"] { cursor: grabbing; }
+/* 手机上把圆盘压低一档：460×240 的画布在 390 宽的屏上，280 高会上下各空出 38px，
+   地球只占中间那条；压在 210 就基本贴合（见 tools/verify_globe.mjs 的窄屏那几条）。 */
+@media (max-width: 720px) {
+  .globe-atlas { height: 210px; }
+}
+.globe-atlas svg { display: block; width: 100%; height: 100%; color: var(--foreground); }
+/* 地球上的东西一律不吃指针事件，只有那几枚透明的命中圆吃 —— 于是"点地球"与
+   "点某台机器"是两件互不干扰的事（上游同此）。 */
+.globe-atlas svg text,
+.globe-atlas svg path,
+.globe-atlas svg line,
+.globe-atlas svg circle { pointer-events: none; }
+.globe-atlas svg .hit { pointer-events: auto; cursor: pointer; }
+
+.globe-ocean { fill: var(--globe-ocean); }
+.globe-land { fill: var(--globe-land); stroke: none; stroke-linejoin: round; stroke-linecap: round; }
+.globe-coast { fill: none; stroke: var(--foreground); stroke-width: 0.55; stroke-opacity: 0.36; }
+.globe-disk { fill: url(#globe-shade); stroke: var(--foreground); stroke-width: 1.05; stroke-opacity: 0.42; }
+.globe-wire { fill: none; stroke: var(--foreground); stroke-opacity: 0.1; }
+.globe-sweep { fill: none; stroke: var(--foreground); }
+.globe-base { stroke: var(--foreground); stroke-opacity: 0.4; stroke-width: 1; }
+.globe-link { fill: none; stroke: var(--foreground); stroke-width: 0.55; opacity: 0.32; }
+.globe-stem { fill: none; stroke: var(--foreground); stroke-width: 0.75; }
+/* 针是空心的琥珀色圆环（上游那枚 #e2ad45 就是这一档）：只表示"这里有一台"，
+   不表示在线与否 —— 在线/离线在下面的卡片里有话说。 */
+.globe-pin { fill: none; stroke: var(--warn); stroke-width: 1.15; }
+.globe-selected-ring { fill: none; stroke: var(--foreground); stroke-width: 1.2; stroke-dasharray: 2 2; }
+.globe-selected-core { fill: var(--foreground); stroke: var(--card); stroke-width: 1.4; }
+/* 标签底下垫一道卡片底色的描边（paint-order: stroke）：引线从文字后面穿过去时
+   文字仍然读得出来。字体大小与字距照上游。 */
+.globe-label {
+  fill: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, "IBM Plex Mono", monospace;
+  font-size: 9.35px;
+  stroke: var(--card);
+  stroke-width: 3;
+  paint-order: stroke;
+  stroke-linejoin: round;
+}
+.globe-caption {
+  fill: var(--muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, "IBM Plex Mono", monospace;
+  font-size: 8.8px;
+  letter-spacing: 1.4px;
+  opacity: 0.55;
+}
+
+.globe-side {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 8px 18px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+@media (min-width: 900px) {
+  .globe-side { border-top: 0; border-left: 1px solid var(--border); }
+}
+.globe-side-title { grid-column: 1 / -1; color: var(--muted-foreground); }
+.globe-reg {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted-foreground);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.globe-reg:hover { color: var(--foreground); }
+/* 「全部」独占一整行：它是一条汇总（本分组一共几台），跟具体地区并排会读成"第一个地区"；
+   而两列的地区列表本来就要从它下面开始排。 */
+.globe-reg-all { grid-column: 1 / -1; }
+.globe-reg span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.globe-reg b { color: var(--foreground); font-weight: 500; font-variant-numeric: tabular-nums; }
+/* 选中的那一行加粗提亮（上游是加大字号；这里跟着本站的字重语言走，不为一行改字号，
+   否则整块的行高会跟着跳）。 */
+.globe-reg[aria-pressed="true"] { color: var(--foreground); font-weight: 600; }
+.globe-reg-flag {
+  display: inline-block;
+  height: 12px;
+  width: 16px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  border-radius: 2px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px var(--border);
+}
+/* 顶栏那枚开关：关掉时压暗，一眼看得出地球是关着的。 */
+.globe-toggle[aria-pressed="false"] { color: var(--muted-foreground); opacity: 0.6; }

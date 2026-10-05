@@ -99,6 +99,9 @@ const READ = `(() => {
   const btns = [...header.querySelectorAll('[data-slot="button"]')];
   const pick = (t) => header.querySelector('[data-slot="button"][title="' + t + '"]');
   const farm = pick('养鸡场'), moon = pick('切换主题'), admin = header.querySelector('a[href="/admin/"]');
+  // 顶栏在「扳手」与「鸡」之间还有一枚「节点地球」（列表页才出现，见 components/Globe.tsx）：
+  // 它现在是鸡的左邻，间距/尺寸这两条要跟它比。
+  const globe = pick('隐藏节点地球');
   const css = (el) => { const s = getComputedStyle(el); return { radius: s.borderRadius, padding: s.padding, color: s.color, bg: s.backgroundColor, w: s.width, h: s.height }; };
   const box = (el) => { const r = el.getBoundingClientRect(); return { x: Math.round(r.x), right: Math.round(r.right), w: Math.round(r.width), h: Math.round(r.height) }; };
   const svg = farm ? farm.querySelector('svg') : null;
@@ -115,12 +118,13 @@ const READ = `(() => {
     aria: farm ? farm.getAttribute('aria-label') : null,
     cls: { farm: farm ? farm.className : null, moon: moon ? moon.className : null, admin: admin ? admin.className : null },
     css: { farm: farm ? css(farm) : null, moon: moon ? css(moon) : null, admin: admin ? css(admin) : null },
-    box: { farm: farm ? box(farm) : null, moon: moon ? box(moon) : null, admin: admin ? box(admin) : null },
+    box: { farm: farm ? box(farm) : null, moon: moon ? box(moon) : null, admin: admin ? box(admin) : null, globe: globe ? box(globe) : null },
     icon: svg ? { viewBox: svg.getAttribute('viewBox'), paths: svg.querySelectorAll('path').length, stroke: getComputedStyle(svg).stroke, width: svg.getAttribute('stroke-width'), w: Math.round(sr.width), h: Math.round(sr.height), fill: svg.getAttribute('fill') } : null,
   });
 })()`
 
-const HIDDEN_TITLES = '登录,切换主题'
+// 入口不出现时，顶栏剩下的那四枚（扳手 / 卡片形态 / 地球 / 月亮）——多一枚少一枚都算这行被弄乱了。
+const HIDDEN_TITLES = '登录,卡片形态,隐藏节点地球,切换主题'
 const SCENARIOS = [
   // 只装主题、没装养鸡场、站长也没填地址 —— 最常见的形态：这一枚不许出现。
   { name: '本站没养鸡场（默认设置）', config: {}, farm: false, visible: false, probes: 1 },
@@ -176,16 +180,16 @@ for (const [n, scenario] of SCENARIOS.entries()) {
     } else {
       check('同域：当前标签页打开（属于站内导航）', state.target === null && state.rel === null, `target=${state.target} rel=${state.rel}`)
     }
-    check('顺序与参考图一致：扳手 → 鸡 → 月亮', state.titles.join(',') === '登录,养鸡场,切换主题', state.titles.join(','))
+    check('顺序与参考图一致：扳手 → 卡片形态 → 地球 → 鸡 → 月亮', state.titles.join(',') === '登录,卡片形态,隐藏节点地球,养鸡场,切换主题', state.titles.join(','))
     check('三枚的 class 逐字符相同（画风靠它保证）', state.cls.farm === state.cls.moon && state.cls.farm === state.cls.admin)
     // box 里只比尺寸——位置天生不同（它是另一枚按钮），比位置等于恒红。
     const sizeOf = (b) => (b ? { w: b.w, h: b.h } : null)
     check('尺寸/圆角/内边距/前景色与相邻两枚一致',
       same(sizeOf(state.box.farm), sizeOf(state.box.moon)) && same(state.css.farm, state.css.moon),
       `box ${JSON.stringify(sizeOf(state.box.farm))} vs ${JSON.stringify(sizeOf(state.box.moon))} | css ${JSON.stringify(state.css.farm)} vs ${JSON.stringify(state.css.moon)}`)
-    const gapA = state.box.farm.x - state.box.admin.right
+    const gapA = state.box.farm.x - state.box.globe.right
     const gapB = state.box.moon.x - state.box.farm.right
-    check('与两边的间距相等', Math.abs(gapA - gapB) <= 1, `${gapA}px / ${gapB}px`)
+    check('与两边的间距相等（左邻是那枚地球）', Math.abs(gapA - gapB) <= 1, `${gapA}px / ${gapB}px`)
     check('图标 = 24×24 视框的 Lucide 描边（含那道鸡冠，共 7 条路径）',
       state.icon?.viewBox === '0 0 24 24' && state.icon?.paths === 7 && state.icon?.width === '2' && state.icon?.fill === 'none',
       JSON.stringify(state.icon))

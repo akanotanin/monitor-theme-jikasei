@@ -393,14 +393,26 @@ function checkRhythm(where, dom) {
     `右列 ${pair}px ／ 今日流量第二列 ${day === null ? '—' : day - tile(dom, '今日流量').x}px ／ 实时网速第二列 ${net === null ? '—' : net - tile(dom, '实时网速').x}px`)
 }
 
-/* 1) 默认（后台没存过：GET config 回 {}）→ 概览行整个不挂载 */
+/* 1) 默认（后台没存过：GET config 回 {}）→ 出厂默认「两个都显示·概览卡片价值版」 */
 {
   const dom = await render({}, 'default')
+  check('默认：概览卡片按价值版挂载（四张）', dom.tiles.length === 4, `概览 ${dom.tiles.length} 张`)
+  check('默认：价值版那两个标题在（月度预算 / 剩余价值）',
+    ['月度预算', '剩余价值'].every((t) => dom.body.includes(t)),
+    ['月度预算', '剩余价值'].filter((t) => !dom.body.includes(t)).join('、') || '（都在）')
+  check('默认：分组标签行也挂上了（两个都显示）', (dom.groupRow?.tabs ?? []).length > 0,
+    `标签 ${(dom.groupRow?.tabs ?? []).map((t) => t.text).join('/') || '（一个都没有）'}`)
+  check('默认：节点卡片照常四张', dom.nodeCards === 4, `节点卡片 ${dom.nodeCards} 张`)
+}
+
+/* 1b) 显式关掉（listTop: none）→ 概览行整个不挂载 */
+{
+  const dom = await render({ listTop: 'none' }, 'off')
   const ALL = ['月度预算', '剩余价值', '节点', '最忙节点', '今日流量', '实时网速']
-  check('默认关：一张概览卡片都没有', dom.tiles.length === 0 && dom.polylines === 0, `概览 ${dom.tiles.length} 张 / polyline ${dom.polylines}`)
-  check('默认关：六个标题一个都不在页面上', ALL.every((t) => !dom.body.includes(t)),
+  check('显式关：一张概览卡片都没有', dom.tiles.length === 0 && dom.polylines === 0, `概览 ${dom.tiles.length} 张 / polyline ${dom.polylines}`)
+  check('显式关：六个标题一个都不在页面上', ALL.every((t) => !dom.body.includes(t)),
     ALL.filter((t) => dom.body.includes(t)).join('、') || '（都不在）')
-  check('默认关：节点卡片照常四张', dom.nodeCards === 4, `节点卡片 ${dom.nodeCards} 张`)
+  check('显式关：节点卡片照常四张', dom.nodeCards === 4, `节点卡片 ${dom.nodeCards} 张`)
 }
 
 /* 2) 原版（summary）：四张卡片各一块读数 + 逐个数字 */

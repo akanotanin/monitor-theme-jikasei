@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import { api } from "@/lib/api"
-import { DEFAULTS, normalizeConfig, type ThemeConfig } from "@/lib/site-settings"
+import { cardStyleOrNull, DEFAULTS, normalizeConfig, type ThemeConfig } from "@/lib/site-settings"
 
 /**
  * 站点级设置：只存 Hub（`/api/themes/<short>/config`），一个站一份，不落访客的浏览器——
@@ -18,6 +18,72 @@ const SHORT = "jikasei"
  * **必须与 public/icon-probe.js 里的 KEY 一致。**
  */
 export const ICON_CACHE_KEY = "jikasei:site_icon"
+
+/**
+ * 访客自己的两个偏好：**看不看节点地球**、**列表用哪种卡片形态**。都只存在他自己浏览器里，
+ * 不写 hub —— 这与「站点级设置只存 hub、访客偏好才放 localStorage」是同一条规矩（见
+ * `monitor-theme-porting` 铁律 4）。两者的默认都来自站长的设置：没选过（或存的值读不懂）
+ * 就跟着设置走。
+ *
+ * 为什么不做成主题设置项：站点设置项一到 7 个，后台那个对话框就切成两列、排版散掉
+ * （hub 的判据是"非标题字段 > 6"，实测过）。而这两件事本来就该访客自己定。
+ */
+const GLOBE_KEY = "jikasei:globe"
+const CARD_STYLE_KEY = "jikasei:card_style"
+
+/** 节点地球看不看：默认看（只记"关掉"这一个动作）。 */
+export function useGlobeVisible(): [boolean, () => void] {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem(GLOBE_KEY) !== "0"
+    } catch {
+      // 隐私模式 / 存储被禁用：这次会话里照样能开关，只是记不住。
+      return true
+    }
+  })
+  return [
+    on,
+    () => {
+      setOn((prev) => {
+        const next = !prev
+        try {
+          localStorage.setItem(GLOBE_KEY, next ? "1" : "0")
+        } catch {
+          // 同上：记不住就记不住，界面照常。
+        }
+        return next
+      })
+    },
+  ] as const
+}
+
+/**
+ * 列表用哪种卡片形态。返回的是**最终生效**的那一档与一个选择函数：
+ * 访客选的记下来；选成和站长设置一样的那档时**把记录删掉**（= 重新"跟着站长走"，
+ * 以后站长改默认，这位访客也会跟着变）。
+ */
+export function useCardStyle(siteDefault: ThemeConfig["cardStyle"]): [ThemeConfig["cardStyle"], (next: ThemeConfig["cardStyle"]) => void] {
+  const [picked, setPicked] = useState<ThemeConfig["cardStyle"] | null>(() => {
+    try {
+      return cardStyleOrNull(localStorage.getItem(CARD_STYLE_KEY))
+    } catch {
+      return null
+    }
+  })
+  const choose = useCallback(
+    (next: ThemeConfig["cardStyle"]) => {
+      setPicked(next === siteDefault ? null : next)
+      try {
+        if (next === siteDefault) localStorage.removeItem(CARD_STYLE_KEY)
+        else localStorage.setItem(CARD_STYLE_KEY, next)
+      } catch {
+        // 记不住就只影响这一次会话：当前这一档仍然会立刻生效。
+      }
+    },
+    [siteDefault],
+  )
+  return [picked ?? siteDefault, choose]
+}
 
 // 类型、默认值、收窄与迁移都在 site-settings.ts；这里只留取数据与页面侧的钩子，
 // 顺手再导出一遍，页面统一从 `@/lib/theme-config` 拿。

@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.20.1",
+  "version": "1.24.1",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -32,7 +32,7 @@
       "type": "select",
       "key": "listTop",
       "label": "列表页顶部",
-      "default": "none",
+      "default": "bothBudget",
       "options": [
         {
           "value": "none",
@@ -65,7 +65,7 @@
       "type": "select",
       "key": "cardStyle",
       "label": "卡片形态",
-      "default": "plain",
+      "default": "detailed",
       "options": [
         {
           "value": "classic",
@@ -88,7 +88,7 @@
           "label": "紧凑：一行一台的表格，密度最高"
         }
       ],
-      "help": "经典＝速率与总量各一行、延迟在浮层；简约＝网络一行；延迟＝加三网延迟；详细＝加时长与计费；紧凑＝表格。"
+      "help": "经典＝速率与总量各一行、延迟在浮层；简约＝网络一行；延迟＝加三网延迟；详细＝加时长与计费；紧凑＝表格。这里选的是**访客默认看到的那一档**；访客可以在顶栏自己换（换成与这里相同的那档＝重新跟着这里的设置走），他的选择只存在他自己的浏览器里，不影响别人。"
     },
     {
       "type": "title",

@@ -14,7 +14,7 @@
 //   详细   —— 元信息行 + 三枚读数盒 + 三网延迟块；标题行不再有状态点；网格不再有 xl 四列
 //   紧凑   —— 一张表、一行一台，表头与列随屏宽收放；不发 ping 请求
 //   旧值   —— 配置里存 detail（1.2.9 的值）时必须渲染成「延迟」，不能掉回经典
-//   非法值 —— 回落经典（含不发延迟请求）
+//   非法值 —— 回落出厂默认档（theme.json 的 cardStyle.default，2026-10-06 起是「详细」）
 //
 // ★ 备注（hub 的公开备注）那些判据 2026-10-03 起搬到了 tools/verify_public_remark.mjs：
 //   备注来源从主题的站点配置换成了 hub 按节点下发的 `public_remark`（见 1.16.0），
@@ -338,7 +338,7 @@ const check = (name, ok, detail) => { results.push({ name, ok, detail }); consol
 /* 1) 经典（顺带量一遍它的四项视觉值，作为简约档那几条的对照——两边都钉住才叫「只换了这一套」） */
 let classicStyle = null
 {
-  const { dom, ping } = await render({ cardStyle: 'classic' }, 'classic')
+  const { dom, ping } = await render({ cardStyle: 'classic', listTop: 'none' }, 'classic')
   classicStyle = JSON.parse(await evalJS(PLAIN_PROBE))
   check('卡片壳：圆角 10px（rounded-lg；参考站是这个，不是 rounded-xl 的 14px）',
     classicStyle.radius === '10px', classicStyle.radius)
@@ -379,7 +379,7 @@ let classicStyle = null
 
 /* 1b) 简约：与经典**同结构、同内容**，只换一套视觉处理（标签提亮 / 条压细 / 底注变小 / 名字加粗 / 行距收紧） */
 {
-  const { dom, ping } = await render({ cardStyle: 'plain' }, 'plain')
+  const { dom, ping } = await render({ cardStyle: 'plain', listTop: 'none' }, 'plain')
   const s = JSON.parse(await evalJS(PLAIN_PROBE))
   check('简约：底部是一行两段、无延迟块、无读数盒',
     dom.netRow === 1 && dom.netGrid === 0 && dom.polylines === 0 && dom.infoBox === 0,
@@ -408,8 +408,8 @@ let classicStyle = null
   // 对照组：**简约**档底部那一行的量值（经典档已恢复成 2×2 四格，不再是这一档的参照）。
   // 判据写成**逐项等价**（结构 / 两端配色 / 间距 / 分隔线 / 两端对齐 + 文案形状），
   // 而不是「形状差不多」——只断自己等于没证明「看齐了」。
-  const base = await render({ cardStyle: 'plain' }, 'latency-vs-plain')
-  const { dom, ping } = await render({ cardStyle: 'latency' }, 'latency')
+  const base = await render({ cardStyle: 'plain', listTop: 'none' }, 'latency-vs-plain')
+  const { dom, ping } = await render({ cardStyle: 'latency', listTop: 'none' }, 'latency')
   const geom = (n) => JSON.stringify({
     seg: n.children, svg: n.svg, left: n.leftColor, right: n.rightColor,
     mt: n.marginTop, pt: n.paddingTop, border: n.borderTop, fs: n.font, justify: n.justify,
@@ -433,20 +433,20 @@ let classicStyle = null
 }
 {
   // 指定线路：按填写顺序、名字对不上的跳过、超过三条截断
-  const { dom } = await render({ cardStyle: 'latency', pingLines: '广州电信\n不存在的线路\n上海电信\n成都电信\n北京电信' }, 'latency-lines')
+  const { dom } = await render({ cardStyle: 'latency', pingLines: '广州电信\n不存在的线路\n上海电信\n成都电信\n北京电信', listTop: 'none' }, 'latency-lines')
   check('延迟：指定线路按填写顺序渲染、名字对不上跳过、封顶三条',
     dom.rows.join('/') === '广州电信/上海电信/成都电信', dom.rows.join('/'))
 }
 {
   // 四条都对得上：仍然只渲染三条（上限卡在渲染出来的行数上）
-  const { dom } = await render({ cardStyle: 'latency', pingLines: '北京电信\n上海电信\n广州电信\n成都电信' }, 'latency-cap')
+  const { dom } = await render({ cardStyle: 'latency', pingLines: '北京电信\n上海电信\n广州电信\n成都电信', listTop: 'none' }, 'latency-cap')
   check('延迟：指定四条有效线路也只显示三条', dom.rows.join('/') === '北京电信/上海电信/广州电信', dom.rows.join('/'))
 }
 
 
 /* 3) 详细（新档） */
 {
-  const { dom, ping } = await render({ cardStyle: 'detailed' }, 'detailed')
+  const { dom, ping } = await render({ cardStyle: 'detailed', listTop: 'none' }, 'detailed')
   check('详细：标题行不再挂状态点', dom.dots === 0, `点 ${dom.dots}`)
   check('详细：三枚读数盒', dom.infoBox === 3 && dom.infoGrid === 1, `盒 ${dom.infoBox} / 栅格 ${dom.infoGrid}`)
   check('详细：元信息行（在线时长 · 价格/周期）', /在线 /.test(dom.text) && /¥12\.50 \/ 月付/.test(dom.text), dom.text)
@@ -462,7 +462,7 @@ let classicStyle = null
 
 /* 4) 旧值 detail 必须迁到延迟，不能掉回经典 */
 {
-  const { dom, ping } = await render({ cardStyle: 'detail' }, 'detail-old')
+  const { dom, ping } = await render({ cardStyle: 'detail', listTop: 'none' }, 'detail-old')
   check('旧值 detail → 延迟（三网延迟块在）', dom.polylines === 3 * dom.cards, `polyline ${dom.polylines} / 卡 ${dom.cards}`)
   check('旧值 detail → 延迟（不是经典：底部那行照样在、下面还挂着三网延迟）',
     dom.netRow === 1 && dom.polylines > 0, `网络行 ${dom.netRow} / polyline ${dom.polylines}`)
@@ -470,17 +470,21 @@ let classicStyle = null
   check('旧值 detail → 延迟（不显示详细档的状态点与读数盒）', dom.dots === 0 && dom.infoBox === 0, `点 ${dom.dots} / 盒 ${dom.infoBox}`)
 }
 
-/* 5) 完全没有配置 / 非法值 → 回落经典 */
+/* 5) 完全没有配置 / 非法值 → 回落**出厂默认档**（现读 theme.json 的 cardStyle.default，不写死） */
+const DEFAULT_STYLE = JSON.parse(readFileSync('theme.json', 'utf8')).config.find((f) => f.key === 'cardStyle').default
 for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
-  const { dom, ping } = await render(cfg, tag)
-  check(`非法值 ${tag} → 回落「简约」这一档（含不发延迟请求）`,
-    dom.netRow === 1 && dom.netGrid === 0 && dom.polylines === 0 && dom.infoBox === 0 && ping === 0,
-    `网络行 ${dom.netRow} / 四格 ${dom.netGrid} / polyline ${dom.polylines} / 盒 ${dom.infoBox} / 请求 ${ping}`)
+  const { dom, ping } = await render({ listTop: 'none', ...cfg }, tag)
+  // 默认档 2026-10-06 起是「详细」：认不出的值要落到它（读数盒 + 三网延迟块都在），不是掉回「简约」。
+  check(`非法值 ${tag} → 回落出厂默认档「${DEFAULT_STYLE}」`,
+    DEFAULT_STYLE === 'detailed'
+      ? dom.dots === 0 && dom.infoBox === 3 && dom.polylines === 3 * dom.cards && ping === 2
+      : dom.netRow === 1 && dom.netGrid === 0 && dom.polylines === 0 && dom.infoBox === 0 && ping === 0,
+    `默认档 ${DEFAULT_STYLE} / 网络行 ${dom.netRow} / 四格 ${dom.netGrid} / polyline ${dom.polylines} / 盒 ${dom.infoBox} / 请求 ${ping}`)
 }
 
 /* 6) 紧凑形态：一行一台的表格 */
 {
-  const { dom, ping } = await renderCompact({ cardStyle: 'compact' }, 1440, 'compact')
+  const { dom, ping } = await renderCompact({ cardStyle: 'compact', listTop: 'none' }, 1440, 'compact')
   check('紧凑：渲染成一张表、一行一台（3 台 = 3 行）', dom.tables === 1 && dom.rows === 3, `表 ${dom.tables} / 行 ${dom.rows}`)
   check('紧凑：宽屏十一列齐全（列序对齐源站，另加续费价）', dom.heads.join('/') === '名称/系统/在线/剩余/价格/负载/网速 ↓|↑/CPU/内存/硬盘/流量', dom.heads.join('/'))
   check('紧凑：不再是卡片网格（没有 xl 四列）', !dom.grid4, '仍带 xl:grid-cols-4')
@@ -491,26 +495,26 @@ for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
 
 /* 6b) 列随屏宽收放 */
 {
-  const { dom } = await renderCompact({ cardStyle: 'compact' }, 1100, 'compact-lg')
+  const { dom } = await renderCompact({ cardStyle: 'compact', listTop: 'none' }, 1100, 'compact-lg')
   check('紧凑 lg（1100）：剩余与价格回来、系统还收着，十列',
     dom.cells === 10 && dom.heads.includes('剩余') && dom.heads.includes('价格') && !dom.heads.includes('系统'), `${dom.cells} 列：${dom.heads.join('/')}`)
   check('紧凑 lg：无横向溢出', !dom.overflowX, '横向溢出')
 }
 {
-  const { dom } = await renderCompact({ cardStyle: 'compact' }, 900, 'compact-md')
+  const { dom } = await renderCompact({ cardStyle: 'compact', listTop: 'none' }, 900, 'compact-md')
   check('紧凑 md（900）：系统 / 剩余 / 价格 收掉，剩八列',
     dom.cells === 8 && !dom.heads.includes('系统') && !dom.heads.includes('剩余') && !dom.heads.includes('价格'), `${dom.cells} 列：${dom.heads.join('/')}`)
   check('紧凑 md：无横向溢出', !dom.overflowX, '横向溢出')
 }
 {
-  const { dom, ping } = await renderCompact({ cardStyle: 'compact' }, 700, 'compact-sm')
+  const { dom, ping } = await renderCompact({ cardStyle: 'compact', listTop: 'none' }, 700, 'compact-sm')
   check('紧凑 sm（700）：在线 / 负载 / 硬盘 收掉，剩五列',
     dom.cells === 5 && !dom.heads.includes('在线') && !dom.heads.includes('负载') && !dom.heads.includes('硬盘'), `${dom.cells} 列：${dom.heads.join('/')}`)
   check('紧凑 sm：无横向溢出', !dom.overflowX, '横向溢出')
   check('紧凑 sm：仍不发延迟请求', ping === 0, `实测 ${ping} 次`)
 }
 {
-  const { dom } = await renderCompact({ cardStyle: 'compact' }, 480, 'compact-xs')
+  const { dom } = await renderCompact({ cardStyle: 'compact', listTop: 'none' }, 480, 'compact-xs')
   check('紧凑窄屏（480）：只留名称 / CPU / 流量三列', dom.cells === 3, `${dom.cells} 列：${dom.heads.join('/')}`)
   check('紧凑窄屏：表头仍在（窄屏也告诉访客哪列是什么）', dom.heads.join('/') === '名称/CPU/流量', dom.heads.join('/'))
   check('紧凑窄屏：无横向溢出', !dom.overflowX, '横向溢出')
@@ -518,7 +522,7 @@ for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
 
 /* 6c) 超长机器名不把表格撑出屏幕 */
 {
-  await renderCompact({ cardStyle: 'compact' }, 1000, 'compact-long')
+  await renderCompact({ cardStyle: 'compact', listTop: 'none' }, 1000, 'compact-long')
   const long = JSON.parse(await evalJS(`(() => {
     const span = document.querySelector('tbody tr[role=button] td span.truncate')
     span.textContent = '超长机器名'.repeat(40)
@@ -533,7 +537,7 @@ for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
 
 /* 6d) 点一行就地展开延迟，不跳详情页（源站的做法） */
 {
-  await renderCompact({ cardStyle: 'compact' }, 1440, 'compact-open')
+  await renderCompact({ cardStyle: 'compact', listTop: 'none' }, 1440, 'compact-open')
   await evalJS(`(() => { const r = document.querySelector('tbody tr[role=button]'); if (r) r.click(); return r ? 'ok' : 'no-row' })()`)
   await sleep(2000) // 等 NodeDetail 那个 chunk 与延迟图落地
   // 包一层 try：求值撞上重渲染时会丢上下文，直接 JSON.parse(undefined) 会让整脚本莫名地断在这里。

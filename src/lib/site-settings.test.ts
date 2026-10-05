@@ -11,7 +11,7 @@
 // 读不出来的表现不是报错，而是「站长开着的那一项自己关了」。
 import { readFileSync } from "node:fs"
 
-import { DEFAULTS, FARM_OFF, cardStyleOf, hasGroupTabs, hasSummary, isBudgetLayout, listTopOf, normalizeConfig, remarksOnCards, remarksOnDetail } from "./site-settings.ts"
+import { CARD_STYLES, DEFAULTS, FARM_OFF, cardStyleOf, cardStyleOrNull, hasGroupTabs, hasSummary, isBudgetLayout, listTopOf, normalizeConfig, remarksOnCards, remarksOnDetail } from "./site-settings.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -25,8 +25,25 @@ function eq(got: unknown, want: unknown, what: string) {
 // ── cardStyle：旧名迁移 ───────────────────────────────────────────────
 eq(cardStyleOf("detail"), "latency", '旧值 "detail" 迁到 "latency"')
 for (const v of ["classic", "latency", "detailed", "plain", "compact"]) eq(cardStyleOf(v), v, `cardStyle 保留 ${v}`)
-eq(cardStyleOf("nope"), "plain", "cardStyle 认不出的值回落「简约」（默认档）")
-eq(cardStyleOf(undefined), "plain", "cardStyle 没存过回落「简约」（默认档）")
+eq(cardStyleOf("nope"), "detailed", "cardStyle 认不出的值回落 DEFAULTS.cardStyle（现为「详细」）")
+eq(cardStyleOf(undefined), "detailed", "cardStyle 没存过回落 DEFAULTS.cardStyle（现为「详细」）")
+
+// ── cardStyleOrNull：访客自己挑的那一档（认不出来是 null = 没挑过，不是回落默认）──
+eq(CARD_STYLES, ["classic", "plain", "latency", "detailed", "compact"], "五档的顺序（顶栏菜单按它排）")
+for (const v of CARD_STYLES) eq(cardStyleOrNull(v), v, `cardStyleOrNull 保留 ${v}`)
+eq(cardStyleOrNull("detail"), "latency", "访客存过旧名 detail 也要迁到 latency")
+// ★ 差别就在这一条：站点设置读坏了要退回一个能用的值（cardStyleOf → plain），
+//   访客的偏好读坏了必须视为"没选过"（null），否则站长的默认档会被一个野值顶掉。
+eq(cardStyleOrNull("nope"), null, "认不出的值 → null（跟着站长的设置走）")
+eq(cardStyleOrNull(null), null, "没存过 → null")
+eq(cardStyleOrNull(""), null, "空串 → null")
+eq(cardStyleOrNull(3), null, "数字 → null（localStorage 里什么字符串都可能）")
+eq(cardStyleOf(undefined), cardStyleOrNull(undefined) ?? DEFAULTS.cardStyle, "cardStyleOf 与 cardStyleOrNull 是同一套判据")
+eq(CARD_STYLES.length, 5, "就是五种形态")
+eq(DEFAULTS.cardStyle, "detailed", "默认档是「详细」")
+eq(DEFAULTS.listTop, "bothBudget", "列表页顶部默认「两个都显示·概览卡片价值版」")
+// ★「老站明确把两行都关掉」与「从没配过」必须是两种结果——否则改默认值会把老站的两行悄悄打开。
+eq(listTopOf(undefined, { showSummary: false, showGroupTabs: false }), "none", "老配置：两个都关 ≠ 从没配过（仍是 none）")
 
 // ── listTop：六选一本身就认 ───────────────────────────────────────────
 const TOPS = ["none", "groups", "summary", "budget", "both", "bothBudget"] as const
@@ -37,8 +54,8 @@ eq(listTopOf(undefined, { showSummary: true, showGroupTabs: true }), "both", "�
 eq(listTopOf(undefined, { showSummary: true, showGroupTabs: false }), "summary", "老配置：只开概览 → summary")
 eq(listTopOf(undefined, { showSummary: false, showGroupTabs: true }), "groups", "老配置：只开分组标签 → groups")
 eq(listTopOf(undefined, { showSummary: false, showGroupTabs: false }), "none", "老配置：两个都关 → none")
-eq(listTopOf(undefined, {}), "none", "没存过任何一项 → none")
-eq(listTopOf(undefined), "none", "连配置对象都没有 → none")
+eq(listTopOf(undefined, {}), "bothBudget", "没存过任何一项 → 跟随默认档（两个都显示·价值版）")
+eq(listTopOf(undefined), "bothBudget", "连配置对象都没有 → 跟随默认档")
 // 只存了其中一个（另一个键根本不存在）也要按「关」算，不能当成缺失而回落整个默认值。
 eq(listTopOf(undefined, { showGroupTabs: true }), "groups", "只存了分组标签一个键 → groups")
 // 不认识的 listTop（手改、别的版本）当没存过，继续按老开关迁，而不是直接掉回默认。

@@ -13,8 +13,8 @@ import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, osName, rate, timeTicks, uptime,
 } from "@/lib/format"
-import { remarkChips } from "@/lib/notes"
-import { remarksOnCards, remarksOnDetail, type RemarkPlacement } from "@/lib/site-settings"
+import { hasDetailRemarks, remarkChips } from "@/lib/notes"
+import { remarksOnCards, type RemarkPlacement } from "@/lib/site-settings"
 import { rangesFor } from "@/lib/ranges"
 
 type Point = {
@@ -165,7 +165,8 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   // 整页详情那一块算「详情页」那一侧——所以这里按「备注显示位置」分别取一次（见 @/lib/site-settings）。
   const chips = remarkChips(node)
   const cardChips = remarksOnCards(remarkPlacement ?? "both") ? chips : []
-  const detailChips = remarksOnDetail(remarkPlacement ?? "both") ? chips : []
+  // 判据与骨架共用一处（hasDetailRemarks）：两边口径一歪，骨架就会对不上高度（护栏 verify_detail_preload）。
+  const detailChips = hasDetailRemarks(node, remarkPlacement ?? "both") ? chips : []
   const [peekOpen, setPeekOpen] = useState(false)
   const peekRef = useRef<HTMLSpanElement | null>(null)
   // 摊开时点别处 / Esc 收起（与「延迟」档那枚同一个做法）。

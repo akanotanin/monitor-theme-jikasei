@@ -127,7 +127,7 @@ function MetaRow({ node }: { node: Node }) {
   const cycle = cycleText(node)
   if (!online && !price) return null
   return (
-    <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+    <div data-meta="" className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
       <span className="truncate">{online}</span>
       {price && <span className="tnum shrink-0">{cycle ? `${price} / ${cycle}` : price}</span>}
     </div>
