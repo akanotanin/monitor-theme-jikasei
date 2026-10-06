@@ -145,7 +145,7 @@ const PROBE = `(() => {
   const rowEl = q('header > div')
   const live = rowInput && rowInput.offsetParent !== null ? rowInput : input
   return JSON.stringify({
-    input: box(input), wide: box(wide), icon: box(icon), toggle: box(q('.search-toggle')), row: box(rowWrap), rowInput: box(rowInput), clear: box(q('.search-clear')),
+    input: box(input), wide: box(wide), icon: box(icon), neighborIcon: box(q('header .globe-toggle svg')), toggle: box(q('.search-toggle')), row: box(rowWrap), rowInput: box(rowInput), clear: box(q('.search-clear')),
     header: box(q('header')), headerRow: rowEl ? { scrollW: rowEl.scrollWidth, clientW: rowEl.clientWidth } : null, siteName: box(q('header button')),
     main: box(q('main')), themeButton: box(q('header button[title="切换主题"]')),
     inputInHeader: !!(input && q('header').contains(input)), rowInHeader: !!(rowWrap && q('header').contains(rowWrap)),
@@ -256,6 +256,10 @@ check('收起时：词看不见 —— 字色透明（padding 也收紧了，盒
 check('收起时：放大镜正好落在方框正中（左右各 10px）',
   !!m.icon && Math.abs((m.icon.x - m.input.x) - 10) <= 1 && Math.abs((m.input.right - m.icon.right) - 10) <= 1,
   `图标 x=${m.icon?.x}（框 ${m.input?.x}~${m.input?.right}，图标宽 ${m.icon?.w}）`)
+// 用户报过的一条：这一排里只有放大镜是弱化灰，别的都是前景色 —— 同色是顶栏的规矩。
+check('收起时：放大镜的颜色与旁边那几枚图标**逐字同色**（不给它单独的弱化灰）',
+  !!m.icon && !!m.neighborIcon && m.icon.color === m.neighborIcon.color,
+  `搜索 ${m.icon?.color} vs 邻座那枚 ${m.neighborIcon?.color}`)
 check('收起时：悬停说明是「搜索（名称 / 地区 / 系统）」', m.input?.title === '搜索（名称 / 地区 / 系统）', `title=${m.input?.title}`)
 check('收起时：没有清空按钮（那 36px 里放不下第二枚图标）', m.clear === null, JSON.stringify(m.clear))
 if (!REAL) {
@@ -316,7 +320,7 @@ if (!REAL) {
   check('点框外（失焦）：收回到 36px 的方形', blurred.input?.w === 36 && blurred.input?.focused === false, JSON.stringify(blurred.input))
   check('失焦收起后**词留着**：列表还筛着那两台，输入框里也还是「东京」',
     blurred.value === '东京' && blurred.count === 2, `value=${JSON.stringify(blurred.value)} 卡片 ${blurred.count}`)
-  check('收起态能看出「正在筛」：放大镜提色（不再是弱化的灰）', blurred.icon?.color !== m.icon?.color, `收起 ${m.icon?.color} → 有词 ${blurred.icon?.color}`)
+  check('收起态那枚图标的颜色不随「有没有词」变（始终与邻座同色）', blurred.icon?.color === m.icon?.color, `空 ${m.icon?.color} → 有词 ${blurred.icon?.color}`)
   check('收起态的悬停说明带上词与命中数（`搜索：东京（2 台）`）', blurred.input?.title === '搜索：东京（2 台）', `title=${blurred.input?.title}`)
   await shot('desktop-collapsed-filtering', 'header', 8)
   // Esc 两段式：有词先清词（框还长开着），空框上再按一下才收起。

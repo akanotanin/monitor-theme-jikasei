@@ -11,8 +11,8 @@ import { useRef } from "react"
  * 失焦再收回去（CSS 的 `:focus-within` 驱动，见下面 Field 的 className），**词留着**。
  *
  * 词留着是刻意的：搜索是「这一眼看哪几台」，点开一台机器看清了再回来，那几台理应还在。
- * 收起态看不见词，所以那枚放大镜会**提色**（弱化的灰 → 前景色），悬停说明也换成
- * `搜索：东京（2 台）` —— 收起来的筛选不至于变成「看不见的筛选」。
+ * 收起态看不见词，线索只剩两处：悬停说明换成 `搜索：东京（2 台）`，以及下面那张列表本身。
+ * **不拿颜色当信号**：顶栏这一排图标本来就同色，放大镜一旦变灰就格外扎眼（用户报过这条）。
  * 清词只有两处：框里那枚 ×，或 Esc（Esc 两段式：有词先清词、框还开着；空框上再按一下才收起）。
  *
  * 窄屏（<640px）顶栏塞不下 240px 的输入框，长开那份只在 ≥640px 生效；窄屏点那枚图标是在顶栏
@@ -104,8 +104,10 @@ function Field({ value, onChange, onActivate, onClose, autoFocus, className, tit
   const square = variant === "square"
   return (
     <span className={`search-field relative flex items-center transition-all duration-150 ${className ?? ""}`}>
-      {/* 有词时提色（前景色）：收起态看不见词，这一枚颜色就是「正在筛」的唯一视觉信号。 */}
-      <Search className={`pointer-events-none absolute left-2.5 size-4 ${square && value !== "" ? "text-foreground" : "text-muted-foreground"}`} aria-hidden="true" />
+      {/* 颜色**不给**（继承顶栏那套前景色）：与旁边那几枚图标逐像素同色 —— 这里曾用过弱化灰
+          （想拿「灰 → 前景色」当「正在筛」的信号），结果就是这一排里只有放大镜是灰的，
+          一眼就看出来不一致（用户报过）。所以收起态不再靠颜色说话，见下面那段注释。 */}
+      <Search className="pointer-events-none absolute left-2.5 size-4" aria-hidden="true" />
       <input
         ref={box}
         type="search"
