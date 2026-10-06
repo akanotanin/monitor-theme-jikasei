@@ -208,6 +208,12 @@ export default function App() {
   // 搜到的那几台还在（与分组标签、地区选择同一套「看哪几台」的记忆）。
   const [query, setQuery] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
+  // 收起搜索＝不筛：收起时把词一起清掉（不然列表还筛着、输入框却不见了，访客找不到「怎么取消」）。
+  // 那枚图标与窄屏多出来的那一行共用这一个动作。
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setQuery("")
+  }
 
   const loadMe = useCallback(() => {
     // `|| "..."` because an empty message reads as no error: api() falls back to
@@ -351,13 +357,8 @@ export default function App() {
               value={query}
               onChange={setQuery}
               open={searchOpen}
-              onToggle={() => {
-                // 收起时顺手把词清掉：不然列表还筛着、输入框却不见了，访客找不到「怎么取消」。
-                if (searchOpen) {
-                  setSearchOpen(false)
-                  setQuery("")
-                } else setSearchOpen(true)
-              }}
+              onToggle={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+              onClose={closeSearch}
             />
           )}
           {/* The panel is a separate app built into the hub, not part of this
@@ -414,14 +415,7 @@ export default function App() {
         {/* 窄屏点开搜索后在顶栏下面多出来的那一行：摆成 header 的直接子节点，
             于是它跟着这个 sticky 块一起吸顶（滚动时不会留在列表里被滚走）。 */}
         {open === null && searchOpen && (
-          <SearchRow
-            value={query}
-            onChange={setQuery}
-            onClose={() => {
-              setSearchOpen(false)
-              setQuery("")
-            }}
-          />
+          <SearchRow value={query} onChange={setQuery} onClose={closeSearch} />
         )}
       </header>
 

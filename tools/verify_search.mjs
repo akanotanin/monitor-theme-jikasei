@@ -127,7 +127,8 @@ const PROBE = `(() => {
     const r = el.getBoundingClientRect()
     const cs = getComputedStyle(el)
     return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), right: Math.round(r.right),
-      display: cs.display, visibility: cs.visibility, focused: el === document.activeElement, rendered: el.offsetParent !== null, fontWeight: cs.fontWeight }
+      display: cs.display, visibility: cs.visibility, focused: el === document.activeElement, rendered: el.offsetParent !== null,
+      title: el.getAttribute('title'), expanded: el.getAttribute('aria-expanded'), fontWeight: cs.fontWeight }
   }
   const cards = [...document.querySelectorAll('[data-card-style] > [data-slot="card"]')]
   let fleet = null
@@ -200,6 +201,18 @@ const type = async (text) => {
   await sleep(250)
 }
 const clickVisible = (sel) => js(`${VISIBLE(sel)}?.click()`)
+// 真按键（Esc 两段式那种要看 React 的 keydown）：keyDown + keyUp 成对发。
+const key = async (k, code, vk) => {
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: k, code, windowsVirtualKeyCode: vk })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: k, code, windowsVirtualKeyCode: vk })
+  await sleep(200)
+}
+// 真鼠标（「点框外」那一条必须是真的点击，不然等于自己给自己出题）：
+const clickAt = async (x, y) => {
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 })
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 })
+  await sleep(250)
+}
 const goto = async (path, { w, h, dark, mobile = false }) => {
   await send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 2, mobile })
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: dark ? 'dark' : 'light' }] })
@@ -223,21 +236,39 @@ const EXPECT = [
 
 console.log('\n一、桌面 1440×900（亮色，六台夹具机器）:')
 let m = await goto('/', { w: 1440, h: 900, dark: false })
-console.log('   ' + JSON.stringify({ input: m.input, cards: m.count, fleet: m.fleet, vp: m.viewport }))
-check('搜索框在顶栏里（不是列表工具栏那种另开一行）', m.inputInHeader && !!m.input, m.input ? `rect=${JSON.stringify(m.input)}` : '找不到 .search-input')
-check('搜索框在顶栏右半边（x 超过视口中线、右沿不出顶栏）',
-  !!m.input && m.input.x > m.viewport.w / 2 && m.input.right <= m.header.right,
-  `input.x=${m.input?.x} 视口中线=${m.viewport.w / 2} input.right=${m.input?.right} header.right=${m.header?.right}`)
-check('搜索框与旁边那排图标按钮同高（都是 36）', !!m.input && !!m.themeButton && m.input.h === m.themeButton.h && m.input.h === 36,
-  `输入框 ${m.input?.h} / 明暗开关 ${m.themeButton?.h}`)
-check('占位文案没被裁（「搜索名称/地区/系统」整句放得下）', !!m.placeholder && m.placeholder.fits,
-  m.placeholder ? `文案 ${m.placeholder.textW}px / 可用 ${m.placeholder.avail}px` : '没有输入框')
-check('一开始没有清空按钮（没词可清）', m.clear === null)
+console.log('   ' + JSON.stringify({ toggle: m.toggle, input: m.input, cards: m.count, fleet: m.fleet, vp: m.viewport }))
+// 一、收起状态：顶栏里除了一枚放大镜，什么都不该有（输入框是点开之后才渲染的）。
+check('收起时：顶栏里没有输入框（DOM 里就没渲染），只多一枚放大镜图标',
+  m.input === null && m.wideWrap === null && !!m.toggle && m.toggle.rendered, `input=${JSON.stringify(m.input)} toggle=${JSON.stringify(m.toggle)}`)
+check('收起时：那枚图标在顶栏右半边、36×36、与邻座图标同高、说明挂在 title 上',
+  m.toggle.x > m.viewport.w / 2 && m.toggle.right <= m.header.right && m.toggle.w === 36 && m.toggle.h === 36
+  && m.toggle.h === m.themeButton?.h && m.toggle.title === '搜索（名称 / 地区 / 系统）' && m.toggle.expanded === 'false',
+  `rect=${JSON.stringify({ x: m.toggle.x, right: m.toggle.right, w: m.toggle.w, h: m.toggle.h })} title=${m.toggle.title} aria-expanded=${m.toggle.expanded}`)
+// 点开：输入框就地长出来。
+await clickVisible('.search-toggle')
+const opened = await probe()
+console.log('   点开后：' + JSON.stringify({ input: opened.input, toggle: opened.toggle, cards: opened.count }))
+check('点一下图标：输入框就地长出来、焦点已在框里、在顶栏里（不是另开一行）',
+  !!opened.input && opened.input.w > 0 && opened.input.focused && opened.inputInHeader,
+  `input=${JSON.stringify(opened.input)}`)
+check('输入框与旁边那排图标同高（都是 36）', opened.input?.h === 36 && opened.input?.h === opened.themeButton?.h,
+  `输入框 ${opened.input?.h} / 明暗开关 ${opened.themeButton?.h}`)
+check('输入框长在图标**左边**（长出来往左边借空间，不是把图标顶走）',
+  !!opened.input && !!opened.toggle && opened.input.right <= opened.toggle.x && opened.toggle.x - opened.input.right <= 20,
+  `输入框右沿=${opened.input?.right} 图标左沿=${opened.toggle?.x}`)
+check('开合时那枚图标一枚都没动（同一处落点）', opened.toggle.x === m.toggle.x && opened.toggle.y === m.toggle.y,
+  `收起 ${m.toggle.x},${m.toggle.y} → 展开 ${opened.toggle.x},${opened.toggle.y}`)
+check('点开后图标变成「收起搜索」（同一个按钮管开合）',
+  opened.toggle.title === '收起搜索' && opened.toggle.expanded === 'true', `title=${opened.toggle.title} aria-expanded=${opened.toggle.expanded}`)
+check('展开后仍在顶栏右半边、占位文案没被裁',
+  opened.input.x > opened.viewport.w / 2 && opened.input.right <= opened.header.right && !!opened.placeholder && opened.placeholder.fits,
+  `input.x=${opened.input?.x}；文案 ${opened.placeholder?.textW}px / 可用 ${opened.placeholder?.avail}px`)
+check('刚展开时没有清空按钮（没词可清）', opened.clear === null)
 if (!REAL) {
-  check('初始：六台都在，概览「节点」是 6 / 6 · 全部在线',
-    m.count === 6 && m.fleet?.[1] === '6 / 6' && m.fleet?.[2] === '全部在线',
-    `卡片 ${m.count} 张；概览 ${JSON.stringify(m.fleet)}`)
-  await shot('desktop-header', 'header .search-input', 10)
+  check('点开这一下没有筛掉任何东西：六台都在，概览「节点」6 / 6 · 全部在线',
+    opened.count === 6 && opened.fleet?.[1] === '6 / 6' && opened.fleet?.[2] === '全部在线',
+    `卡片 ${opened.count} 张；概览 ${JSON.stringify(opened.fleet)}`)
+  await shot('desktop-open', 'header', 8)
   for (const [term, want] of EXPECT) {
     await type(term)
     const now = await probe()
@@ -262,10 +293,43 @@ if (!REAL) {
   check('点清空：回到六台、概览回 6 / 6、清空按钮消失',
     cleared.count === 6 && cleared.fleet?.[1] === '6 / 6' && cleared.clear === null && cleared.value === '' && cleared.notes.length === 0,
     `卡片 ${cleared.count}；概览 ${JSON.stringify(cleared.fleet)}；value=${JSON.stringify(cleared.value)}`)
+
+  // 收起：再点一次那枚图标 —— 收起＝不筛（词一并清掉），不留看不见的筛选。
+  await type('东京')
+  await clickVisible('.search-toggle')
+  await sleep(250)
+  const collapsed = await probe()
+  check('再点一次图标＝收起，且词一并清掉（不留看不见的筛选）',
+    collapsed.input === null && collapsed.wideWrap === null && collapsed.value === null && collapsed.count === 6 && collapsed.fleet?.[1] === '6 / 6',
+    `input=${JSON.stringify(collapsed.input)} 卡片 ${collapsed.count} 概览 ${JSON.stringify(collapsed.fleet)}`)
+  // Esc 两段式：有词先清词（框还开着），空框上再按一下才收起。
+  await clickVisible('.search-toggle')
+  await sleep(250)
+  await type('东京')
+  await key('Escape', 'Escape', 27)
+  const esc1 = await probe()
+  check('Esc 第一下：只清词，框还开着（接着打下一个词不用再点图标）',
+    esc1.value === '' && !!esc1.input && esc1.count === 6, `value=${JSON.stringify(esc1.value)} 框还在=${!!esc1.input} 卡片 ${esc1.count}`)
+  await key('Escape', 'Escape', 27)
+  const esc2 = await probe()
+  check('Esc 第二下：收起（顶栏又只剩那枚图标）', esc2.input === null && esc2.wideWrap === null, `input=${JSON.stringify(esc2.input)}`)
+  // 点框外：不收起、也不清词 —— 去点开一台机器看清了再回来，那几台还在（所以点框外不接管）。
+  await clickVisible('.search-toggle')
+  await sleep(250)
+  await type('东京')
+  await clickAt(300, 30)   // 顶栏里、站名与图标之间那段空白：安全区（那里没有任何点击处理）
+  const outside = await probe()
+  check('点框外：不收起、也不清词（搜索跟着访客走，不被一次点击抹掉）',
+    !!outside.input && outside.value === '东京' && outside.count === 2,
+    `值=${JSON.stringify(outside.value)} 卡片 ${outside.count}`)
+  await clickVisible('.search-toggle')
+  await sleep(250)
 }
 
 // 搜着的时候进详情页再回来：词与结果都该留着（与分组、地区同一套记忆）。
 if (!REAL) {
+  await clickVisible('.search-toggle')
+  await sleep(250)
   await type('东京')
   await js('document.querySelector(\'[data-card-style] > [data-slot="card"]\').click()')
   await sleep(700)
@@ -283,7 +347,13 @@ if (!REAL) {
 // 想拍别的词就 `SEARCH_TERM=东京 node tools/verify_search.mjs <真站>`。
 if (REAL) {
   console.log('\n（真站：夹具那些「搜出几台」的断言跳过；下面只打几个词看看效果）:')
-  await shot('live-header', 'header', 8)
+  // 收起 / 展开两个状态各拍一张：收起时顶栏里只有一枚放大镜。
+  await clickVisible('.search-toggle')
+  await sleep(250)
+  await shot('live-header-closed', 'header', 8)
+  await clickVisible('.search-toggle')
+  await sleep(250)
+  await shot('live-header-open', 'header', 8)
   const terms = (process.env.SEARCH_TERMS || 'debian').split(',').map((t) => t.trim()).filter(Boolean)
   for (const [i, term] of terms.slice(0, 4).entries()) {
     await type(term)
@@ -296,9 +366,9 @@ if (REAL) {
 }
 
 m = await goto('/', { w: 390, h: 844, dark: false, mobile: true })
-check('窄屏：顶栏里没有输入框（那一格整个藏起来），只剩一枚 36×36 的图标按钮',
-  !!m.wideWrap && m.wideWrap.display === 'none' && !!m.toggle && m.toggle.w === 36 && m.toggle.h === 36 && m.toggle.rendered,
-  `输入框那一格 display=${m.wideWrap?.display}；按钮 ${m.toggle?.w}×${m.toggle?.h}`)
+check('窄屏：顶栏里没有输入框（桌面那一格收起时压根不渲染），只有那枚 36×36 的图标',
+  m.input === null && m.wideWrap === null && !!m.toggle && m.toggle.w === 36 && m.toggle.h === 36 && m.toggle.rendered,
+  `输入框=${JSON.stringify(m.input)}；按钮 ${m.toggle?.w}×${m.toggle?.h}`)
 check('窄屏：一开始没有那一行（没展开）', m.row === null, `row=${JSON.stringify(m.row)}`)
 check('窄屏：顶栏那一行没被挤爆（站名仍是一行、输入框与图标都各就各位）',
   !!m.headerRow && m.headerRow.scrollW <= m.headerRow.clientW + 1 && !!m.siteName && m.siteName.h <= 44,
@@ -311,6 +381,8 @@ check('窄屏点开：多出一整行，且在顶栏那个 sticky 块里（滚�
   !!m.row && m.rowInHeader && m.row.w === m.viewport.w && !!m.rowInput && m.rowInput.w > 0 && m.rowInput.focused,
   `row=${JSON.stringify(m.row)} 在 header 里=${m.rowInHeader} 行里的输入框=${JSON.stringify(m.rowInput)}`)
 await shot('mobile-open', 'header', 8)
+check('窄屏展开时：桌面那一格虽然渲染了，但被 CSS 藏着（宽度 0，不占地方）',
+  !!m.wideWrap && m.wideWrap.display === 'none' && m.wideWrap.w === 0, `wideWrap=${JSON.stringify(m.wideWrap)}`)
 if (!REAL) {
   await type('日本')
   const hits = await probe()
@@ -325,13 +397,16 @@ await js('document.querySelector(".search-toggle")?.click()')
 await sleep(300)
 m = await probe()
 check('窄屏再点那枚图标：收起这一行、词也清掉（不留看不见的筛选）',
-  m.row === null && m.count === (REAL ? m.count : 6) && m.wideWrap?.display === 'none' && m.value === '',
+  m.row === null && m.count === (REAL ? m.count : 6) && m.input === null && m.value === null,
   `row=${JSON.stringify(m.row)} value=${JSON.stringify(m.value)} 卡片 ${m.count}`)
 check('窄屏：没有横向溢出', m.overflow <= 0, `scrollWidth − innerWidth = ${m.overflow}`)
 
 console.log('\n三、深色 1440×900:')
 m = await goto('/', { w: 1440, h: 900, dark: true })
-check('深色：输入框在、可见、占位文案同样放得下',
+await clickVisible('.search-toggle')
+await sleep(250)
+m = await probe()
+check('深色：点开后输入框在、可见、占位文案同样放得下',
   !!m.wideWrap && m.wideWrap.display !== 'none' && !!m.input && m.input.w > 0 && !!m.placeholder && m.placeholder.fits,
   m.input ? `rect=${JSON.stringify(m.input)}` : '找不到输入框')
 if (!REAL) {
