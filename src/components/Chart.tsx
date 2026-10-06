@@ -131,9 +131,20 @@ export function TimeChart({
   renderTooltip?: (row: ChartRow) => React.ReactNode
 }) {
   const box = useRef<HTMLDivElement>(null)
+  const tip = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [hover, setHover] = useState<number | null>(null)
+  const [pointerY, setPointerY] = useState<number | null>(null)
+  const [tipH, setTipH] = useState(0)
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null)
+
+  // 卡片高度：用来把它夹在绘图区里（别顶出去）。悬停的那一格变了才量一次 —— 带依赖数组
+  // 是给 linter 一个交代（不写它会被判成「每次渲染都 setState」），值没变时 setState 会被
+  // React 直接丢掉，不会多渲染一轮。
+  useLayoutEffect(() => {
+    const h = tip.current?.offsetHeight ?? 0
+    if (h && h !== tipH) setTipH(h)
+  }, [hover, tipH])
 
   useLayoutEffect(() => {
     const el = box.current
@@ -365,8 +376,14 @@ export function TimeChart({
             onMouseMove={(e) => {
               if (view.length === 0) return
               setHover(indexAt(e.clientX, e.currentTarget))
+              // 卡片要跟着鼠标走，所以纵坐标也记下来（原来是钉在图表顶端的）。
+              const rect = (e.currentTarget as SVGRectElement).getBoundingClientRect()
+              setPointerY(Math.min(Math.max(e.clientY - rect.top, 0), rect.height))
             }}
-            onMouseLeave={() => setHover(null)}
+            onMouseLeave={() => {
+              setHover(null)
+              setPointerY(null)
+            }}
             onPointerDown={(e) => {
               if (!onZoom || view.length < 3) return
               // 捕获失败不该让整段拖选失效（指针已经消失、或合成事件没有有效 id 时会抛）。
@@ -401,13 +418,17 @@ export function TimeChart({
       )}
       {hovered && (
         <div
+          ref={tip}
           className="pointer-events-none absolute z-30"
-          // 靠右时翻到光标左边，别把 tooltip 顶出图外（原来是 recharts 自己兜的）。
-          style={
-            x(hovered.ts) > left + plotW - 150
-              ? { right: w - x(hovered.ts) + 8, top: TOP }
-              : { left: x(hovered.ts) + 8, top: TOP }
-          }
+          // 纵向**跟着鼠标**走（原来是钉在图表顶端）：以光标为中心，再夹在绘图区里 ——
+          // 上下两头各留一点，别顶出图外，也别盖住 x 轴标签。
+          // 横向仍贴着光标那条竖线（靠右时翻到左边），与原来一致。
+          style={{
+            top: Math.min(Math.max((pointerY ?? plotH / 2) - tipH / 2 + TOP, TOP), Math.max(TOP, TOP + plotH - tipH)),
+            ...(x(hovered.ts) > left + plotW - 150
+              ? { right: w - x(hovered.ts) + 8 }
+              : { left: x(hovered.ts) + 8 }),
+          }}
         >
           {renderTooltip ? (
             renderTooltip(hovered)

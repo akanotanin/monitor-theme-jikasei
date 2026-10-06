@@ -253,6 +253,38 @@ await js(`(() => {
 await sleep(250)
 const tip = await js(`(() => { const el = [...document.querySelectorAll('div')].find((d) => /CPU/.test(d.textContent || '') && d.className.includes('pointer-events-none') && d.className.includes('rounded-lg')); return el ? el.textContent : null })()`)
 check('悬停出 tooltip：带时间戳 + 系列名 + 带单位的值', !!tip && /CPU/.test(tip) && /%/.test(tip), JSON.stringify(tip))
+
+// 卡片要**跟着鼠标走**（原来钉在图表顶端）：同一列上下各停一次，卡片纵向位置得跟着变，
+// 而且始终夹在绘图区里（上下都不越界）。
+// ★两次悬停之间必须**等一帧**：React 的状态更新是异步的，派发完立刻量会量到上一帧的位置
+//   （第一版就是这么误判成「没跟着走」的）。
+const hoverAt = async (fy) => {
+  await js(`(() => {
+    const h = [...document.querySelectorAll('h4')].find((x) => /^CPU/.test(x.textContent || ''))
+    const rect = h.parentElement.querySelector('svg rect[fill="transparent"]')
+    const r = rect.getBoundingClientRect()
+    rect.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height * ${fy} }))
+    return true
+  })()`)
+  await sleep(180)
+  return JSON.parse(await js(`(() => {
+    const h = [...document.querySelectorAll('h4')].find((x) => /^CPU/.test(x.textContent || ''))
+    const r = h.parentElement.querySelector('svg rect[fill="transparent"]').getBoundingClientRect()
+    const card = [...document.querySelectorAll('div')].find((d) => /CPU/.test(d.textContent || '') && (d.className || '').includes('rounded-lg'))
+    const b = card ? card.getBoundingClientRect() : null
+    return JSON.stringify({ plotH: Math.round(r.height), nearY: Math.round(r.height * ${fy}),
+      top: b ? Math.round(b.top - r.top) : null, bottom: b ? Math.round(b.bottom - r.top) : null })
+  })()`))
+}
+const up = await hoverAt(0.15)
+const down = await hoverAt(0.85)
+check('鼠标停在上半 / 下半，卡片纵向位置跟着变（不再是钉在顶端）',
+  // ★别写 `!!up.top`：夹到顶端时 top 正好是 0，会被当成「没有值」——第一版就这么误判过。
+  up.top !== null && down.top !== null && down.top - up.top > 20,
+  `上半 y=${up.nearY} → 卡片 top=${up.top}；下半 y=${down.nearY} → 卡片 top=${down.top}`)
+check('卡片始终夹在绘图区里（上下都没越界）',
+  up.top >= -2 && down.bottom <= down.plotH + 2,
+  `上半 top=${up.top}；下半 bottom=${down.bottom} / 绘图区 ${down.plotH}`)
 check('没有控制台异常', errors.length === 0, errors.slice(0, 2).join(' | '))
 // 真站那轮也出图：同一台机器、同一时刻，改前改后各拍一张才能比。
 await shot(REAL ? 'live-detail-charts' : 'detail-charts')

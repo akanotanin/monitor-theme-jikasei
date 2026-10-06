@@ -161,15 +161,17 @@ if (has7) {
   }
   check('点「7 天」发出了 hours=168 的取数请求', !!hit, hit ? `${hit.n} 条，例：${hit.url.replace(BASE, '')}` : '没看到 hours=168 的请求')
   check('该请求带 series=ping 且回 200', !!hit && hit.url.includes('series=ping') && hit.status === 200, hit ? `series=ping=${hit.url.includes('series=ping')} status=${hit.status}` : '')
-  // 图上真的画了线：recharts 画的是 <path class="recharts-curve ...">，不是 polyline。
-  // 刻度文本要选 `.recharts-xAxis-tick-labels text`：recharts 3 把刻度画在**独立于轴分组**的
-  // 一层里，用「轴分组 + 后代」那种写法（.recharts-xAxis .recharts-cartesian-axis-tick-value）
+  // 图上真的画了线：自绘图表里就是带 stroke-width 的那条 <path>。
   // 一个都选不到——这是本护栏第一版红的真正原因，别改回去。
   const drawn = await evalJS(`JSON.stringify({
-    curves: document.querySelectorAll('path.recharts-curve').length,
-    ticks: [...document.querySelectorAll('.recharts-xAxis-tick-labels text')].map((t) => t.textContent).slice(0, 6),
-    ytick: [...document.querySelectorAll('.recharts-yAxis-tick-labels text')].map((t) => t.textContent).slice(0, 3),
-    texts: [...document.querySelectorAll('.recharts-wrapper text')].map((t) => t.textContent).slice(0, 20),
+    // ★这里原来读的是 recharts 的类名（path.recharts-curve / .recharts-xAxis-tick-labels text）。
+    //   延迟图换成自绘 SVG（src/components/Chart.tsx）之后那些类名整批消失，判据会**静默变成 0**
+    //   —— 改读自家图表那张 svg 里的结构与文字（曲线带 stroke-width、x 刻度 text-anchor=middle、
+    //   y 刻度 text-anchor=end）。这正是仓库里那句「按类名找会在改版后失配」。
+    curves: document.querySelectorAll('svg[aria-label="节点延迟走势"] path[stroke-width="1.5"]').length,
+    ticks: [...document.querySelectorAll('svg[aria-label="节点延迟走势"] text')].filter((t) => t.getAttribute('text-anchor') === 'middle').map((t) => t.textContent).slice(0, 6),
+    ytick: [...document.querySelectorAll('svg[aria-label="节点延迟走势"] text')].filter((t) => t.getAttribute('text-anchor') === 'end').map((t) => t.textContent).slice(0, 3),
+    texts: [...document.querySelectorAll('svg[aria-label="节点延迟走势"] text')].map((t) => t.textContent).slice(0, 20),
   })`)
   const d = JSON.parse(drawn)
   // 日期刻度形如「09/28 15:30」、24 小时内的刻度是纯「15:30」，两者靠有没有日期段区分。
