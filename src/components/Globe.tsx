@@ -313,11 +313,18 @@ function Pin({ p }: { p: Placed }) {
     <g>
       <path className="globe-stem" d={`M ${cx} ${cy} L ${p.lx.toFixed(1)} ${p.ly.toFixed(1)}`} />
       <circle className="globe-pin" cx={cx} cy={cy} r={2.1} />
+      {/* 多台地区：针边上挂一个小小的台数（标签里也写着「地区 ×N」，两处都在，
+          因为标签可能被挤掉、针本身也常常落在标签的另一头）。 */}
+      {p.count > 1 && (
+        <text className="globe-count" x={p.px + 4.5} y={p.py - 3.5}>
+          {p.count}
+        </text>
+      )}
       <text className="globe-label" x={p.lx + (p.end ? -3 : 3)} y={p.ly + 3} textAnchor={p.end ? "end" : "start"}>
         {p.label}
       </text>
-      <circle className="hit" cx={cx} cy={cy} r={9} fill="transparent" data-node={p.id} data-index={p.index} data-region={p.region.key} data-online={p.online ? "1" : "0"}>
-        <title>打开 {p.name}</title>
+      <circle className="hit" cx={cx} cy={cy} r={9} fill="transparent" data-node={p.id} data-index={p.index} data-region={p.region.key} data-online={p.online ? "1" : "0"} data-count={p.count}>
+        <title>{p.count > 1 ? `${p.region.label}：${p.count} 台（打开其中第一台）` : `打开 ${p.name}`}</title>
       </circle>
     </g>
   )

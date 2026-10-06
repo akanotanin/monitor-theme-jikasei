@@ -293,6 +293,16 @@
   object-fit: cover;
   box-shadow: 0 0 0 1px var(--border);
 }
+/* 多台地区针边上的台数：与针同色、小一号加粗，衬一圈底色免得压在岸线上看不清。 */
+.globe-count {
+  fill: var(--warn);
+  font-size: 7px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--card);
+  stroke-width: 1.6px;
+}
+
 /* 顶栏那枚开关：关掉时压暗，一眼看得出地球是关着的。 */
 .globe-toggle[aria-pressed="false"] { color: var(--muted-foreground); opacity: 0.6; }
 

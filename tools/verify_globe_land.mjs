@@ -36,7 +36,7 @@ const mk = (id, name, country, group) => ({
   metrics: { cpu: 5, load: [0, 0, 0], mem_used: 1, mem_total: 1, swap_used: 0, swap_total: 0, disk_used: 1, disk_total: 1, net_rx: 1, net_tx: 1, procs: 1, tcp: 1, udp: 1, uptime: 1, month_rx: 1, month_tx: 1, total_rx: 1, total_tx: 1 },
 })
 // 针要落在**认得出来的城市**上，才能从屏幕位置反解相机角度
-const NODES = { nodes: [mk(1, '东京一号', 'JP', '东京'), mk(2, '法兰克福一号', 'DE', '欧洲'), mk(3, '圣保罗一号', 'BR', '南美'), mk(4, '悉尼一号', 'AU', '亚太')] }
+const NODES = { nodes: [mk(1, '东京一号', 'JP', '东京'), mk(2, '东京二号', 'JP', '东京'), mk(3, '东京三号', 'JP', '东京'), mk(4, '法兰克福一号', 'DE', '欧洲')] }
 
 const serveFile = (res, path) => {
   const file = join('dist', normalize(path === '/' ? '/index.html' : path).replace(/^(\.\.[/\\])+/, ''))
@@ -159,6 +159,32 @@ check('不该是陆地却填成陆地的 ≤2.5%（抽稀那版这里是 5.0%）
 // 缺的那些应当都在贴地平线那一圈（≥0.8 半径）—— 那是七次二分找边缘的正常误差，不是形状被砍
 const inner = missing.filter((r) => r.r < 0.8).length
 check('缺的点都在贴地平线一圈（内侧没有成片缺失）', inner <= 4, `内侧缺 ${inner} 个`)
+
+/*
+ * ── 同城多台：**聚成一枚针**（针边挂台数、标签写「地区 ×N」） ──
+ * 夹具里东京有三台、法兰克福一台；初始视角就在亚洲那一面（而且这里关了自转，角度是定的），
+ * 所以东京一定看得见。
+ */
+const pinList = JSON.parse((await js(`(() => JSON.stringify([...document.querySelectorAll('circle.hit')].map((c) => ({
+  region: c.getAttribute('data-region'),
+  count: Number(c.getAttribute('data-count') || 1),
+  x: +c.getAttribute('cx'), y: +c.getAttribute('cy'),
+}))))()`)) ?? '[]')
+const tokyo = pinList.filter((p) => p.region === 'JP · Tokyo')
+check('三台同城只出一枚针', tokyo.length === 1, `东京那枚针 ${tokyo.length} 个`)
+check('针上写着 3 台（data-count）', tokyo[0]?.count === 3, `data-count=${tokyo[0]?.count}`)
+const badge = await js(`(() => {
+  const t = [...document.querySelectorAll('text.globe-count')].map((e) => e.textContent)
+  const labels = [...document.querySelectorAll('text.globe-label')].map((e) => e.textContent)
+  return JSON.stringify({ badges: t, labels })
+})()`)
+const seen = JSON.parse(badge ?? 'null')
+check('针边上挂着「3」那枚小字', seen?.badges?.includes('3') === true, JSON.stringify(seen?.badges))
+// 标签是布局层拼的「国家 · 名字」，所以多台那行是「JP · Tokyo ×3」
+check('标签里带「Tokyo ×3」', (seen?.labels ?? []).some((l) => /Tokyo ×3$/.test(l)), JSON.stringify(seen?.labels))
+check('一台的地区没有台数小字（法兰克福）', pinList.filter((p) => p.region === 'DE · Frankfurt am Main').every((p) => p.count === 1),
+  JSON.stringify(pinList.map((p) => `${p.region}:${p.count}`)))
+
 
 console.log(`\n结果: PASS ${passed} / FAIL ${failed}`)
 chrome.kill()

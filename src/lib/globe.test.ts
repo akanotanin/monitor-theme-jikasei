@@ -195,17 +195,17 @@ const fleet = [
 ]
 
 const placed = globeNodes(fleet)
-eq(placed.length, 9, "认不出国家的机器没上地球（10 台里 9 台有落点）")
-eq(placed.map((p) => p.key), ["1", "2", "3", "4", "5", "6", "7", "8", "9"], "顺序与节点列表一致（连线抽样要靠 index）")
-// 同地区的多台必须岔开：坐标两两不同，且都在落点附近（不是随便乱扔）。
-const byKey = new Map<string, [number, number][]>()
-for (const p of placed) byKey.set(p.region.key, [...(byKey.get(p.region.key) ?? []), p.ll])
-for (const [key, lls] of byKey) {
-  const uniq = new Set(lls.map((ll) => ll.join(",")))
-  eq(uniq.size, lls.length, `${key} 的 ${lls.length} 台机器落点各不相同（不叠在一起）`)
-  const base = [...byKey.keys()].includes(key) ? regionOf(fleet.find((n) => regionOf(n)?.key === key) as Node)?.base : null
-  if (base) ok(lls.every((ll) => Math.abs(ll[0] - base[0]) < 6 && Math.abs(ll[1] - base[1]) < 6), `${key} 的散点都在落点附近`)
-}
+// ★**每个地区一枚针**（不是每台一枚）：9 台落进 6 个地区（HK 有两台：一台认得出城市、
+//   一台只认得出国家，是两个地区 —— 见下面 regionRows 的注释）。
+eq(placed.length, 6, "每个地区一枚针（10 台里 9 台有落点，落在 6 个地区）")
+eq(placed.every((p, i, all) => i === 0 || all[i - 1].index <= p.index), true, "针按各地区第一台机器的序号排序（连线抽样靠 index）")
+eq(placed.filter((p) => p.region.key === "JP").map((p) => p.count), [4], "JP 那枚针上写着 4 台")
+eq(placed.filter((p) => p.region.key === "JP").map((p) => p.name), ["JP ×4"], "多台的针标签是「地区 × 台数」")
+eq(placed.filter((p) => p.count === 1).every((p) => p.ll[0] === p.region.base[0] && p.ll[1] === p.region.base[1]), true, "针就落在地区中心（不再为了岔开而散点）")
+// 有一台离线，那枚针就按离线画（不能被「多数在线」盖过去）。
+const jpOffline = globeNodes(fleet.map((n) => (n.country === "JP" && n.id === 7 ? { ...n, online: false } : n)))
+eq(jpOffline.find((p) => p.region.key === "JP")?.online, false, "地区里有一台离线，那枚针就按离线画")
+eq(jpOffline.find((p) => p.region.key === "CN")?.online, true, "别的地区不受影响")
 eq(globeNodes(fleet).map((p) => p.ll), placed.map((p) => p.ll), "同一份节点算两次，落点完全一样（不会每帧抖）")
 
 const rows = regionRows(fleet)
@@ -227,7 +227,7 @@ eq(regionView([], "JP").current, null, "没有节点时不存在悬空选中")
 
 const sides = new Map<string, "L" | "R">()
 const laid = layoutLabels(cam, placed, sides)
-eq(laid.length, 9, "9 台都排上了标签")
+eq(laid.length, 6, "6 枚针都排上了标签")
 ok(laid.every((p) => Math.abs(p.lx - VIEW.cx) > VIEW.r), "两摞标签都在圆盘之外（不压在地球上）")
 ok(laid.every((p) => p.ly >= 12 && p.ly <= 204), "标签不出画布上下边")
 ok(laid.every((p) => p.end === (p.lx < VIEW.cx)), "左侧标签右对齐、右侧标签左对齐")
@@ -237,7 +237,7 @@ for (const side of ["L", "R"] as const) {
 }
 const counts = [laid.filter((p) => p.end).length, laid.filter((p) => !p.end).length]
 ok(Math.abs(counts[0] - counts[1]) <= 2, `左右两摞数量均衡（${counts[0]} / ${counts[1]}）`)
-eq(sides.size, 9, "每台机器的左右侧都被记下来了（下一帧不会左右跳）")
+eq(sides.size, 6, "每枚针的左右侧都被记下来了（下一帧不会左右跳）")
 // 左侧写「名字 · 国家」，右侧写「国家 · 名字」—— 上游如此，两侧都从外侧往内读。
 const left = laid.find((p) => p.end)
 const right = laid.find((p) => !p.end)

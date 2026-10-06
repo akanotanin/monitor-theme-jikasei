@@ -542,6 +542,34 @@ function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | nu
 //
 // 「该显示哪几台」与标签行的内容都在 App 里算好（`view`，见 @/lib/api 的 groupView）：
 // 概览卡片吃的是同一份，切分组时上面那行与下面这批卡片一起变。
+/**
+ * 列表**分批挂载**：先画一屏的量，剩下的分帧补上。
+ *
+ * 为什么不虚拟滚动：拿 100 台的夹具量过 —— 静置时每 5 秒一次的重渲染长任务是 **0**（卡片不多时
+ * 重渲染本来就是免费的），DOM 11457 也撑得住；**唯一**真花钱的是首屏那一次 **255ms** 的长任务
+ * （100 张卡片一次性挂上去）。虚拟滚动要处理变高卡片 + 响应式列数，改动大、风险高，却只为解决
+ * 一个不存在的稳态开销。把首屏那次摊成十几小块，效果一样、代价小得多。
+ *
+ * 每块 12 张（约 30ms，短于 50ms 的长任务线），块与块之间用 `setTimeout(0)` 让浏览器先画一帧。
+ * 少于一块的量（≤24 台）完全不改变行为 —— 护栏用的都是小夹具，不受影响。
+ */
+function useProgressive(total: number, first = 24, step = 12): number {
+  const [limit, setLimit] = useState(() => Math.min(total, first))
+  // 换了筛选/搜索（total 变了），列表换了，重新从第一批开始 —— 渲染期直接比，不放进 effect
+  // （effect 里同步 setState 会白白多跑一轮渲染）。
+  const [seenTotal, setSeenTotal] = useState(total)
+  if (seenTotal !== total) {
+    setSeenTotal(total)
+    setLimit(Math.min(total, first))
+  }
+  useEffect(() => {
+    if (limit >= total) return
+    const timer = setTimeout(() => setLimit((n) => Math.min(total, n + step)), 0)
+    return () => clearTimeout(timer)
+  }, [limit, total, step])
+  return limit
+}
+
 function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyle, historyDays, remarkPlacement }: {
   /** 分组求值的结果：groups / current / shown / tabs / total（App 与概览卡片共用一份）。 */
   view: ReturnType<typeof groupView>
@@ -561,6 +589,8 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
   remarkPlacement: RemarkPlacement
 }) {
   const { groups, current, shown, tabs, total, showTabs } = view
+  // 首屏先画一屏的量，剩下的分帧补上（见 useProgressive）。
+  const list = shown.slice(0, useProgressive(shown.length))
   // 归一化后的值回写给 App（悬空的选中态被回落时纠正一次，见 groupView 的注释）。
   useEffect(() => {
     if (current !== group) onGroup(current)
@@ -589,10 +619,10 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
       {total === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
       ) : cardStyle === "compact" ? (
-        <CompactList nodes={shown} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} remarkPlacement={remarkPlacement} />
+        <CompactList nodes={list} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} remarkPlacement={remarkPlacement} />
       ) : (
         <div data-card-style={cardStyle} className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
-          {shown.map((n) => (
+          {list.map((n) => (
             <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} latencyLines={latencyLines} cardStyle={cardStyle} remarkPlacement={remarkPlacement} />
           ))}
         </div>

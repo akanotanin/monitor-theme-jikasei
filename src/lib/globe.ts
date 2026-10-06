@@ -347,16 +347,6 @@ export function trimLabel(text: string, max: number): string {
   return `${out.trimEnd()}…`
 }
 
-/** FNV-1a 32 位：同一台机器每次刷新散到同一个位置，不会每帧乱跳。 */
-function hashText(text: string): number {
-  let x = 2166136261
-  for (const ch of text) {
-    x ^= ch.charCodeAt(0)
-    x = Math.imul(x, 16777619)
-  }
-  return x >>> 0
-}
-
 /** 节点名/分组里认出的城市线索。 */
 export function cityHint(node: Pick<Node, "name" | "group">): { ll: [number, number]; name: string } | null {
   const text = [node.name, node.group].filter(Boolean).join(" ")
@@ -396,30 +386,21 @@ export function regionOf(node: Node): Region | null {
   return { key: city ? `${code} · ${city}` : code, code, city, label: city || code, base: [base[0], base[1]] }
 }
 
-/**
- * 同一地区的多台机器要岔开，否则一枚针盖住另一枚、标签也叠在一起。
- * 算法照搬上游：按角度均匀撒在一个小圈上（城市 ~0.3°、国家 ~2~3°），
- * 角度再加一点由机器名哈希出来的偏移，免得每次刷新（节点顺序变了）跳位。
- */
-function scatter(base: [number, number], rank: number, count: number, seed: number, scope: "city" | "country"): [number, number] {
-  if (count <= 1) return [base[0], base[1]]
-  const angle = (rank / count) * Math.PI * 2 + ((seed % 31) / 31) * 0.45
-  const ring = scope === "city" ? 0.28 + (rank % 2) * 0.16 : 2.2 + (rank % 3) * 0.9
-  const latScale = Math.max(0.4, Math.cos((base[1] * Math.PI) / 180))
-  return [wrapLon(base[0] + (Math.cos(angle) * ring) / latScale), Math.max(-78, Math.min(78, base[1] + Math.sin(angle) * ring))]
-}
-
 export type GlobeNode = {
-  /** 稳定键（节点 id 的字符串形式）：标签左右侧的记忆与 React 的 key 都靠它。 */
+  /** 稳定键（地区键）：标签左右侧的记忆与 React 的 key 都靠它。 */
   key: string
+  /** 这个地区里的第一台机器（点针开的就是它）。 */
   id: number
   name: string
   code: string
+  /** 这个地区里**每一台**都在线才是 true（有一台离线，针就按离线画）。 */
   online: boolean
   /** 在整张图里的序号：连线的抽样要用它（`(a*7+b*3) % divisor`，同上游）。 */
   index: number
   region: Region
-  /** 针落点（已按同地区散开）。 */
+  /** 这个地区有几台（1 台时是普通针，多台时针边挂这个数字）。 */
+  count: number
+  /** 针落点（地区中心）。 */
   ll: [number, number]
 }
 
@@ -428,30 +409,39 @@ export type GlobeNode = {
  * 只在节点列表变了的时候算一次（组件里 useMemo），不是每帧。
  */
 export function globeNodes(nodes: Node[]): GlobeNode[] {
-  const placed: GlobeNode[] = []
-  const byRegion = new Map<string, { node: Node; index: number; region: Region }[]>()
+  // ★**同一个地区只出一枚针**，针上带台数。
+  //
+  // 过去是一台一枚针、同城的多台用 `scatter` 在一个小圈上岔开（上游同此）。机器一多就糊成
+  // 一团：100 台、20 个城市时，看得见的那半边有 65 枚针挤在一起，谁也点不准。
+  // 现在一个地区一枚，标签上写「Tokyo ×5」，针边上再挂一个小小的台数。
+  //
+  // 点针仍然开**这个地区里的第一台**（`data-node`），与从前一致 —— 要按地区筛，走右边那列
+  // 地区按钮（那里本来就有一枚一枚的台数）。
+  const byRegion = new Map<string, { node: Node; index: number; region: Region; count: number; online: boolean }>()
   nodes.forEach((node, index) => {
     const region = regionOf(node)
     if (!region) return
-    const bucket = byRegion.get(region.key) ?? []
-    bucket.push({ node, index, region })
-    byRegion.set(region.key, bucket)
+    const hit = byRegion.get(region.key)
+    if (hit) {
+      hit.count += 1
+      // 有一台离线，这枚针就按离线画：地区里出事的那一台不该被「多数在线」盖过去。
+      hit.online = hit.online && node.online
+      return
+    }
+    byRegion.set(region.key, { node, index, region, count: 1, online: node.online })
   })
-  for (const bucket of byRegion.values()) {
-    const scope: "city" | "country" = bucket[0].region.city ? "city" : "country"
-    bucket.forEach(({ node, index, region }, rank) => {
-      placed.push({
-        key: String(node.id),
-        id: node.id,
-        name: node.name,
-        code: region.code,
-        online: node.online,
-        index,
-        region,
-        ll: scatter(region.base, rank, bucket.length, hashText(`${node.id}:${node.name}`), scope),
-      })
-    })
-  }
+  const placed: GlobeNode[] = [...byRegion.values()].map(({ node, index, region, count, online }) => ({
+    key: region.key,
+    id: node.id,
+    // 一台时照旧用机器名（站长起的名字信息更多）；多台时用地区名 + 台数。
+    name: count > 1 ? `${region.label} ×${count}` : node.name,
+    code: region.code,
+    online,
+    index,
+    region,
+    count,
+    ll: region.base,
+  }))
   // 顺序回到节点原本的顺序：连线的抽样按 index 来，跟上游一致。
   return placed.sort((a, b) => a.index - b.index)
 }
