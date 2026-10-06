@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import {
-  Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer,
-  Tooltip, XAxis, YAxis,
-} from "recharts"
+import { Area, Brush, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 
 import { Info } from "lucide-react"
 
-import { ChartTooltip, PingTooltip } from "@/components/ChartTooltip"
+import { TimeChart } from "@/components/Chart"
+import { PingTooltip } from "@/components/ChartTooltip"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Country, deployed, RemarkChips } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
-  axisBytes, axisTop, bytes, clockFor, despike, quarters, cpuName, osName, rate, timeTicks, uptime,
+  axisBytes, axisTop, bytes, clockFor, despike, cpuName, osName, rate, timeTicks, uptime,
 } from "@/lib/format"
 import { hasDetailRemarks, remarkChips } from "@/lib/notes"
 import { remarksOnCards, type RemarkPlacement } from "@/lib/site-settings"
@@ -59,11 +57,6 @@ const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: 
 // every range change, on a page meant to be read at a glance, and on the latency
 // chart across seven hundred points per probe.
 const SERIES = { dot: false as const, strokeWidth: 1.5, isAnimationActive: false }
-
-// One width for every stacked panel's value axis. Sized to their own labels --
-// 40px under "100%", 68px under "172 MB" -- the four plot areas would be offset by
-// 28px, placing a CPU spike and the network spike that caused it at different x.
-const Y_WIDTH = 68
 
 // 延迟图最多同时画四条线路，所以这里备九个色相、每个再配一版短虚线：前九条走实线，
 // 第十条起色相重复、换线型。色相表是 index.css 里的 --chart-1..9，深浅两套只差亮度，
@@ -670,19 +663,15 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
       ) : (
         <div className="space-y-5">
           <Panel title="CPU">
-            <ResponsiveContainer>
-              <AreaChart data={metricRows}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis {...timeAxis(metricRows)} />
-                <YAxis domain={[0, tops.cpu]} ticks={quarters(tops.cpu)} unit="%" width={Y_WIDTH} {...AXIS} />
-                <Tooltip
-                  content={<ChartTooltip format={(v) => `${v.toFixed(1)}%`} />}
-                  cursor={CURSOR}
-                  wrapperStyle={TOOLTIP_BOX}
-                />
-                <Area dataKey="cpu" name="CPU" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.15} {...SERIES} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <TimeChart
+              rows={metricRows}
+              series={[{ key: "cpu", name: "CPU", color: "var(--chart-1)", area: true }]}
+              hours={hours}
+              top={tops.cpu}
+              unit="%"
+              format={(v) => `${v.toFixed(1)}%`}
+              label="CPU 使用率走势"
+            />
           </Panel>
 
           {/* The axis top is the machine's memory, so the line's height is the
@@ -691,57 +680,48 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
               127 MB of a 457 MB box at the top of the panel. The size is in the
               title because the axis top is claiming it. */}
           <Panel title={`内存 · ${bytes(node.mem_total)}`}>
-            <ResponsiveContainer>
-              <AreaChart data={metricRows}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis {...timeAxis(metricRows)} />
-                <YAxis domain={[0, node.mem_total]} ticks={quarters(node.mem_total)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
-                <Tooltip
-                  content={<ChartTooltip format={(v) => bytes(v)} />}
-                  cursor={CURSOR}
-                  wrapperStyle={TOOLTIP_BOX}
-                />
-                <Area dataKey="mem_used" name="内存" stroke="var(--chart-4)" fill="var(--chart-4)" fillOpacity={0.15} {...SERIES} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <TimeChart
+              rows={metricRows}
+              series={[{ key: "mem_used", name: "内存", color: "var(--chart-4)", area: true }]}
+              hours={hours}
+              top={node.mem_total}
+              yFormat={axisBytes}
+              format={(v) => bytes(v)}
+              label="内存使用量走势"
+            />
           </Panel>
 
           {/* A rate has no total to be a fraction of, so this one climbs the
               ladder like CPU rather than pinning to a capacity. */}
           <Panel title="网络速率">
-            <ResponsiveContainer>
-              <LineChart data={metricRows}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis {...timeAxis(metricRows)} />
-                <YAxis domain={[0, tops.rate]} ticks={quarters(tops.rate)} tickFormatter={axisBytes} unit="/s" width={Y_WIDTH} {...AXIS} />
-                <Tooltip
-                  content={<ChartTooltip format={(v) => rate(v)} />}
-                  cursor={CURSOR}
-                  wrapperStyle={TOOLTIP_BOX}
-                />
-                <Line dataKey="net_rx" name="下行" stroke="var(--ok)" {...SERIES} />
-                <Line dataKey="net_tx" name="上行" stroke="var(--chart-2)" {...SERIES} />
-              </LineChart>
-            </ResponsiveContainer>
+            <TimeChart
+              rows={metricRows}
+              series={[
+                { key: "net_rx", name: "下行", color: "var(--ok)" },
+                { key: "net_tx", name: "上行", color: "var(--chart-2)" },
+              ]}
+              hours={hours}
+              top={tops.rate}
+              unit="/s"
+              yFormat={axisBytes}
+              format={(v) => rate(v)}
+              label="网络速率走势"
+            />
           </Panel>
 
           {/* The disk it is filling, for the same reason as memory: a node
               using 2.7% of its disk draws along the top of the panel when the
               axis tracks the window's own maximum. */}
           <Panel title={`硬盘 · ${bytes(node.disk_total)}`}>
-            <ResponsiveContainer>
-              <AreaChart data={metricRows}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                <XAxis {...timeAxis(metricRows)} />
-                <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
-                <Tooltip
-                  content={<ChartTooltip format={(v) => bytes(v)} />}
-                  cursor={CURSOR}
-                  wrapperStyle={TOOLTIP_BOX}
-                />
-                <Area dataKey="disk_used" name="硬盘" stroke="var(--chart-3)" fill="var(--chart-3)" fillOpacity={0.15} {...SERIES} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <TimeChart
+              rows={metricRows}
+              series={[{ key: "disk_used", name: "硬盘", color: "var(--chart-3)", area: true }]}
+              hours={hours}
+              top={node.disk_total}
+              yFormat={axisBytes}
+              format={(v) => bytes(v)}
+              label="硬盘使用量走势"
+            />
           </Panel>
         </div>
       )}
