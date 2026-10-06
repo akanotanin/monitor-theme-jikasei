@@ -139,30 +139,34 @@ function familyWordsOf(word: string): string[] {
 }
 
 /**
- * 城市：把地球那张 `CITY_HINTS` 的正则**整串锚定**后再拿来试关键词。
- * 不锚定会出事：东京那条是 `/…|东京|東京/i`，于是访客打整串名称「东京一号」时它也算命中，
- * 就把整个东京的机器都当成同义词捞出来了（单测逮到过这条）。锚定后只有「正好是一个城市名」
- * 的词才会扩散 —— 中文名 / 英文名 / 三字码都算（东京 / Tokyo / TYO）。
+ * 一个城市认得的所有写法：英文名、**中文写法**（从正则里抠的汉字段）、以及正则里那几个
+ * 2~3 个大写字母的**三字码**（`\b(TYO|TOKYO)\b` → `TYO`）。三个来源都出自地球那张表，
+ * 不另抄一份 —— 表里加城市，搜索这边自动跟上。
  */
-const CITY_EXACT = CITY_HINTS.map((hint) => ({ re: new RegExp(`^(?:${hint.match.source})$`, "i"), name: hint.name }))
+const CITY_ALIASES = CITY_HINTS.map((hint) => {
+  const src = hint.match.source
+  const cjk = src.match(/[\u4e00-\u9fff]+/g) ?? []
+  const codes = (src.match(/\\b\(([^)]*)\)\\b/)?.[1] ?? "").split("|").filter((word) => /^[A-Z]{2,3}$/.test(word))
+  return { name: hint.name, aliases: [hint.name, ...cjk, ...codes] }
+})
 
 /**
- * 每个城市的**中文写法**（东京/東京、圣何塞、法兰克福/法蘭克福…）：从地球那张表的正则里
- * 直接抠出汉字段，不另抄一份 —— 表里加城市，搜索这边自动跟上。
- *
- * 有了它，站长用英文给机器起名（`JP-TYO-01`）时访客打「东」「东京」也搜得到；反过来，
- * 名字/分组里本来就有中文的那几台照旧（那是子串匹配的事）。抠汉字段而不是手抄，是因为
- * 这类「两处数据要一致」的地方最容易悄悄跑偏（表里改了中文名，搜索那边忘了跟）。
+ * 关键词算不算某个别名的**前缀**（只往这个方向放宽）：
+ *   `tok`/`TY` → `Tokyo`/`TYO`、`东` → `东京`、`圣` → `圣何塞`。
+ * 反过来（别名是关键词的前缀）**不算** —— 那正是之前那个假命中：搜整串名称「东京一号」时，
+ * 「东京」是它的前缀，于是整个东京的机器都被当成同义词捞出来了。
+ * 拉丁别名要两个字符起（`t` 这种一个字母太泛，等于没筛）；中文一个字就够（`东`）。
  */
-const CITY_CJK = (() => {
-  const map = new Map<string, string[]>()
-  for (const hint of CITY_HINTS) {
-    const cjk = hint.match.source.match(/[\u4e00-\u9fff]+/g)
-    if (!cjk) continue
-    map.set(hint.name, [...new Set([...(map.get(hint.name) ?? []), ...cjk])])
-  }
-  return map
-})()
+function isCityPrefix(alias: string, term: string): boolean {
+  if (!alias.toLowerCase().startsWith(term)) return false
+  return /[\u4e00-\u9fff]/.test(term) ? true : term.length >= 2
+}
+
+/** 某个城市（英文名）的中文写法：`Tokyo` → `东京`/`東京`，`San Jose` → `圣何塞`。 */
+function cjkOfCity(city: string): string[] {
+  if (!city) return []
+  return [...new Set(CITY_ALIASES.filter((one) => one.name === city).flatMap((one) => one.aliases.filter((alias) => /[\u4e00-\u9fff]/.test(alias))))]
+}
 
 /** 这个国家码落在哪些洲里（洲名连同英文写法一起摊进可搜文本：搜「北美」「north america」都该中）。 */
 function areasOf(code: string): string[] {
@@ -198,7 +202,7 @@ export function searchText(node: Node): string {
     // 这个码落在哪些洲里（含英文写法）：搜「欧洲」「north america」也要中，哪怕站长没写分组。
     ...areasOf(code),
     // 这个城市的中文写法（东京/東京、圣何塞…）：站长用英文给机器起名时，访客打「东」也要中。
-    ...(region?.city ? CITY_CJK.get(region.city) ?? [] : []),
+    ...cjkOfCity(region?.city ?? ""),
     // 城市只认得出英文名（CITY_HINTS 的第三项）——中文城市名本来就在名称/分组里，上面已经收了。
     region?.label ?? "",
     region?.city ?? "",
@@ -229,8 +233,10 @@ function matchersFor(term: string): ((text: string) => boolean)[] {
   for (const [area, codes] of Object.entries(AREA_CODES)) {
     if (familyWordsOf(area).includes(t)) for (const code of codes) extra.add(code)
   }
-  // ③ 城市：直接问地球那张表（中文 / 英文 / 三字码都认，如 东京 / Tokyo / TYO）
-  for (const city of CITY_EXACT) if (city.re.test(t)) extra.add(city.name.toLowerCase())
+  // ③ 城市：名字 / 中文写法 / 三字码，**前缀也算**（`tok`、`TY` → 东京；`东` → 东京、`圣` → 圣何塞）
+  for (const city of CITY_ALIASES) {
+    if (city.aliases.some((alias) => isCityPrefix(alias, t))) extra.add(city.name.toLowerCase())
+  }
   extra.delete(t)
   for (const word of extra) out.push((text) => matchesWord(text, word))
   return out
