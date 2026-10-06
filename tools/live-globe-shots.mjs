@@ -23,15 +23,6 @@ await send('Runtime.enable'); await send('Page.enable')
 await send('Page.navigate', { url: URL })
 await sleep(6000)
 mkdirSync('shots/globe-live', { recursive: true })
-const js = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value
-const stats = await js(`(() => JSON.stringify({
-  pins: [...document.querySelectorAll('circle.hit')].map((c) => ({ node: c.getAttribute('data-node'), region: c.getAttribute('data-region'), count: c.getAttribute('data-count') })),
-  badges: [...document.querySelectorAll('text.globe-count')].map((e) => e.textContent),
-  labels: [...document.querySelectorAll('text.globe-label')].map((e) => e.textContent),
-  regions: [...document.querySelectorAll('button.globe-reg')].map((b) => b.textContent.trim()),
-}))()`)
-console.log('真站针数：' + JSON.parse(stats).pins.length + ' 枚；台数小字：' + JSON.stringify(JSON.parse(stats).badges) + '；带 × 的标签：' + JSON.stringify(JSON.parse(stats).labels.filter((l) => l.includes('×'))))
-console.log('地区行：' + JSON.parse(stats).regions.join(' / '))
 for (let i = 0; i < 3; i += 1) {
   const shot = (await send('Page.captureScreenshot', { format: 'png' })).result?.data
   if (shot) writeFileSync(`shots/globe-live/${i}.png`, Buffer.from(shot, 'base64'))

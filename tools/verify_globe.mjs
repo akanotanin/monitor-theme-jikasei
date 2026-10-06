@@ -278,7 +278,7 @@ check('桌面是两列（地球 1.35 : 侧栏 0.65）', String(s.cols).split(' '
 check('顶栏那枚开关在、默认是按下的（默认开）', s.toggle?.pressed === 'true' && s.toggle?.w === 36 && s.toggle?.h === 36, JSON.stringify(s.toggle))
 // 顺序钉住是为了让「谁被挪走了」一眼可见。搜索那格不在这张表里 —— 它是个 <input>（收起时是
 // 一枚方形图标），不是按钮；它的位置与开合由 tools/verify_search.mjs 管。
-check('顶栏顺序：登录 → 卡片形态 → 地球 → 切换主题（没有那个站点那枚）',
+check('顶栏顺序：登录 → 卡片形态 → 地球 → 切换主题（没有养鸡场那枚）',
   JSON.stringify(s.icons) === JSON.stringify(['登录', '卡片形态', '隐藏节点地球', '切换主题']), JSON.stringify(s.icons))
 check('控制台无异常', errors.length === 0, errors.join(' | '))
 await shot('01-live-desktop.png')

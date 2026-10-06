@@ -138,16 +138,16 @@ export function useSiteFavicon(icon: string | null) {
 }
 
 /**
- * 本站约定的位置（`/farm/`）上有没有那个站点。装了就把入口指过去，没装就什么都不显示——
- * 「装主题」与「部署那个站点」是两件事，不能因为装了主题就多出一枚点不到东西的图标。
+ * 本站约定的位置（`/chicken/`）上有没有养鸡场。装了就把入口指过去，没装就什么都不显示——
+ * 「装主题」与「部署养鸡场」是两件事，不能因为装了主题就多出一枚点不到东西的图标。
  *
  * ★ 判据是**内容**而不是状态码：hub 对未知路径会回落到当前主题的 `index.html` 并回 200，
- * 所以 `/farm/` 在「装了」与「没装」两种情况下都是 200 —— 拿状态码探等于恒真。
- * 那个站点的 location 里有一条 `^~ /farm/api/` 反代到 hub，回的是 JSON；
+ * 所以 `/chicken/` 在「装了」与「没装」两种情况下都是 200 —— 拿状态码探等于恒真。
+ * 养鸡场的 location 里有一条 `^~ /chicken/api/` 反代到 hub，回的是 JSON；
  * 没装时同一条路径同样落到 index.html（HTML），`res.json()` 会抛错。
  *
- * 代价是没装那个站点的站每次加载多一次请求（落回 index.html，约 1KB）；装了的那次拿到的
- * 就是它自己的节点列表。站长想省掉这次探测、或指向别处（包括别人的公开站点），
+ * 代价是没装养鸡场的站每次加载多一次请求（落回 index.html，约 1KB）；装了的那次拿到的
+ * 就是它自己的节点列表。站长想省掉这次探测、或指向别处（包括别人的公开养鸡场），
  * 在「主题设置」里填一个地址即可，那时这个钩子整个不跑（`enabled` 为假）。
  */
 export function useLocalFarm(enabled: boolean): string {
@@ -155,7 +155,7 @@ export function useLocalFarm(enabled: boolean): string {
   useEffect(() => {
     if (!enabled) return
     let alive = true
-    fetch("/farm/api/nodes", { headers: { Accept: "application/json" } })
+    fetch("/chicken/api/nodes", { headers: { Accept: "application/json" } })
       .then((res) => res.json())
       .then((data) => {
         if (alive && data && Array.isArray(data.nodes)) setFound(true)
@@ -167,7 +167,7 @@ export function useLocalFarm(enabled: boolean): string {
   }, [enabled])
   // 关掉开关 / 填了地址时不返回地址（不必把探测结果清掉：站点设置在一次加载里只会到一次，
   // enabled 至多从假变真一回，页面上没有会让它翻回去的路径；真改了设置就是整页重载）。
-  return enabled && found ? "/farm/" : ""
+  return enabled && found ? "/chicken/" : ""
 }
 
 /**
@@ -176,7 +176,7 @@ export function useLocalFarm(enabled: boolean): string {
  */
 export function useThemeConfig(): { config: ThemeConfig; loaded: boolean } {
   const [config, setConfig] = useState(DEFAULTS)
-  // 设置到没到。顶栏那枚入口图标靠它决定要不要去探测本站（见 useLocalFarm）：
+  // 设置到没到。顶栏那枚养鸡场图标靠它决定要不要去探测本站（见 useLocalFarm）：
   // 没等到设置就探，会让「填了自己地址」和「关掉入口」的站白探一次。
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {

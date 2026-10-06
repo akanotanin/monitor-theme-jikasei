@@ -25,14 +25,14 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
-// 本站要靠这几项换图标、指自定义入口、切卡片形态、开关列表页顶部那两行、按名字挑延迟线路
+// 本站要靠这几项换图标、指养鸡场入口、切卡片形态、开关列表页顶部那两行、按名字挑延迟线路
 // ——名字与 theme.json 的 label 逐字对应。
 // ★备注：「服务器备注」那份清单 1.15.x 起、1.16.0 删过、1.17.0 请回来、1.18.0 删掉、1.19.0 试过又删掉
 // ——备注内容只读 hub 后台按节点填的「公开备注」与「私有备注」（见 src/lib/notes.ts）；主题这边
 // 1.19.0 给「备注」那一节配了一个**真实设置项「备注显示位置」**（卡片与详情页 / 只在卡片 / 只在详情页），
 // 那段详细的用法说明就挂在它上面（hub 只画「后面跟着字段」的标题，没有字段的标题会被静默丢掉）。
 // **字段数 6**（≤6 就不会让面板切两列 + 分组导航；到 7 个才会，下面有排版断言）。
-const WANTED = ['站点图标', '自定义入口', '卡片形态', '列表页顶部', '备注显示位置', '显示的延迟线路'];
+const WANTED = ['站点图标', '养鸡场入口', '卡片形态', '列表页顶部', '备注显示位置', '显示的延迟线路'];
 const PORT = 9780 + Math.floor(Math.random() * 20);
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe']
   .find((p) => existsSync(p)) || 'chrome';
@@ -175,12 +175,12 @@ for (const label of WANTED) {
 
 // 设置项的**说明文案**与**开关初值**也要断：它们是站长唯一看得见的地方，
 // 改了 theme.json 的 help / default 却在面板上没生效（或残留旧句子）就等于没改。
-// 「那个站点地址」的说明曾经带一个跨站示例（会指向一个具体站点），那是要脱敏掉的。
+// 「养鸡场地址」的说明曾经带一个跨站示例（会指向一个具体站点），那是要脱敏掉的。
 // 断的时候只看**形状**（示例句子 + 指向 farm 路径的具体网址），不把站点名写进本仓库。
 const helpText = (entries.find((e) => e.key === 'farmUrl') || {}).help || '';
-check('「自定义入口」的说明不再带跨站示例', helpText !== '' && !/例如|跨站的会在新标签页打开/.test(helpText), `help=${helpText}`);
+check('「养鸡场入口」的说明不再带跨站示例', helpText !== '' && !/例如|跨站的会在新标签页打开/.test(helpText), `help=${helpText}`);
 check('对话框里也没有残留的旧示例句子',
-  !everyText.includes('例如想直接进公开的') && !/https?:\/\/[^\s"）)]*\/farm/.test(everyText));
+  !everyText.includes('例如想直接进公开的') && !/https?:\/\/[^\s"）)]*\/chicken/.test(everyText));
 
 // 「服务器备注」那一格（serverNotes）：1.15.x 起、1.16.0 删过、1.17.0 请回来、1.18.0 删掉、
 // 1.19.0 试过又删掉——备注只读 hub 后台按节点填的两个字段。两个方向都断（manifest 声明了没、
@@ -368,7 +368,7 @@ for (const field of entries.filter((e) => e.type !== 'title' && e.help)) {
   if (n > 2 || n < 1) wrapped.push(`${field.label}=${n < 0 ? '没找到' : n + ' 行'}`)
 }
 // 病根是**两列半宽**下的四五行，不是「说明必须恰好一行」：单列 462px 里说明折成两行是正常的，
-// 1.6.0 的「自定义入口」要讲清留空 / off / 地址三种状态、「服务器备注」要给出 `服务器名=备注` 的写法，
+// 1.6.0 的「养鸡场入口」要讲清留空 / off / 地址三种状态、「服务器备注」要给出 `服务器名=备注` 的写法，
 // 压成一行就只能删掉站长唯一的说明书。所以门槛定在 ≤2 行——四五行的退化（半宽那份）照样报错。
 check('排版：每项说明至多两行（没有折成四五行的）', wrapped.length === 0, wrapped.join('、') || '全部 ≤2 行')
 
