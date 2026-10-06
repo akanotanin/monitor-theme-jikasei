@@ -121,6 +121,28 @@ eq(aids("美东"), [], "分区名（美东：本夹具里没有）")
 // ★短码按词边界：搜「欧洲」会展开出国家码 de，不许因此命中跑 Debian 的机器（实测过这个假命中）。
 eq(searchNodes([node(15, "美东一号", { group: "", country: "US", os: "Debian 12" })], "欧洲").hit, 0, "「欧洲」展开的国家码不许命中 Debian（短码按词边界）")
 
+// ── 英文名字的机器：名称与分组里都没有中文，靠地球那张表把城市中文写法摊进可搜文本 ──
+//    （用户报过「搜东不出东京、搜圣不出圣何塞」—— 站长用英文起名时就是这个情况。）
+const en = [
+  node(21, "JP-TYO-01", { group: "", country: "JP", os: "Debian 12" }),
+  node(22, "US-SJC-01", { group: "", country: "US", os: "Debian 12" }),
+  node(23, "ZZ-01", { group: "", country: "ZZ", os: "Debian 12" }),
+]
+const eids = (query: string) => searchNodes(en, query).shown.map((n) => n.id)
+eq(eids("东"), [21], "英文名：中文部分字也中（东 → 东京）")
+eq(eids("京"), [21], "英文名：京 → 东京")
+eq(eids("东京"), [21], "英文名：中文全名也中")
+eq(eids("東京"), [21], "英文名：繁体也中")
+eq(eids("tokyo"), [21], "英文名：英文城市名也中")
+eq(eids("TYO"), [21], "英文名：三字码也中")
+eq(eids("圣"), [22], "英文名：圣 → 圣何塞")
+eq(eids("塞"), [22], "英文名：塞 → 圣何塞")
+eq(eids("圣何塞"), [22], "英文名：中文全名也中")
+eq(eids("SJC"), [22], "英文名：三字码（圣何塞）")
+eq(eids("san jose"), [22], "英文名：英文城市名带空格也中")
+eq(searchNodes([en[2]], "东").hit, 0, "认不出城市的机器：搜中文城市名不中（不硬猜）")
+eq(searchText(en[0]).includes("东京") && searchText(en[0]).includes("東京"), true, "可搜文本含城市的中文写法（含繁体）")
+
 if (failed) {
   console.error(`\n${failed} 处不符`)
   process.exit(1)

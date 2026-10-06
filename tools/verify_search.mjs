@@ -40,14 +40,17 @@ function node(id, name, group, country, os) {
   }
 }
 // 六台，三处字段各不重样：名称、分组（中文城市）、国家码、系统，四条路都要能搜到。
+// ③⑥ 两台刻意用英文名 + 空分组：中文城市名只能靠地球那张城市表摊进可搜文本（含「东」「圣」这类部分字）。
 const NODES = {
   nodes: [
     node(1, '东京一号', '东京', 'JP', 'Debian GNU/Linux 12 (bookworm)'),
     node(2, '东京二号', '东京', 'JP', 'Ubuntu 22.04.4 LTS'),
-    node(3, '香港一号', '香港', 'HK', 'Ubuntu 22.04.4 LTS'),
+    // ③⑥ 这两台的名称与分组里**没有中文**：中文城市名只能来自地球那张城市表 ——
+    //    「搜东不出东京、搜圣不出圣何塞」那个问题的正题（用户报过）。
+    node(3, 'HK-HKG-01', '', 'HK', 'Ubuntu 22.04.4 LTS'),
     node(4, '法兰克福一号', '法兰克福', 'DE', 'Debian GNU/Linux 12 (bookworm)'),
     node(5, 'SG-Edge', '新加坡', 'SG', 'Alpine Linux 3.20'),
-    node(6, 'US-Backup', '', 'US', 'Windows Server 2022'),
+    node(6, 'US-SJC-01', '', 'US', 'Windows Server 2022'),
   ],
 }
 
@@ -231,12 +234,17 @@ const EXPECT = [
   ['东京', ['东京一号', '东京二号']],
   ['tokyo', ['东京一号', '东京二号']],
   ['日本', ['东京一号', '东京二号']],
-  ['HK', ['香港一号']],
+  ['HK', ['HK-HKG-01']],
+  ['香港', ['HK-HKG-01']],
+  ['香', ['HK-HKG-01']],
   ['新加坡', ['SG-Edge']],
   ['debian', ['东京一号', '法兰克福一号']],
-  ['windows', ['US-Backup']],
+  ['windows', ['US-SJC-01']],
+  ['圣', ['US-SJC-01']],
+  ['圣何塞', ['US-SJC-01']],
+  ['SJC', ['US-SJC-01']],
   ['东京 ubuntu', ['东京二号']],
-  ['us-backup', ['US-Backup']],
+  ['us-sjc', ['US-SJC-01']],
   ['zzz', []],
   // ── 同义替换：中文 ↔ 英文 ↔ 三字码/国家码（两个方向都要通） ──
   ['東京', ['东京一号', '东京二号']],
@@ -250,10 +258,11 @@ const EXPECT = [
   ['europe', ['法兰克福一号']],
   ['EU', ['法兰克福一号']],
   ['欧洲 debian', ['法兰克福一号']],
-  ['亚洲', ['东京一号', '东京二号', '香港一号', 'SG-Edge']],
-  ['asia', ['东京一号', '东京二号', '香港一号', 'SG-Edge']],
-  ['北美', ['US-Backup']],
-  ['north america', ['US-Backup']],
+  ['东', ['东京一号', '东京二号']],
+  ['亚洲', ['东京一号', '东京二号', 'HK-HKG-01', 'SG-Edge']],
+  ['asia', ['东京一号', '东京二号', 'HK-HKG-01', 'SG-Edge']],
+  ['北美', ['US-SJC-01']],
+  ['north america', ['US-SJC-01']],
   ['美西', []],
   // ── 反向回归：整串名称不该被城市同义词扩散（东京那条正则要锚定） ──
   ['东京一号', ['东京一号']],
@@ -407,7 +416,7 @@ check('深色：点开后长到 240px、边框与占位文案都出现了',
 if (!REAL) {
   await type('香港')
   const dark = await probe()
-  check('深色：搜「香港」→ 一台', dark.count === 1 && dark.names[0] === '香港一号', `卡片 ${dark.count} 张：${JSON.stringify(dark.names)}`)
+  check('深色：搜「香港」→ 一台', dark.count === 1 && dark.names[0] === 'HK-HKG-01', `卡片 ${dark.count} 张：${JSON.stringify(dark.names)}`)
   await shot('desktop-dark', 'header', 8)
 }
 

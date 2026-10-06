@@ -17,6 +17,8 @@ import { CITY_HINTS } from "./world.ts"
  * 访客写「日本」，机器上是 `JP`。所以除了原样子串匹配，每个关键词还会**展开成一族同义词**再匹配：
  *   ① 城市：直接问地球那张 `CITY_HINTS`（它本来就同时收了中文名、英文名与三字码，如
  *      `/东京|東京|TOKYO|TYO/`）—— 表是同一张，地球认得出的城市搜索就认得出，不会各写一套；
+ *      那张表里的中文写法还会摊进每台机器的可搜文本，于是站长用英文起名（`JP-TYO-01`）时，
+ *      访客打「东」「东京」「TYO」一样搜得到；
  *   ② 国家：`WORD_FAMILIES` 里一族一族写着（`["日本","japan","jpn","jp"]`），节点的国家码
  *      会把它那一族的词都摊进可搜文本里，于是两个方向都通；
  *   ③ 洲/大区：`["欧洲","europe","eu"]` 这样的族，另配一张 `AREA_CODES`（洲 → 国家码）——
@@ -144,6 +146,24 @@ function familyWordsOf(word: string): string[] {
  */
 const CITY_EXACT = CITY_HINTS.map((hint) => ({ re: new RegExp(`^(?:${hint.match.source})$`, "i"), name: hint.name }))
 
+/**
+ * 每个城市的**中文写法**（东京/東京、圣何塞、法兰克福/法蘭克福…）：从地球那张表的正则里
+ * 直接抠出汉字段，不另抄一份 —— 表里加城市，搜索这边自动跟上。
+ *
+ * 有了它，站长用英文给机器起名（`JP-TYO-01`）时访客打「东」「东京」也搜得到；反过来，
+ * 名字/分组里本来就有中文的那几台照旧（那是子串匹配的事）。抠汉字段而不是手抄，是因为
+ * 这类「两处数据要一致」的地方最容易悄悄跑偏（表里改了中文名，搜索那边忘了跟）。
+ */
+const CITY_CJK = (() => {
+  const map = new Map<string, string[]>()
+  for (const hint of CITY_HINTS) {
+    const cjk = hint.match.source.match(/[\u4e00-\u9fff]+/g)
+    if (!cjk) continue
+    map.set(hint.name, [...new Set([...(map.get(hint.name) ?? []), ...cjk])])
+  }
+  return map
+})()
+
 /** 这个国家码落在哪些洲里（洲名连同英文写法一起摊进可搜文本：搜「北美」「north america」都该中）。 */
 function areasOf(code: string): string[] {
   const c = code.toLowerCase()
@@ -177,6 +197,8 @@ export function searchText(node: Node): string {
     ...familyWordsOf(code),
     // 这个码落在哪些洲里（含英文写法）：搜「欧洲」「north america」也要中，哪怕站长没写分组。
     ...areasOf(code),
+    // 这个城市的中文写法（东京/東京、圣何塞…）：站长用英文给机器起名时，访客打「东」也要中。
+    ...(region?.city ? CITY_CJK.get(region.city) ?? [] : []),
     // 城市只认得出英文名（CITY_HINTS 的第三项）——中文城市名本来就在名称/分组里，上面已经收了。
     region?.label ?? "",
     region?.city ?? "",
