@@ -20,9 +20,9 @@
     {
       "type": "string",
       "key": "farmUrl",
-      "label": "养鸡场入口",
+      "label": "自定义入口",
       "default": "",
-      "help": "留空＝自动探测本站 /chicken/；填 off＝不显示入口；填地址＝指向别处（同域路径或完整网址）。"
+      "help": "留空＝自动探测本站 /farm/；填 off＝不显示入口；填地址＝指向别处（同域路径或完整网址）。"
     },
     {
       "type": "title",

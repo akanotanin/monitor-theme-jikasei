@@ -5,7 +5,7 @@
 //   node tools/shots.mjs https://<你的站点> shots/live
 //
 // 拍什么：桌面亮/暗的列表页、节点详情页、延迟页，以及手机（390×844）的列表页与详情页。
-// 报什么：国旗、养鸡场入口、站标这些「只有本主题才有」的元素在不在，以及控制台报错。
+// 报什么：国旗、自定义入口、站标这些「只有本主题才有」的元素在不在，以及控制台报错。
 //
 // 为什么不用 headless 的默认主题：暗色是 CSS 的 prefers-color-scheme 或 localStorage，
 // 在 CDP 里用 Emulation.setEmulatedMedia 直接给，省得去点那颗月亮按钮。
@@ -129,8 +129,8 @@ for (const shot of SHOTS.filter((s) => !ONLY || s.name.includes(ONLY))) {
     dark: document.documentElement.classList.contains('dark'),
     flags: document.querySelectorAll('img[src^="/flags/"]').length,
     flagSrc: [...document.querySelectorAll('img[src^="/flags/"]')].slice(0, 3).map((i) => i.getAttribute('src')),
-    farmEntry: !!document.querySelector('a[title="养鸡场"]'),
-    farmHref: document.querySelector('a[title="养鸡场"]')?.getAttribute('href') || '(没有)',
+    farmEntry: !!document.querySelector('a[title="自定义入口"]'),
+    farmHref: document.querySelector('a[title="自定义入口"]')?.getAttribute('href') || '(没有)',
     // 站标地址是主题设置项，可能被站长换掉；顺带报它有没有真的加载出来
     // （naturalWidth=0 就是取不到、已经退回默认或者空白）。
     siteIcon: document.querySelector('header img')?.getAttribute('src') || '(没有)',

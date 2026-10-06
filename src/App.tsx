@@ -168,8 +168,8 @@ function useTheme() {
 }
 
 /**
- * 站内那套养鸡场（同域）用当前标签页打开就好，它属于本站导航；指向别的站时才开新标签页——
- * 默认值就是那样的一座公开养鸡场，不该把访客从状态页带走。
+ * 站内那个入口（同域）用当前标签页打开就好，它属于本站导航；指向别的站时才开新标签页——
+ * 默认值就是那样的一座公开站点，不该把访客从状态页带走。
  */
 function farmLinkProps(url: string) {
   try {
@@ -183,7 +183,7 @@ function farmLinkProps(url: string) {
 export default function App() {
   const [dark, toggleTheme] = useTheme()
   const { config, loaded } = useThemeConfig()
-  // 站长没填地址时，自动认本站约定的那个位置（`/chicken/`）有没有养鸡场；
+  // 站长没填地址时，自动认本站约定的那个位置（`/farm/`）有没有那个站点；
   // 填了就以他填的为准，填 `off` 则一律不显示。**等设置到了再探**（loaded）——不然
   // 「关掉入口」「填了自己地址」的站都会白探一次，那两次探测还会让护栏分不清「该探没探」。
   const farmAuto = config.farmUrl === ""
@@ -390,7 +390,7 @@ export default function App() {
             <CardStyleMenu value={cardStyle} siteDefault={config.cardStyle} onPick={chooseStyle} />
           )}
           {/* 地球开关：只长在列表页 —— 地球就在那一页的顶上，站在某台机器页里按它没有落点。
-              与养鸡场入口、主题开关同规格（图标 + 悬停提示，不带文字，见 memory 里的顶栏惯例）。 */}
+              与自定义入口、主题开关同规格（图标 + 悬停提示，不带文字，见 memory 里的顶栏惯例）。 */}
           {open === null && (
             <Button
               variant="ghost"
@@ -410,11 +410,11 @@ export default function App() {
               <GlobeIcon />
             </Button>
           )}
-          {/* 养鸡场入口：站长填了地址就指向那里；留空则本站 `/chicken/` 上真装了养鸡场
+          {/* 自定义入口：站长填了地址就指向那里；留空则本站 `/farm/` 上真装了那个站点
               才出现（自动探测，见 useLocalFarm）；填 `off` 则一律不出现。 */}
           {farmUrl && (
             <Button variant="ghost" size="icon" asChild>
-              <a href={farmUrl} title="养鸡场" aria-label="养鸡场" {...farmLinkProps(farmUrl)}>
+              <a href={farmUrl} title="自定义入口" aria-label="自定义入口" {...farmLinkProps(farmUrl)}>
                 <FarmIcon />
               </a>
             </Button>

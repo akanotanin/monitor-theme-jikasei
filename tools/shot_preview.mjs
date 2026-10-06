@@ -153,7 +153,7 @@ const geometry = JSON.parse(await evalJS(`JSON.stringify((() => {
     h3: cs.slice(0, 3).map((c) => c.innerText.split('\\n')[0]),
     siteName: document.querySelector('header')?.innerText.trim().split('\\n')[0] || '(空)',
     groupTabs: [...document.querySelectorAll('[role=group][aria-label=分组] button')].length,
-    farmEntry: !!document.querySelector('a[title="养鸡场"]'),
+    farmEntry: !!document.querySelector('a[title="自定义入口"]'),
   }
 })())`))
 

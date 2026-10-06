@@ -10,7 +10,7 @@
  */
 
 /**
- * 顶栏养鸡场入口的「关闭」值：与「留空＝自动探测本站」「填地址＝自定义」并列的第三种状态。
+ * 顶栏自定义入口的「关闭」值：与「留空＝自动探测本站」「填地址＝自定义」并列的第三种状态。
  * 1.6.0 把原来两个键（`showFarmEntry` 开关 + `farmUrl` 地址）并进 `farmUrl` 这一个键，
  * 三种状态挤在一格里，靠这个哨兵值表达「关掉」。
  */
@@ -20,7 +20,7 @@ export type ThemeConfig = {
   /** 顶栏那枚圆形站标的地址，同时也是标签页图标；取不到就退回主题自带那张。 */
   siteIcon: string
   /**
-   * 顶栏养鸡场入口：空串 = 自动探测本站的 `/chicken/`；`FARM_OFF` = 不显示入口；
+   * 顶栏自定义入口：空串 = 自动探测本站的 `/farm/`；`FARM_OFF` = 不显示入口；
    * 其它 = 自定义地址（同域路径或完整网址）。
    */
   farmUrl: string
@@ -70,9 +70,9 @@ export function remarksOnDetail(p: RemarkPlacement): boolean {
 
 export const DEFAULTS: ThemeConfig = {
   siteIcon: "/site-icon.png",
-  // 留空 = 自动：本站在约定的 `/chicken/` 上真装了养鸡场才显示那枚图标。
-  // 「装主题」与「部署养鸡场」是两件事，站长没装就不该多出一枚点了没反应的图标；
-  // 想固定指向别处（包括别人的公开那座）就填地址，想一律不显示就填 `off`。
+  // 留空 = 自动：本站在约定的 `/farm/` 上真装了那个站点才显示那枚图标。
+  // 「装主题」与「部署那个站点」是两件事，站长没装就不该多出一枚点了没反应的图标；
+  // 想固定指向别处（包括别人的公开站点）就填地址，想一律不显示就填 `off`。
   farmUrl: "",
   // 默认「详细」（2026-10-06 站长定的）：在「延迟」之上再摊在线时长、价格与到期，一眼看全一台机器。
   // 想更轻的站切「简约」（底部收成一行两段、不发延迟请求）；机器多、想一屏看全的切「紧凑」（一行一台的表格）。
@@ -158,7 +158,7 @@ export function isBudgetLayout(top: ThemeConfig["listTop"]): boolean {
 }
 
 /**
- * 顶栏养鸡场入口：1.5.0 及更早是两个键——`showFarmEntry`（布尔开关）+ `farmUrl`（地址，
+ * 顶栏自定义入口：1.5.0 及更早是两个键——`showFarmEntry`（布尔开关）+ `farmUrl`（地址，
  * 空串＝自动探测本站）。1.6.0 并成一个 `farmUrl`：空串＝自动、`off`＝关闭、其它＝地址。
  *
  * 要迁的是**「关掉」那一点信息**：老站点把入口关了（`showFarmEntry` 为假）而地址键从没动过，
@@ -184,7 +184,7 @@ export function normalizeConfig(saved: unknown): ThemeConfig {
   return {
     siteIcon:
       typeof s.siteIcon === "string" && s.siteIcon.trim() ? s.siteIcon.trim() : DEFAULTS.siteIcon,
-    // 养鸡场入口见 farmEntryOf：空串与 off 都是有意义的值，不能像 siteIcon 那样回落。
+    // 自定义入口见 farmEntryOf：空串与 off 都是有意义的值，不能像 siteIcon 那样回落。
     farmUrl: farmEntryOf(s),
     // select：值不在声明里的选项内（旧版本、手改）就当没保存过，回落默认；
     // 旧值 "detail" 迁到 "latency"（见 cardStyleOf）。

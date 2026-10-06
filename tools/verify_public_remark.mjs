@@ -3,7 +3,7 @@
 //
 // 用法：node tools/verify_public_remark.mjs [端口]
 //   自带静态伺服（本机 dist + 桩 /api，未知路径回落入口 HTML）——与 verify_card_styles.mjs 同一路子。
-//   ★别改成「CDP 拦 *api/*」：那会把顶栏那个 `/chicken/api/nodes` 探测也拦进来，它期待
+//   ★别改成「CDP 拦 *api/*」：那会把顶栏那个 `/farm/api/nodes` 探测也拦进来，它期待
 //     `{nodes:[…]}`，喂错形状整页当场崩（症状是页面上只剩一行 TypeError 文案）。
 //
 // 站长 2026-10-03 定的口径（这一份护栏就是它的判据）：

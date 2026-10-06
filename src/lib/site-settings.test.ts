@@ -76,10 +76,10 @@ eq(sorted(normalizeConfig({})), sorted(DEFAULTS), "空对象 → 全默认")
 eq(normalizeConfig({ siteIcon: "   " }).siteIcon, DEFAULTS.siteIcon, "站点图标只有空白 → 回落默认")
 eq(normalizeConfig({ siteIcon: " https://x/i.png " }).siteIcon, "https://x/i.png", "站点图标去首尾空白")
 // farmUrl / pingLines 的空串是「有意义的值」（自动探测 / 自动取前三条），不能被顶成默认。
-eq(normalizeConfig({ farmUrl: "" }).farmUrl, "", "养鸡场入口空串保留（自动探测）")
-eq(normalizeConfig({ farmUrl: "  /chicken/  " }).farmUrl, "/chicken/", "养鸡场地址去首尾空白")
-eq(normalizeConfig({ farmUrl: "off" }).farmUrl, FARM_OFF, "养鸡场入口的 off 值保留")
-// ── 养鸡场入口：1.5.0 的两个键并入一个（showFarmEntry / farmUrl → farmUrl） ──
+eq(normalizeConfig({ farmUrl: "" }).farmUrl, "", "自定义入口空串保留（自动探测）")
+eq(normalizeConfig({ farmUrl: "  /farm/  " }).farmUrl, "/farm/", "那个站点地址去首尾空白")
+eq(normalizeConfig({ farmUrl: "off" }).farmUrl, FARM_OFF, "自定义入口的 off 值保留")
+// ── 自定义入口：1.5.0 的两个键并入一个（showFarmEntry / farmUrl → farmUrl） ──
 // 老站点把入口关了而地址键从没动过：必须落成 off，否则会静默又冒出一枚它关掉的图标。
 eq(normalizeConfig({ showFarmEntry: false }).farmUrl, FARM_OFF, "老配置：关掉入口 → off")
 // 地址键一旦存在就按它来（哪怕是空串）——这是站长明确定过的值，
