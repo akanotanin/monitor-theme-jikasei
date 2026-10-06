@@ -84,6 +84,43 @@ const text = searchText(one)
 eq(["机a", "东京", "debian 12", "jp", "日本", "tokyo"].every((piece) => text.includes(piece)), true, "可搜文本含：名称/分组/系统/国家码/中文国名/城市英文名")
 eq(searchTerms("  东京 \u3000debian  "), ["东京", "debian"], "拆词：全角空格、前后空白都吃掉")
 
+// ── 同义替换（这一版的重点）：中文 ↔ 英文 ↔ 三字码/国家码，两个方向都要通 ──
+eq(ids("東京"), [1, 2], "城市中文名（繁体，地球那张表里收了）")
+eq(ids("TYO"), [1, 2], "城市三字码（东京）")
+eq(ids("japan"), [1, 2], "英文国名 → 国家码 JP 的那两台")
+eq(ids("JPN"), [1, 2], "英文国名缩写")
+eq(ids("germany"), [4], "英文国名（德国）")
+eq(ids("frankfurt"), [4], "城市英文名（地区列表里显示的那个）")
+eq(ids("FRA"), [4], "城市三字码（法兰克福）")
+eq(ids("法兰克福"), [4], "中文城市名（名称里就有）")
+eq(ids("sg"), [5], "国家码小写（新加坡，同时又是城市三字码）")
+// 整串名称不该被城市同义词扩散：东京那条正则不锚定的话，搜「东京一号」会把整个东京都捞出来。
+eq(ids("东京一号"), [1], "整串名称不被城市同义词扩散（正则要锚定）")
+// 洲：地球那张城市表认不出洲，靠洲→国家码那张表。
+eq(ids("北美"), [6], "洲名（美国那台，没有分组）")
+eq(ids("north america"), [6], "洲名的英文写法（带空格，拆词时要护着）")
+eq(ids("asia"), [1, 2, 3, 5], "洲名英文（亚洲：日/港/新）")
+eq(ids("大洋洲"), [], "洲名（大洋洲：本夹具里没有）")
+
+// 洲/大区的边界夹具：**没有分组**、只靠国家码落位的机器。
+const area = [
+  node(11, "伦敦一号", { group: "", country: "GB", os: "Debian 12" }),
+  node(12, "法兰克福一号", { group: "", country: "DE", os: "Ubuntu 22.04" }),
+  node(13, "东京三号", { group: "", country: "JP", os: "Debian 12" }),
+  node(14, "西雅图一号", { group: "美西", country: "US", os: "Debian 12" }),
+]
+const aids = (query: string) => searchNodes(area, query).shown.map((n) => n.id)
+eq(aids("欧洲"), [11, 12], "洲名（中文）：英德那两台，哪怕没写分组")
+eq(aids("europe"), [11, 12], "洲名英文")
+eq(aids("EU"), [11, 12], "洲名缩写（大小写不敏感）")
+eq(aids("欧洲 debian"), [11], "洲名与系统叠起来（AND）")
+eq(aids("亚洲"), [13], "洲名（亚洲）")
+eq(aids("美西"), [14], "分区名原样（按分组名匹配）")
+eq(aids("west us"), [14], "分区名的英文写法（整串不拆）")
+eq(aids("美东"), [], "分区名（美东：本夹具里没有）")
+// ★短码按词边界：搜「欧洲」会展开出国家码 de，不许因此命中跑 Debian 的机器（实测过这个假命中）。
+eq(searchNodes([node(15, "美东一号", { group: "", country: "US", os: "Debian 12" })], "欧洲").hit, 0, "「欧洲」展开的国家码不许命中 Debian（短码按词边界）")
+
 if (failed) {
   console.error(`\n${failed} 处不符`)
   process.exit(1)

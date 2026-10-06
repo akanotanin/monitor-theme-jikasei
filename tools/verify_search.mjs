@@ -238,7 +238,28 @@ const EXPECT = [
   ['东京 ubuntu', ['东京二号']],
   ['us-backup', ['US-Backup']],
   ['zzz', []],
+  // ── 同义替换：中文 ↔ 英文 ↔ 三字码/国家码（两个方向都要通） ──
+  ['東京', ['东京一号', '东京二号']],
+  ['TYO', ['东京一号', '东京二号']],
+  ['japan', ['东京一号', '东京二号']],
+  ['germany', ['法兰克福一号']],
+  ['FRA', ['法兰克福一号']],
+  ['法兰克福', ['法兰克福一号']],
+  // ── 洲/大区：靠国家码落位，没写分组也算 ──
+  ['欧洲', ['法兰克福一号']],
+  ['europe', ['法兰克福一号']],
+  ['EU', ['法兰克福一号']],
+  ['欧洲 debian', ['法兰克福一号']],
+  ['亚洲', ['东京一号', '东京二号', '香港一号', 'SG-Edge']],
+  ['asia', ['东京一号', '东京二号', '香港一号', 'SG-Edge']],
+  ['北美', ['US-Backup']],
+  ['north america', ['US-Backup']],
+  ['美西', []],
+  // ── 反向回归：整串名称不该被城市同义词扩散（东京那条正则要锚定） ──
+  ['东京一号', ['东京一号']],
 ]
+// ★「欧洲」那条同时钉着短码的边界：欧洲展开出国家码 de，东京一号跑的是 Debian，
+//   要是 de 按子串匹配，它就会被当成欧洲的机器混进来 —— 期望里没有它，混进来即 FAIL。
 
 console.log('\n一、桌面 1440×900（亮色，六台夹具机器）:')
 let m = await goto('/', { w: 1440, h: 900, dark: false })
@@ -299,7 +320,7 @@ if (!REAL) {
       check(`搜「${term}」时清空按钮出现了（有焦点、框长开着）`, !!now.clear, JSON.stringify(now.clear))
     } else {
       check('搜不到时：说清了怎么取消（空态文案带原词、且提到 ×）',
-        now.notes.length === 1 && now.notes[0].includes('zzz') && now.notes[0].includes('×'), JSON.stringify(now.notes))
+        now.notes.length === 1 && now.notes[0].includes(term) && now.notes[0].includes('×'), JSON.stringify(now.notes))
       check('搜不到时概览底行写「没有匹配的节点」（不是「还没有节点」）', now.fleet?.[2] === '没有匹配的节点', `概览 ${JSON.stringify(now.fleet)}`)
       await shot('desktop-empty', 'main', 8)
     }
