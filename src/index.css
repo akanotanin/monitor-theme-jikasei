@@ -311,6 +311,9 @@
 /* 顶栏那个搜索框（src/components/SearchBox.tsx）：
    ① `type="search"` 在 WebKit 里自带一枚小叉，关掉它 —— 框里已经有一枚自己的清空按钮，
       两个长得差不多、做同一件事的按钮并排只会让人犹豫点哪个；
-   ② 占位文案是「搜索名称/地区/系统」，框里的宽度是按它定的（见护栏里那条「占位没被裁」）。 */
+   ② **清空那枚只在框长开着（有焦点）时出现**：收起时那一格只有 36px，放大镜已经占满，
+      再挤一枚叉就成了「两枚图标叠在一起」。展开／收起的动效由 `transition-all` 负责。 */
 .search-input::-webkit-search-cancel-button,
 .search-input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+.search-field .search-clear { display: none; }
+.search-field:focus-within .search-clear { display: grid; }

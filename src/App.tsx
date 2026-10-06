@@ -208,9 +208,19 @@ export default function App() {
   // 搜到的那几台还在（与分组标签、地区选择同一套「看哪几台」的记忆）。
   const [query, setQuery] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
-  // 收起搜索＝不筛：收起时把词一起清掉（不然列表还筛着、输入框却不见了，访客找不到「怎么取消」）。
-  // 那枚图标与窄屏多出来的那一行共用这一个动作。
-  const closeSearch = () => {
+  // 收起搜索（Esc 在空框上按的那一下）。**不清词**：收起是「让出顶栏那点宽度」，不是「别筛了」
+  // —— 词留着，点开一台机器看清了再回来，那几台还在（收起态会看不见词，所以那枚放大镜会提色、
+  // 悬停说明里带上词与命中数，见 SearchBox）。
+  const collapseSearch = () => setSearchOpen(false)
+  // 窄屏那枚方形图标＝顶栏下面那一行的开关；桌面什么都不用做（CSS 的 :focus-within 自己长开）。
+  // 用 matchMedia 而不是把它存成 state：这里只在事件里问一次，没必要为它挂一条媒体查询订阅。
+  const onSearchActivate = () => {
+    const narrow = typeof matchMedia === "function" && matchMedia("(max-width: 639px)").matches
+    setSearchOpen((was) => (narrow ? !was : false))
+  }
+  // 窄屏那一行收起：连词一起清掉 —— 那一行是「临时张开的一块地方」，收起后顶栏上看不见它，
+  // 留着词就成了看不见的筛选。（桌面那套不一样：收起态本来就是那枚图标，词留着有据可依。）
+  const closeSearchRow = () => {
     setSearchOpen(false)
     setQuery("")
   }
@@ -351,14 +361,15 @@ export default function App() {
           </button>
           <div className="flex-1" />
           {/* 搜索（名称 / 地区 / 系统）：只长在列表页 —— 它收窄的就是下面那张列表，
-              站在某台机器的详情页里按它没有落点。桌面是一枚输入框，窄屏收成一枚图标。 */}
+              站在某台机器的详情页里按它没有落点。收起时是一枚方形图标，点开就地长成输入框
+              （窄屏是顶栏下面多一行，见 SearchRow）。 */}
           {open === null && (
             <SearchBox
               value={query}
               onChange={setQuery}
-              open={searchOpen}
-              onToggle={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-              onClose={closeSearch}
+              onActivate={onSearchActivate}
+              onClose={collapseSearch}
+              hits={found.hit}
             />
           )}
           {/* The panel is a separate app built into the hub, not part of this
@@ -415,7 +426,7 @@ export default function App() {
         {/* 窄屏点开搜索后在顶栏下面多出来的那一行：摆成 header 的直接子节点，
             于是它跟着这个 sticky 块一起吸顶（滚动时不会留在列表里被滚走）。 */}
         {open === null && searchOpen && (
-          <SearchRow value={query} onChange={setQuery} onClose={closeSearch} />
+          <SearchRow value={query} onChange={setQuery} onClose={closeSearchRow} />
         )}
       </header>
 
@@ -466,7 +477,7 @@ export default function App() {
             {found.active && found.shown.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 当前筛选下没有匹配「{found.query.trim()}」的节点 —— 名称、地区、系统三处都能搜
-                （多个词用空格隔开，要同时命中）；点搜索框右边那个 × 清掉。
+                （多个词用空格隔开，要同时命中）；点搜索框里那枚 × 清掉。
               </p>
             ) : globeOn && regions.shown.length === 0 && view.shown.length > 0 ? (
               <p className="text-sm text-muted-foreground">

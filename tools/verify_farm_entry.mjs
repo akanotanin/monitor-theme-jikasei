@@ -123,10 +123,9 @@ const READ = `(() => {
   });
 })()`
 
-// 入口不出现时，顶栏剩下的那几枚（搜索框 / 扳手 / 卡片形态 / 地球 / 月亮）——多一枚少一枚都算这行被弄乱了。
-// 搜索框那枚（标题里带「搜索（名称 / 地区 / 系统）」）是最前面的一枚，**只在列表页出现**：
-// 这几个场景拍的就是列表页，所以它一直在。见 tools/verify_search.mjs。
-const HIDDEN_TITLES = '搜索（名称 / 地区 / 系统）,登录,卡片形态,隐藏节点地球,切换主题'
+// 入口不出现时，顶栏剩下的那四枚（扳手 / 卡片形态 / 地球 / 月亮）——多一枚少一枚都算这行被弄乱了。
+// 搜索那格不在这张表里：它是个 <input>（收起时是一枚方形图标），不是按钮，见 tools/verify_search.mjs。
+const HIDDEN_TITLES = '登录,卡片形态,隐藏节点地球,切换主题'
 const SCENARIOS = [
   // 只装主题、没装养鸡场、站长也没填地址 —— 最常见的形态：这一枚不许出现。
   { name: '本站没养鸡场（默认设置）', config: {}, farm: false, visible: false, probes: 1 },
@@ -182,7 +181,7 @@ for (const [n, scenario] of SCENARIOS.entries()) {
     } else {
       check('同域：当前标签页打开（属于站内导航）', state.target === null && state.rel === null, `target=${state.target} rel=${state.rel}`)
     }
-    check('顺序与参考图一致：搜索框 → 扳手 → 卡片形态 → 地球 → 鸡 → 月亮', state.titles.join(',') === '搜索（名称 / 地区 / 系统）,登录,卡片形态,隐藏节点地球,养鸡场,切换主题', state.titles.join(','))
+    check('顺序与参考图一致：扳手 → 卡片形态 → 地球 → 鸡 → 月亮', state.titles.join(',') === '登录,卡片形态,隐藏节点地球,养鸡场,切换主题', state.titles.join(','))
     check('三枚的 class 逐字符相同（画风靠它保证）', state.cls.farm === state.cls.moon && state.cls.farm === state.cls.admin)
     // box 里只比尺寸——位置天生不同（它是另一枚按钮），比位置等于恒红。
     const sizeOf = (b) => (b ? { w: b.w, h: b.h } : null)
