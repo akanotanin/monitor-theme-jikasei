@@ -296,3 +296,14 @@
 }
 /* 顶栏那枚开关：关掉时压暗，一眼看得出地球是关着的。 */
 .globe-toggle[aria-pressed="false"] { color: var(--muted-foreground); opacity: 0.6; }
+
+/* 页脚署名（右下角那行）：比正文的弱化色再淡一档，只作署名，不跟页面里的读数抢注意力；
+   「jikasei」那截是本主题的源码仓库链接（地址见 App.tsx 的 REPO_URL），悬停才出下划线。 */
+.theme-credit {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.62;
+}
+.theme-credit a { color: inherit; text-decoration: none; }
+.theme-credit a:hover { text-decoration: underline; }

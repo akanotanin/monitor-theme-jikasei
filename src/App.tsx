@@ -28,6 +28,10 @@ type Me = {
 // theme's own key so two themes on one origin cannot fight over it.
 const TITLE_CACHE_KEY = "jikasei:site_name"
 
+// 页脚署名（右下角那行）里指向的源码仓库 —— 与 theme.json 的 `url` 是同一个地址
+// （面板卡片上的「源码」也指这里）。两处一起改。
+const REPO_URL = "https://github.com/akanotanin/monitor-theme-jikasei"
+
 // Split out because recharts is most of this bundle and the list page draws no
 // chart. The landing page is 242 kB rather than 629 kB (77 kB gzipped against
 // 188 kB). 取它的时机见 App 里的 warmDetail：列表画完之后空闲时取、指针落到卡片上时立刻取、
@@ -316,7 +320,9 @@ export default function App() {
   if (!me.public_page && !me.authed) return null
 
   return (
-    <div className="min-h-svh">
+    // 纵向排下来、页脚吊在最后（main 吃满剩余高度）：机器少、内容比一屏短时，
+    // 署名也落在屏幕的右下角，而不是紧贴在列表底下浮在半空中。
+    <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-4 py-3 sm:px-6">
           {/* The site name is the way back to the list, so a node page needs
@@ -381,7 +387,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1280px] space-y-5 px-4 py-4 sm:px-6">
+      <main className="mx-auto w-full max-w-[1280px] flex-1 space-y-5 px-4 py-4 sm:px-6">
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {open !== null ? (
@@ -437,6 +443,18 @@ export default function App() {
           </>
         )}
       </main>
+
+      {/* 页脚署名：右下角一行浅色小字（样式见 index.css 的 .theme-credit），
+          「jikasei」那截点开去本主题的源码仓库 —— 新标签页打开，别把访客从状态页带走
+          （链接地址与 theme.json 的 url 是同一个，见上面的 REPO_URL）。 */}
+      <footer className="mx-auto w-full max-w-[1280px] px-4 pb-5 pt-1 sm:px-6">
+        <p className="theme-credit text-right">
+          Theme by{" "}
+          <a href={REPO_URL} target="_blank" rel="noreferrer">
+            jikasei
+          </a>
+        </p>
+      </footer>
     </div>
   )
 }
