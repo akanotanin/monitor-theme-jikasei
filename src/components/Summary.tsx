@@ -27,6 +27,10 @@ import { summarize, type Fleet } from "@/lib/summary"
  * default 主题）的概览四格也是拿筛选后的节点算的；只让列表变、这一行不动，会出现
  * 「上面写着 3 / 4 · Node B，下面只剩一个分组那两张卡片」。
  *
+ * ★**搜索也吃同一套口径**：顶栏那个搜索框（`@/lib/search`）收窄之后，这一行跟着一起收窄
+ * ——「上面写着 8 台、下面只搜出 2 台」与上面那句话是同一个毛病。收窄到一台不剩时，
+ * 「节点」那张卡底部那行小字会写「没有匹配的节点」而不是「还没有节点」（`searching`）。
+ *
  * 默认不显示（主题设置的「列表页顶部」没选它）。站点本来就有每台机器自己的卡片，
  * 不需要概览的站不必为此让出首屏；没选时这个组件整个不挂载。
  */
@@ -220,7 +224,7 @@ function Sparkline({ series }: { series: { rx: number; tx: number }[] }) {
 }
 
 /** 「节点」那块读数：在线 / 总数 + 离线台数。两副面孔共用，块本身一模一样。 */
-function NodesBlock({ fleet }: { fleet: Fleet }) {
+function NodesBlock({ fleet, searching = false }: { fleet: Fleet; searching?: boolean }) {
   const offline = fleet.total - fleet.online
   return (
     <Block title="节点">
@@ -230,7 +234,8 @@ function NodesBlock({ fleet }: { fleet: Fleet }) {
         {fleet.online} <span className="text-base font-normal text-muted-foreground">/ {fleet.total}</span>
       </Big>
       <Foot>
-        {fleet.total === 0 ? "还没有节点" : offline === 0 ? "全部在线" : `${offline} 台离线`}
+        {/* 「一台都没有」有两种成因，说法得分开：站点本来就没有节点，还是搜索把当前那批全筛掉了。 */}
+        {fleet.total === 0 ? (searching ? "没有匹配的节点" : "还没有节点") : offline === 0 ? "全部在线" : `${offline} 台离线`}
       </Foot>
     </Block>
   )
@@ -249,7 +254,7 @@ function BusiestBlock({ fleet }: { fleet: Fleet }) {
   )
 }
 
-export function SummaryCards({ nodes, group, finance = false }: { nodes: Node[]; group: string | null; finance?: boolean }) {
+export function SummaryCards({ nodes, group, finance = false, searching = false }: { nodes: Node[]; group: string | null; finance?: boolean; searching?: boolean }) {
   const fleet = summarize(nodes)
   const budget = budgetOf(nodes)
   // 模块级的采样缓冲：`useNodes` 每次收到推送（或轮询回来）就追加一个点，
@@ -282,14 +287,14 @@ export function SummaryCards({ nodes, group, finance = false }: { nodes: Node[];
 
           {/* 第二张卡：节点 + 最忙节点，与上面同一套排法——两块读数分居卡片两端。 */}
           <Pair>
-            <NodesBlock fleet={fleet} />
+            <NodesBlock fleet={fleet} searching={searching} />
             <BusiestBlock fleet={fleet} />
           </Pair>
         </>
       ) : (
         <>
           <Tile>
-            <NodesBlock fleet={fleet} />
+            <NodesBlock fleet={fleet} searching={searching} />
           </Tile>
 
           <Tile>

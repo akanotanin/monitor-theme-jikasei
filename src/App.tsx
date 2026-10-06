@@ -5,12 +5,14 @@ import { CardStyleMenu } from "@/components/CardStyleMenu"
 import { NodeCard } from "@/components/NodeCard"
 import { CompactList } from "@/components/CompactList"
 import { Globe } from "@/components/Globe"
+import { SearchBox, SearchRow } from "@/components/SearchBox"
 import { SummaryCards } from "@/components/Summary"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { api, groupView, useNodes } from "@/lib/api"
 import { regionView } from "@/lib/globe"
 import { hasDetailRemarks } from "@/lib/notes"
+import { searchNodes } from "@/lib/search"
 import { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, isBudgetLayout, useCardStyle, useGlobeVisible, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
 import type { RemarkPlacement } from "@/lib/site-settings"
 import { FarmIcon } from "@/components/FarmIcon"
@@ -202,6 +204,10 @@ export default function App() {
   // 地球看不看，以及列表用哪种卡片形态 —— 后者没选过时跟着站长的设置走。
   const [globeOn, toggleGlobe] = useGlobeVisible()
   const [cardStyle, chooseStyle] = useCardStyle(config.cardStyle)
+  // 顶栏那个搜索框：词与「窄屏那一行展开了没」都留在这儿 —— 进详情页再回来，
+  // 搜到的那几台还在（与分组标签、地区选择同一套「看哪几台」的记忆）。
+  const [query, setQuery] = useState("")
+  const [searchOpen, setSearchOpen] = useState(false)
 
   const loadMe = useCallback(() => {
     // `|| "..."` because an empty message reads as no error: api() falls back to
@@ -282,7 +288,11 @@ export default function App() {
   //   · 下面的列表再按地区收窄一层（`listView`）。
   // 这样「上头写着 JP 4 台、下面只剩 2 张卡片」不会出现：地球是分组的地图，不是列表的地图。
   const regions = regionView(view.shown, region)
-  const listView = { ...view, shown: regions.shown }
+  // 再叠一层搜索（口径见 @/lib/search）：这一层与地区筛选同一套——**下面那张列表与上面
+  // 那行概览卡片一起收窄**，地球仍然是「分组的地图」（它画的是分组里有哪些地方，
+  // 不是搜索结果热力图；地区列表点一行照样能把列表收窄到那个地区）。
+  const found = searchNodes(regions.shown, query)
+  const listView = { ...view, shown: found.shown }
 
   // `/node/{id}` is a page people bookmark and share, so the tab needs the node's
   // name. The site name rather than a fixed string, since the hub lets an operator
@@ -334,6 +344,22 @@ export default function App() {
             {me.site_name || "Monitor"}
           </button>
           <div className="flex-1" />
+          {/* 搜索（名称 / 地区 / 系统）：只长在列表页 —— 它收窄的就是下面那张列表，
+              站在某台机器的详情页里按它没有落点。桌面是一枚输入框，窄屏收成一枚图标。 */}
+          {open === null && (
+            <SearchBox
+              value={query}
+              onChange={setQuery}
+              open={searchOpen}
+              onToggle={() => {
+                // 收起时顺手把词清掉：不然列表还筛着、输入框却不见了，访客找不到「怎么取消」。
+                if (searchOpen) {
+                  setSearchOpen(false)
+                  setQuery("")
+                } else setSearchOpen(true)
+              }}
+            />
+          )}
           {/* The panel is a separate app built into the hub, not part of this
               theme, so this is a navigation rather than a route. Icon only, with
               the wording in the tooltip: this row is a strip of icons, and a
@@ -385,6 +411,18 @@ export default function App() {
             {dark ? <Sun /> : <Moon />}
           </Button>
         </div>
+        {/* 窄屏点开搜索后在顶栏下面多出来的那一行：摆成 header 的直接子节点，
+            于是它跟着这个 sticky 块一起吸顶（滚动时不会留在列表里被滚走）。 */}
+        {open === null && searchOpen && (
+          <SearchRow
+            value={query}
+            onChange={setQuery}
+            onClose={() => {
+              setSearchOpen(false)
+              setQuery("")
+            }}
+          />
+        )}
       </header>
 
       <main className="mx-auto w-full max-w-[1280px] flex-1 space-y-5 px-4 py-4 sm:px-6">
@@ -423,18 +461,24 @@ export default function App() {
           <>
             {/* 概览卡片行：设置里没选它时整个不挂载（不是藏起来），首屏与没有这个功能时一致。
                 「月度预算剩余价值版」只是同一行换一副面孔，组件另收一个 finance 开关。 */}
-            {hasSummary(config.listTop) && <SummaryCards nodes={regions.shown} group={view.current} finance={isBudgetLayout(config.listTop)} />}
+            {hasSummary(config.listTop) && <SummaryCards nodes={found.shown} group={view.current} finance={isBudgetLayout(config.listTop)} searching={found.active} />}
             {/* 节点地球：概览卡片之下、列表之上（上游就是这个次序）。 */}
             {globeOn && (
               <Globe nodes={view.shown} dark={dark} region={regions.current} onRegion={setRegion} onOpen={go} onWarm={warmDetail} />
             )}
-            {/* 按地区筛完一台都不剩：说清楚是筛选造成的，并指回去哪儿取消 ——
-                否则访客只看到一大片空白，会以为站点坏了。 */}
-            {globeOn && regions.shown.length === 0 && view.shown.length > 0 && (
+            {/* 一台都剩不下时说清楚是谁把它筛没的，并指回去哪儿取消 —— 否则访客只看到
+                一大片空白，会以为站点坏了。搜索那一层排在前面：它是最后叠上去、也是访客
+                刚刚动手的那一层（文案写「当前筛选下」，地区那层也在时同样成立）。 */}
+            {found.active && found.shown.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                当前筛选下没有匹配「{found.query.trim()}」的节点 —— 名称、地区、系统三处都能搜
+                （多个词用空格隔开，要同时命中）；点搜索框右边那个 × 清掉。
+              </p>
+            ) : globeOn && regions.shown.length === 0 && view.shown.length > 0 ? (
               <p className="text-sm text-muted-foreground">
                 这个地区里当前没有节点 —— 点上面那一列的「全部」取消筛选。
               </p>
-            )}
+            ) : null}
             <NodeList view={listView} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail}
               latencyLines={config.pingLines}
               cardStyle={cardStyle}

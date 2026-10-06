@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts && node src/lib/summary.test.ts && node src/lib/money.test.ts && node src/lib/site-settings.test.ts && node src/lib/notes.test.ts && node src/lib/ranges.test.ts && node src/lib/globe.test.ts",
+    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts && node src/lib/summary.test.ts && node src/lib/money.test.ts && node src/lib/site-settings.test.ts && node src/lib/notes.test.ts && node src/lib/ranges.test.ts && node src/lib/globe.test.ts && node src/lib/search.test.ts",
     "check": "node scripts/check-config.mjs",
     "preview": "vite preview",
     "package": "npm run build && npm run check && node scripts/package.mjs"
