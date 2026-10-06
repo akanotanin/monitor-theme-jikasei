@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Area, Brush, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 
 import { Info } from "lucide-react"
 
@@ -9,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Country, deployed, RemarkChips } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
-  axisBytes, axisTop, bytes, clockFor, despike, cpuName, osName, rate, timeTicks, uptime,
+  axisBytes, axisTop, bytes, despike, cpuName, osName, rate, uptime,
 } from "@/lib/format"
 import { hasDetailRemarks, remarkChips } from "@/lib/notes"
 import { remarksOnCards, type RemarkPlacement } from "@/lib/site-settings"
@@ -51,13 +50,6 @@ type Loss = Record<string, number>
 // 摊平」；但那是替访客做判断：想看一周走势的人只能在资源页签里看，而延迟恰恰是资源页签给不了的
 // 那条。窗口拉长不会让点数变多，hub 只会把桶放得更宽（168 小时 ≈ 9 分钟一桶，30 天以上走
 // 小时汇总），所以更长的探测史仍画得下、也仍看得见趋势。
-const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: false }
-
-// No grow-in animation: it would spend 1.5 s drawing a line across the panel on
-// every range change, on a page meant to be read at a glance, and on the latency
-// chart across seven hundred points per probe.
-const SERIES = { dot: false as const, strokeWidth: 1.5, isAnimationActive: false }
-
 // 延迟图最多同时画四条线路，所以这里备九个色相、每个再配一版短虚线：前九条走实线，
 // 第十条起色相重复、换线型。色相表是 index.css 里的 --chart-1..9，深浅两套只差亮度，
 // 同一台机器在两种主题下是同一种颜色。
@@ -66,11 +58,6 @@ const PALETTE = [
   ...COLORS.map((stroke) => ({ stroke, dash: undefined })),
   ...COLORS.map((stroke) => ({ stroke, dash: "6 3" })),
 ]
-
-// 四张资源图共用一枚光标线与一个提升的层级：recharts 把 tooltip 画在图表容器内部，
-// 不给 z-index 就会被下一块面板压住半截。
-const CURSOR = { stroke: "var(--border)" }
-const TOOLTIP_BOX = { zIndex: 30 }
 
 const TABS = [
   { key: "resources", label: "资源" },
@@ -342,21 +329,6 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   // 挂在同一行的另一列上（`l<id>`），得连行一起拿到。
   const rowByTs = useMemo(() => new Map(pingRows.map((row) => [row.ts, row])), [pingRows])
 
-  // A real time axis rather than the category axis recharts defaults to: on a
-  // category axis ticks are selected by index, so a period the agent was offline
-  // for collapses to nothing.
-  const timeAxis = (rows: { ts: number }[], from = 0, to = rows.length - 1) => ({
-    dataKey: "ts",
-    type: "number" as const,
-    domain: ["dataMin", "dataMax"] as const,
-    // Explicit, or recharts places them at 05:14 and 10:22. Any that still collide
-    // are dropped by `minTickGap`.
-    ticks: rows.length ? timeTicks(rows[from].ts, rows[to].ts) : undefined,
-    tickFormatter: clockFor(hours),
-    minTickGap: hours > 24 ? 72 : 40,
-    ...AXIS,
-  })
-
   return (
     <div className="space-y-4">
       {/* 就地展开（紧凑形态点开一行）时不重复这台机器的身份行、规格与备注：那一行在表格里
@@ -536,80 +508,41 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
               {shownProbes.length === 0 ? (
                 <p className="py-8 text-center text-sm">没有选中任何探测</p>
               ) : (
-                <ResponsiveContainer>
-                  <ComposedChart data={pingRows}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" vertical={false} />
-                    <XAxis
-                      {...timeAxis(
-                        pingRows,
-                        Math.min(zoom?.[0] ?? 0, pingRows.length - 1),
-                        Math.min(zoom?.[1] ?? pingRows.length - 1, pingRows.length - 1),
-                      )}
-                    />
-                    {/* Not anchored at zero: these lines live in a narrow band
-                        far from it, and zero flattens every wobble. */}
-                    <YAxis unit="ms" width={52} domain={["auto", "auto"]} {...AXIS} />
-                    {/* 延迟图自己画 tooltip：四条线路叠在一起时，默认那枚只会说
-                        「名字 + 值」，看不出谁最慢、谁在丢包。最慢的排最前，超时的标
-                        「无响应」，有丢包的缀一段丢包率。 */}
-                    <Tooltip
-                      content={
-                        <PingTooltip
-                          rowByTs={rowByTs}
-                          probes={shownProbes}
-                          smooth={smooth}
-                          style={style}
-                        />
-                      }
-                      cursor={CURSOR}
-                      wrapperStyle={TOOLTIP_BOX}
-                    />
-                    {/* Behind the line, the range that bucket's answers
-                        spanned -- Smokeping's "smoke". At the day window a
-                        bucket moves 63 ms at the 90th percentile against the
-                        25 ms the trend moves, so a line alone draws the smaller
-                        of the two.
-
-                        Only with one probe on screen: rendered for four, the
-                        bands overlap into a fog and their extremes drag the
-                        axis from 165-385 out to 140-420. */}
-                    {shownProbes.length === 1 &&
-                      shownProbes.map((s) => (
-                        <Area
-                          key={`band${s.id}`}
-                          dataKey={`${smooth ? "c" : "b"}${s.id}`}
-                          stroke="none"
-                          fill={style(s.id).stroke}
-                          fillOpacity={0.16}
-                          isAnimationActive={false}
-                          tooltipType="none"
-                          legendType="none"
-                          connectNulls
-                        />
-                      ))}
-                    {shownProbes.map((s) => (
-                      <Line
-                        key={s.id}
-                        dataKey={`${smooth ? "s" : "t"}${s.id}`}
-                        name={s.name}
-                        stroke={style(s.id).stroke}
-                        strokeDasharray={style(s.id).dash}
-                        {...SERIES}
-                        connectNulls
-                      />
-                    ))}
-                    {/* Drag either handle to zoom into a stretch of the trend. */}
-                    <Brush
-                      dataKey="ts"
-                      height={22}
-                      travellerWidth={8}
-                      tickFormatter={clockFor(hours)}
-                      className="fill-muted"
-                      stroke="var(--color-muted-foreground)"
-                      onChange={(r) => setZoom([r.startIndex ?? 0, r.endIndex ?? pingRows.length - 1])}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
+                <TimeChart
+                  rows={pingRows}
+                  series={[
+                    // 区间（band）只在屏上只有一个探测时画：四个叠在一起会糊成一片，还会把轴拉宽
+                    // （原注释那段「四个的 band 会互相叠成雾」）。
+                    ...(shownProbes.length === 1
+                      ? shownProbes.map((s) => ({
+                          key: `${smooth ? "c" : "b"}${s.id}`,
+                          name: s.name,
+                          color: style(s.id).stroke,
+                          band: true,
+                        }))
+                      : []),
+                    ...shownProbes.map((s) => ({
+                      key: `${smooth ? "s" : "t"}${s.id}`,
+                      name: s.name,
+                      color: style(s.id).stroke,
+                      dash: style(s.id).dash,
+                    })),
+                  ]}
+                  hours={hours}
+                  // 延迟轴不从 0 起：这些线路活在一条窄带里，锚到 0 会把起伏压平。
+                  domain="auto"
+                  unit="ms"
+                  left={52}
+                  from={Math.min(zoom?.[0] ?? 0, pingRows.length - 1)}
+                  to={Math.min(zoom?.[1] ?? pingRows.length - 1, pingRows.length - 1)}
+                  // 原来 recharts 的 Brush（22px 高的拖两端把手）换成「在图上横向拖选一段」+
+                  // 一枚「重置」：手机上那对手指头太细，而且这样代码少一半。
+                  onZoom={(from, to) => setZoom([from, to])}
+                  label="节点延迟走势"
+                  renderTooltip={(row) => (
+                    <PingTooltip active label={row.ts} rowByTs={rowByTs} probes={shownProbes} smooth={smooth} style={style} />
+                  )}
+                />
               )}
             </div>
 

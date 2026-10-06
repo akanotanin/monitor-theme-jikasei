@@ -60,6 +60,19 @@ const METRICS = {
   }),
 }
 
+// 延迟页签要一段 ping 历史（一条线路，带区间与丢包）
+const PING = {
+  ping: Array.from({ length: 40 }, (_, i) => ({
+    task_id: 1,
+    ts: START + i * 300,
+    latency: 30 + (i % 5) * 3,
+    band: [28 + (i % 5) * 3, 34 + (i % 5) * 3],
+    loss: 0,
+  })),
+  probes: { 1: '北京电信' },
+  loss: { 1: 0.4 },
+}
+
 const serveFile = (res, path) => {
   const file = join('dist', normalize(path === '/' ? '/index.html' : path).replace(/^(\.\.[/\\])+/, ''))
   if (!existsSync(file) || statSync(file).isDirectory()) { res.writeHead(200, { 'Content-Type': TYPES['.html'] }); return res.end(readFileSync('dist/index.html')) }
@@ -85,7 +98,7 @@ const server = createServer((req, res) => {
     const body = path === '/api/me' ? { authed: false, github: false, public_page: true, site: BASE, site_name: '图表' }
       : path === '/api/nodes' ? NODES
         : path.endsWith('/config') ? { siteIcon: '/site-icon.png', listTop: 'both', cardStyle: 'detailed', remarkPlacement: 'both', pingLines: '' }
-          : path.includes('/metrics') ? (full.includes('series=metrics') ? METRICS : { metrics: [], ping: [], probes: {}, loss: {} })
+          : path.includes('/metrics') ? (full.includes('series=metrics') ? METRICS : full.includes('series=ping') ? PING : { metrics: [], ping: [], probes: {}, loss: {} })
             : {}
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     return res.end(JSON.stringify(body))
@@ -161,20 +174,30 @@ async function open(url) {
   }
   return charts
 }
-async function shot(name) {
-  // 拍「四张图那一块」：先滚进视口，再按**页面坐标**裁。
+async function shot(name, selector) {
+  // 拍一块区域：给了 selector 就拍它，没给就拍「四张资源图那一块」。
   // ★captureBeyondViewport 在无头 + --disable-gpu 下不可靠：超出视口的部分会拍到空白，
-  //   看着像「图表根本没渲染」（第一版两张对比图就是这么废掉的）。所以先把目标滚进来。
-  await js(`(() => { const els = [...document.querySelectorAll('h4')].filter((h) => /^(CPU|内存|网络速率|硬盘)/.test(h.textContent || '')); els[0] && els[0].scrollIntoView({ block: 'start' }); return true })()`)
+  //   看着像「图表根本没渲染」（第一版两张对比图就是这么废掉的）。所以先把目标滚进视口。
+  const target = selector ? JSON.stringify(selector) : `'main'`
+  await js(`(() => { const el = document.querySelector(${target}); el && el.scrollIntoView({ block: 'center' }); return true })()`)
   await sleep(350)
   const clip = await js(`(() => {
+    if (${selector ? 'true' : 'false'}) {
+      const el = document.querySelector(${target})
+      if (!el) return null
+      const r = el.getBoundingClientRect()
+      return { x: Math.max(0, Math.round(r.x - 6)), y: Math.round(r.y + scrollY - 6), width: Math.round(r.width + 12), height: Math.round(r.height + 12), scale: 2 }
+    }
     const els = [...document.querySelectorAll('h4')].filter((h) => /^(CPU|内存|网络速率|硬盘)/.test(h.textContent || ''))
     if (els.length < 4) return null
     const first = els[0].getBoundingClientRect()
     const last = els[els.length - 1].parentElement.getBoundingClientRect()
     return { x: Math.max(0, Math.round(first.x - 6)), y: Math.round(first.y + scrollY - 6), width: Math.round(first.width + 12), height: Math.round(last.bottom - first.top + 12), scale: 2 }
   })()`)
-  if (!clip) return
+  if (!clip) {
+    console.log(`   （${name}：没找到要拍的区域，跳过）`)
+    return
+  }
   const r = await send('Page.captureScreenshot', { format: 'png', clip, captureBeyondViewport: false })
   writeFileSync(`${SHOTS}/${name}.png`, Buffer.from(r.result.data, 'base64'))
   console.log(`   已拍 ${SHOTS}/${name}.png（${clip.width}×${clip.height}）`)
@@ -233,6 +256,73 @@ check('悬停出 tooltip：带时间戳 + 系列名 + 带单位的值', !!tip &&
 check('没有控制台异常', errors.length === 0, errors.slice(0, 2).join(' | '))
 // 真站那轮也出图：同一台机器、同一时刻，改前改后各拍一张才能比。
 await shot(REAL ? 'live-detail-charts' : 'detail-charts')
+
+// ── 二、延迟页签：拖选缩放（原来 recharts 的 Brush，现在是在图上横向拖一段 + 一枚重置） ──
+if (!REAL) {
+  console.log('\n二、延迟页签（拖选缩放 / 重置）:')
+  await js(`(() => { const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === '网络延迟'); b && b.click(); return !!b })()`)
+  let latency = null
+  for (let i = 0; i < 30; i++) {
+    await sleep(300)
+    latency = JSON.parse(await js(`(() => {
+      const svg = document.querySelector('svg[aria-label="节点延迟走势"]')
+      if (!svg) return 'null'
+      const rect = svg.querySelector('rect[fill="transparent"]')
+      const r = rect ? rect.getBoundingClientRect() : null
+      const xs = [...svg.querySelectorAll('text')].filter((t) => t.getAttribute('text-anchor') === 'middle').map((t) => t.textContent)
+      return JSON.stringify({
+        xs,
+        rect: r ? { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) } : null,
+        lines: svg.querySelectorAll('path[stroke-width="1.5"]').length,
+        lineInfo: [...svg.querySelectorAll('path[stroke-width="1.5"]')].map((p) => (p.getAttribute('d') || '').slice(0, 24) + ' | ' + p.getAttribute('stroke')),
+        bands: svg.querySelectorAll('path[fill-opacity="0.16"]').length,
+      })
+    })()`))
+    if (latency && latency.rect) break
+  }
+  check('延迟图画出来了（一条线路 + 那块区间 band）', !!latency && latency.lines === 1 && latency.bands === 1,
+    JSON.stringify(latency && { lines: latency.lines, bands: latency.bands, lineInfo: latency.lineInfo }))
+  const before = latency?.xs ?? []
+  const r = latency?.rect
+  if (r) {
+    // 用**真鼠标事件**：合成的 PointerEvent 没有有效 pointerId，setPointerCapture 会抛。
+    const y = r.y + Math.round(r.h / 2)
+    const from = r.x + Math.round(r.w * 0.3)
+    const to = r.x + Math.round(r.w * 0.6)
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: from, y, button: 'left', buttons: 1, clickCount: 1 })
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: to, y, button: 'left', buttons: 1 })
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: to, y, button: 'left', buttons: 0, clickCount: 1 })
+    await sleep(450)
+    const after = JSON.parse(await js(`(() => {
+      const svg = document.querySelector('svg[aria-label="节点延迟走势"]')
+      return JSON.stringify({
+        xs: [...svg.querySelectorAll('text')].filter((t) => t.getAttribute('text-anchor') === 'middle').map((t) => t.textContent),
+        reset: !![...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '重置'),
+      })
+    })()`))
+    check('横向拖选一段之后窗口收窄了（X 轴刻度变了）', JSON.stringify(after.xs) !== JSON.stringify(before),
+      `前 ${JSON.stringify(before)} → 后 ${JSON.stringify(after.xs)}`)
+    check('缩放之后出现「重置」', after.reset === true, `reset=${after.reset}`)
+    await js(`(() => { const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === '重置'); b && b.click(); return true })()`)
+    await sleep(450)
+    const back = JSON.parse(await js(`(() => { const svg = document.querySelector('svg[aria-label="节点延迟走势"]'); return JSON.stringify([...svg.querySelectorAll('text')].filter((t) => t.getAttribute('text-anchor') === 'middle').map((t) => t.textContent)) })()`))
+    check('点「重置」回到整段窗口', JSON.stringify(back) === JSON.stringify(before), JSON.stringify(back))
+    const gone = await js(`(() => ![...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '重置'))()`)
+    check('重置之后那枚按钮自己收掉', gone === true, `gone=${gone}`)
+    // 悬停：那枚自绘 tooltip 走的是 PingTooltip（最慢的排最前、超时标「无响应」、带丢包率），
+    // 这条断言专门盯「换图之后它还接得上」。
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x + Math.round(r.w * 0.5), y: r.y + Math.round(r.h / 2) })
+    await sleep(300)
+    const tip = await js(`(() => {
+      const el = [...document.querySelectorAll('div')].find((d) => (d.textContent || '').includes('北京电信') && (d.className || '').includes('rounded-lg'))
+      return el ? el.textContent : null
+    })()`)
+    check('延迟图悬停出 tooltip（线路名 + 毫秒值）', !!tip && /北京电信/.test(tip) && /ms/.test(tip), JSON.stringify(tip))
+    await shot('latency-chart', 'svg[aria-label="节点延迟走势"]')
+  } else {
+    check('拿到延迟图的绘图区（拖选的前提）', false, '没找到 rect')
+  }
+}
 
 console.log(`\n结果: PASS ${passed} / FAIL ${failed}`)
 chrome.kill()

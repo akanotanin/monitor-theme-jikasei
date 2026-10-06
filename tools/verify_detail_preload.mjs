@@ -1,4 +1,5 @@
-// 详情 chunk（recharts 那 391KB）的预热方式验收：静态走本机 dist/，数据走真 hub。
+// 详情 chunk 的预热方式验收：静态走本机 dist/，数据走真 hub。
+// 图表锚点用 `[data-chart]`（自绘 TimeChart 挂的），别再按 recharts 的类名找。
 //
 // 用法：ssh -f -N -L 28085:127.0.0.1:28080 <hub 那台机器>
 //       node tools/verify_detail_preload.mjs http://127.0.0.1:28085 [节点id]
@@ -94,7 +95,7 @@ const probeSource = (stubIdle) => `(function () {
         window.__m.skeletonAt = Math.round(performance.now())
       }
     }
-    if (window.__m.chart === null && document.querySelector('.recharts-surface')) window.__m.chart = Math.round(performance.now())
+    if (window.__m.chart === null && document.querySelector('[data-chart]')) window.__m.chart = Math.round(performance.now())
   }, 5)
 })()`
 
@@ -178,7 +179,7 @@ if (want(3)) for (const [w, h, mobile, tag] of [[390, 844, true, '手机 390×84
   while (Date.now() < deadline) { await sleep(200); if (await js('window.__m.chart !== null')) break }
   const raw = JSON.parse(await js('JSON.stringify(window.__m)'))
   const loaded = await js(`(() => { const h2 = document.querySelector('main h2'); if (!h2) return null; return Math.round(h2.parentElement.parentElement.getBoundingClientRect().height) })()`)
-  const charts = await js(`document.querySelectorAll('.recharts-surface').length`)
+  const charts = await js(`document.querySelectorAll('[data-chart]').length`)
   console.log(`  骨架可见高度 ${raw.skeletonMax}px（停留到 ${raw.skeletonAt}ms）；点开→图表 ${raw.chart === null ? '未画出' : raw.chart - raw.clickAt + 'ms'}；加载完内容高 ${loaded}px、图表 ${charts} 张`)
   check(raw.skeletonMax > 0, `${tag} 点开时出现详情骨架（不是白屏）`)
   check(loaded !== null && Math.abs(raw.skeletonMax - loaded) <= 24, `${tag} 骨架高度 ≈ 加载完的高度（±24px）`, `骨架 ${raw.skeletonMax}px / 实际 ${loaded}px`)
@@ -200,7 +201,7 @@ if (want(4)) {
   m = JSON.parse(await js('JSON.stringify(window.__m)'))
   const e4 = await res()
   const nodes4 = e4.find((e) => e.n === '/api/nodes')
-  const chart4 = await js(`document.querySelectorAll('.recharts-surface').length`)
+  const chart4 = await js(`document.querySelectorAll('[data-chart]').length`)
   console.log(`  chunk 首次请求 ${m.chunkMs}ms（/api/nodes 返回 ${nodes4 ? nodes4.t + nodes4.d : '?'}ms）；图表 ${chart4} 张`)
   check(m.chunkMs !== null && nodes4 && m.chunkMs < nodes4.t + nodes4.d, '直接落在详情页时立刻取它（不等节点列表那条路）', `chunk=${m.chunkMs}ms / /api/nodes=${nodes4 ? nodes4.t + nodes4.d : '?'}ms`)
   check(m.chart !== null && chart4 > 0, '详情页正常画出来了（书签/刷新这条路没退化）', `${chart4} 张`)
@@ -223,7 +224,7 @@ if (want(5)) {
   const deadline = Date.now() + 40000
   while (Date.now() < deadline) { await sleep(200); if (await js('window.__m.chart !== null')) break }
   const raw = JSON.parse(await js('JSON.stringify(window.__m)'))
-  const charts = await js(`document.querySelectorAll('.recharts-surface').length`)
+  const charts = await js(`document.querySelectorAll('[data-chart]').length`)
   console.log(`  悬停已取回 chunk（${warmMs}ms）；点开→图表 ${raw.chart === null ? '未画出' : raw.chart - raw.clickAt + 'ms'}（同一机位下，未预热那一档见用例 3）`)
   check(charts > 0, `${tag} 悬停预热之后点开，详情照样画出来（预热这条路没把 UI 弄坏）`, `${charts} 张`)
 }
