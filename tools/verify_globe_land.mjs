@@ -7,6 +7,10 @@
 // 该画没画、5.0% 的海被填成陆地**（用户报的「陆地随着转动残缺」）。去掉抽稀后是 1.5% / 0.7%
 // （且全在贴地平线那一圈，是七次二分找边缘的正常误差）—— 这条护栏就是钉这个的。
 //
+// ★这一份只测**首屏那一个角度**。单角度会骗人：岸线「收口拉直线」那个 bug 在首屏角度
+// 只漏 1.5%，转到新加坡角度却是 22% —— 所以**整圈**那一份（tools/verify_globe_spin.mjs）
+// 才是主护栏，它把地球依次定格到每个地区再逐点对账。这份留作最快的冒烟检查。
+//
 // 跑法：node tools/verify_globe_land.mjs
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { spawn } from 'node:child_process'
@@ -154,8 +158,8 @@ const extra = seaPts.filter((r) => r.filled)
 const missRate = (missing.length / Math.max(1, landPts.length)) * 100
 const extraRate = (extra.length / Math.max(1, seaPts.length)) * 100
 console.log(`   采样 ${rows.length} 点（陆地 ${landPts.length} / 海 ${seaPts.length}）`)
-check('该是陆地却没画出来的 ≤2.5%（抽稀那版这里是 5.5%）', missRate <= 2.5, `${missing.length} 个 = ${missRate.toFixed(1)}%`)
-check('不该是陆地却填成陆地的 ≤2.5%（抽稀那版这里是 5.0%）', extraRate <= 2.5, `${extra.length} 个 = ${extraRate.toFixed(1)}%`)
+check('该是陆地却没画出来的 ≤1.5%（抽稀那版 5.5%）', missRate <= 1.5, `${missing.length} 个 = ${missRate.toFixed(1)}%`)
+check('不该是陆地却填成陆地的 ≤1.5%（抽稀那版 5.0%）', extraRate <= 1.5, `${extra.length} 个 = ${extraRate.toFixed(1)}%`)
 // 缺的那些应当都在贴地平线那一圈（≥0.8 半径）—— 那是七次二分找边缘的正常误差，不是形状被砍
 const inner = missing.filter((r) => r.r < 0.8).length
 check('缺的点都在贴地平线一圈（内侧没有成片缺失）', inner <= 4, `内侧缺 ${inner} 个`)

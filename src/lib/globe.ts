@@ -84,12 +84,26 @@ export type Pt = { x: number; y: number; k: number }
  * 屏幕 y 向下，所以 y = cy − r·(u·e_y)。
  */
 export type Camera = {
+  /** 这一帧的圆盘（圆心与半径）：收口时要贴着它走。 */
+  view: typeof VIEW
   /** 单个经纬度。网格线与标签用它。 */
   at(lon: number, lat: number): Pt | null
   /** 预计算好的单位向量（岸线用它，省掉每点每帧的三角函数）。 */
   vec(x: number, y: number, z: number): Pt | null
   /** 从可见点朝背面的点走，落在圆盘边缘上的那一点；给岸线裁边用。 */
   limb(from: number[], to: number[]): Pt | null
+  /**
+   * **正交投影，不看可见性**：背面点的投影方向照样指出「它该落在地平线的哪个方位角上」，
+   * 收口时就是靠这个把背面的那一串顶点贴到边缘上。
+   */
+  flat(x: number, y: number, z: number): Pt
+  /** 把投影点沿半径拉到地平线上（方位角不变）。 */
+  edge(p: Pt): Pt
+  /**
+   * 地平线上从 a 到 b 的中间点（按方位角插值，`stepDeg` 是最大步长）。
+   * 跨度超过 60° 时绕行方向按 `winding` 来 —— 免得为了走近路而穿过圆盘。
+   */
+  arc(a: Pt, b: Pt, winding: number, stepDeg?: number): Pt[]
 }
 
 export function camera(lon0: number, lat0: number, view = VIEW): Camera {
@@ -109,8 +123,38 @@ export function camera(lon0: number, lat0: number, view = VIEW): Camera {
     return { x: view.cx + view.r * (x * ex[0] + y * ex[1] + z * ex[2]), y: view.cy - view.r * (x * ey[0] + y * ey[1] + z * ey[2]), k }
   }
 
+  /** 正交投影：不做 k 的可见性判断（背面点也要它的方位角）。 */
+  const flat = (x: number, y: number, z: number): Pt => ({
+    x: view.cx + view.r * (x * ex[0] + y * ex[1] + z * ex[2]),
+    y: view.cy - view.r * (x * ey[0] + y * ey[1] + z * ey[2]),
+    k: x * ez[0] + y * ez[1] + z * ez[2],
+  })
+
+  /** 方位角（「y 向上」的坐标系，屏幕 y 要翻回来）。 */
+  const azimuth = (p: Pt) => Math.atan2(view.cy - p.y, p.x - view.cx)
+
+  const onEdge = (t: number): Pt => ({ x: view.cx + view.r * Math.cos(t), y: view.cy - view.r * Math.sin(t), k: 0 })
+
+  const arc = (a: Pt, b: Pt, winding: number, stepDeg = 10): Pt[] => {
+    const A = azimuth(a)
+    const B = azimuth(b)
+    let d = B - A
+    while (d > Math.PI) d -= Math.PI * 2
+    while (d < -Math.PI) d += Math.PI * 2
+    // 大跨度（>60°）时方向跟着这一环的绕向走：走近路可能横穿圆盘，那就错了。
+    if (Math.abs(d) > Math.PI / 3 && winding !== 0) d = Math.abs(d) * (winding > 0 ? 1 : -1)
+    const steps = Math.max(1, Math.ceil(Math.abs(d) / ((stepDeg * Math.PI) / 180)))
+    const out: Pt[] = []
+    for (let i = 1; i < steps; i += 1) out.push(onEdge(A + (d * i) / steps))
+    return out
+  }
+
   return {
+    view,
     vec,
+    flat,
+    edge: (p: Pt) => onEdge(azimuth(p)),
+    arc,
     at(lon, lat) {
       const l = (lon * Math.PI) / 180
       const p = (lat * Math.PI) / 180
@@ -197,12 +241,21 @@ const f1 = (n: number) => n.toFixed(1)
  * 状态机照搬上游：连着可见的点连成一段；可见→背面的那一步补一个边缘点并收段；
  * 背面→可见的那一步从边缘点另起一段（`M`）。于是同一环在圆盘边缘会被切成好几段，
  * 每段各自成一条子路径 —— 这正是「背面大陆不会翻到正面」的原因。
+ *
+ * ★**收段不能用直线 `Z` 一拉了事**（这里曾经就是，也是「陆地随着转动残缺」的根因）：
+ * 段的两头都落在地平线上，直线收口等于把**弦**画进了圆盘 —— 弦与圆弧之间那一牙陆地丢了
+ * （实测各角度漏 5%~22%），而绕到对面再露头的大环（南极洲那种）那条弦会**横穿整个圆盘**
+ * （实测多填到 9.6%）。正确做法是**沿地平线圆弧收口**：背面那些顶点虽然看不见，但它们的
+ * 投影方向仍然告诉了我们它们该在地平线的哪个方位角上 —— 把投影半径拉到边缘，从段尾顺着
+ * 这些方位角走回段首，收出来的就是贴着边缘的那条弧。
  */
 export function landPaths(cam: Camera, prep: Prepared): { fill: string; stroke: string } {
   const { vec, offsets } = prep
+  const view = cam.view
   const fill: string[] = []
   const stroke: string[] = []
   const vis: (Pt | null)[] = []
+  const flat: Pt[] = []
   for (let r = 0; r + 1 < offsets.length; r += 1) {
     const from = offsets[r]
     const n = offsets[r + 1] - from
@@ -210,38 +263,103 @@ export function landPaths(cam: Camera, prep: Prepared): { fill: string; stroke: 
     for (let i = 0; i < n; i += 1) {
       const o = (from + i) * 3
       vis[i] = cam.vec(vec[o], vec[o + 1], vec[o + 2])
+      flat[i] = cam.flat(vec[o], vec[o + 1], vec[o + 2])
     }
-    const seg: string[] = []
-    let drawing = false
-    const push = (s: string) => seg.push(s)
-    const start = (p: Pt) => {
-      push(`M ${f1(p.x)} ${f1(p.y)}`)
-      drawing = true
+    /**
+     * ★**从背面第一个顶点开始遍历这一环**。
+     *
+     * 不这么做的话：环的可见部分如果跨过 index 0（接缝），就会被状态机切成两段，
+     * 其中「绕回开头」的那一段只能在收尾时用直线 `Z` 拉一刀 —— 那一刀切在贴地平线的
+     * 陆地上就是一块缺口。实测（104°E,1°N）：外圈 r>0.8 的漏点里 960 个全在西伯利亚那条
+     * 大环上，例子是阿拉伯半岛 15°N,43°E 一带 —— 正是那一刀。
+     * 从背面顶点起步，可见部分就永远是**一整段连续折线**，收口必走地平线圆弧。
+     */
+    let firstBack = -1
+    for (let i = 0; i < n; i += 1) {
+      if (!vis[i]) {
+        firstBack = i
+        break
+      }
     }
+    const order: number[] = []
+    for (let k = 0; k < n; k += 1) order.push(firstBack > 0 ? (firstBack + k) % n : k)
+    // 这一环在屏幕上的绕向（用「y 向上」的坐标系算，与 arc 的方位角同向）。
+    let area2 = 0
     for (let i = 0; i < n; i += 1) {
       const j = (i + 1) % n
+      area2 += flat[i].x * (view.cy - flat[j].y) - flat[j].x * (view.cy - flat[i].y)
+    }
+    const winding = Math.sign(area2)
+    const coast: string[] = []
+    const shaped: string[] = []
+    let cur: string[] = []
+    let tail = -1 // 当前段最后一个可见顶点下标
+    let drawing = false
+    const start = (p: Pt) => {
+      cur.push(`M ${f1(p.x)} ${f1(p.y)}`)
+      drawing = true
+    }
+    /** 收段。`open` = 两头都在地平线上 —— 这时要沿边缘收，不能拉直线。 */
+    const flush = (open: boolean) => {
+      if (!cur.length) return
+      const d = cur.join(" ")
+      coast.push(d)
+      if (!open) {
+        shaped.push(`${d} Z`)
+        cur = []
+        return
+      }
+      // ★走到**下一个可见顶点**就停 —— 不能走到「段首」：段首可能是这条环的 index 0
+      //   （可见的），那样会把段尾之后所有可见顶点也贴到地平线上绕圆盘一整圈，
+      //   整块圆盘就被填成陆地了（实测 Frankfurt/London 多填 99%~100%）。
+      const back: string[] = []
+      let k = (tail + 1) % n
+      let guard = 0
+      let prev: Pt | null = null
+      while (guard < n && !vis[k]) {
+        guard += 1
+        const raw = flat[k]
+        // 投影半径太小的点（正对观察者反极点那一带）方位角没有意义，跳过。
+        if (Math.hypot(raw.x - view.cx, raw.y - view.cy) > view.r * 0.06) {
+          const p = cam.edge(raw)
+          if (prev) for (const mid of cam.arc(prev, p, winding)) back.push(`L ${f1(mid.x)} ${f1(mid.y)}`)
+          back.push(`L ${f1(p.x)} ${f1(p.y)}`)
+          prev = p
+        }
+        k = (k + 1) % n
+      }
+      shaped.push(`${d}${back.length ? " " + back.join(" ") : ""} Z`)
+      cur = []
+    }
+    for (let step = 0; step < n; step += 1) {
+      const i = order[step]
+      const j = order[(step + 1) % n]
       const a = vis[i]
       const b = vis[j]
       const av = [vec[(from + i) * 3], vec[(from + i) * 3 + 1], vec[(from + i) * 3 + 2]]
       const bv = [vec[(from + j) * 3], vec[(from + j) * 3 + 1], vec[(from + j) * 3 + 2]]
       if (a && b) {
         if (!drawing) start(a)
-        push(`L ${f1(b.x)} ${f1(b.y)}`)
+        cur.push(`L ${f1(b.x)} ${f1(b.y)}`)
+        tail = j
       } else if (a && !b) {
         const c = cam.limb(av, bv)
         if (!drawing) start(a)
-        if (c) push(`L ${f1(c.x)} ${f1(c.y)}`)
+        if (c) cur.push(`L ${f1(c.x)} ${f1(c.y)}`)
+        tail = i
+        flush(true)
         drawing = false
       } else if (!a && b) {
         const c = cam.limb(bv, av)
-        if (c) start(c)
-        push(`L ${f1(b.x)} ${f1(b.y)}`)
+        if (!drawing) start(c ?? b)
+        cur.push(`L ${f1(b.x)} ${f1(b.y)}`)
+        tail = j
       }
     }
-    if (seg.length) {
-      const d = seg.join(" ")
-      stroke.push(d)
-      fill.push(`${d} Z`)
+    if (drawing) flush(false)
+    if (coast.length) {
+      stroke.push(coast.join(" "))
+      fill.push(shaped.join(" "))
     }
   }
   return { fill: fill.join(" "), stroke: stroke.join(" ") }
