@@ -87,8 +87,8 @@ export function SearchRow({ value, onChange, onClose }: {
  *   ③ `type="search"` 自带的那个小叉由 index.css 的 `::-webkit-search-cancel-button` 关掉，
  *      两个长得差不多、做同一件事的按钮并排只会让人犹豫点哪个。
  */
-const SQUARE_INPUT = "search-input h-9 w-full min-w-0 rounded-md border border-transparent bg-transparent px-2.5 text-sm text-transparent outline-none transition-all placeholder:text-transparent hover:bg-accent focus:bg-transparent sm:focus:border-input sm:focus:px-8 sm:focus:text-foreground sm:focus:ring-[3px] sm:focus:ring-ring/30 sm:focus:placeholder:text-muted-foreground dark:hover:bg-accent/50"
-const ROW_INPUT = "search-input h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-8 text-sm outline-none transition-all placeholder:text-muted-foreground focus:ring-[3px] focus:ring-ring/30"
+const SQUARE_INPUT = "search-input relative z-[1] h-9 w-full min-w-0 rounded-md border border-transparent bg-transparent px-2.5 text-sm text-transparent outline-none transition-all placeholder:text-transparent hover:bg-accent focus:bg-transparent sm:focus:border-input sm:focus:px-8 sm:focus:text-foreground sm:focus:ring-[3px] sm:focus:ring-ring/30 sm:focus:placeholder:text-muted-foreground dark:hover:bg-accent/50"
+const ROW_INPUT = "search-input relative z-[1] h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-8 text-sm outline-none transition-all placeholder:text-muted-foreground focus:ring-[3px] focus:ring-ring/30"
 
 function Field({ value, onChange, onActivate, onClose, autoFocus, className, title, variant = "square" }: {
   value: string
@@ -103,7 +103,17 @@ function Field({ value, onChange, onActivate, onClose, autoFocus, className, tit
   const box = useRef<HTMLInputElement>(null)
   const square = variant === "square"
   return (
-    <span className={`search-field relative flex items-center transition-all duration-150 ${className ?? ""}`}>
+    <span
+      className={`search-field tap tap-9 relative flex items-center transition-all duration-150 ${className ?? ""}`}
+      // 输入框是**替换元素**，`::before` 在它身上不生成 —— 命中区那圈只能挂在外层这个 span 上
+      // （`tap` 那套伪元素在 index.css 里）。所以补一手「点到圈上也算点进框里」：
+      // 否则撑出来的那圈点下去没反应，等于白撑。
+      onMouseDown={(e) => {
+        if (e.target !== e.currentTarget) return
+        e.preventDefault()
+        box.current?.focus()
+      }}
+    >
       {/* 颜色**不给**（继承顶栏那套前景色）：与旁边那几枚图标逐像素同色 —— 这里曾用过弱化灰
           （想拿「灰 → 前景色」当「正在筛」的信号），结果就是这一排里只有放大镜是灰的，
           一眼就看出来不一致（用户报过）。所以收起态不再靠颜色说话，见下面那段注释。 */}
@@ -133,7 +143,7 @@ function Field({ value, onChange, onActivate, onClose, autoFocus, className, tit
       {value !== "" && (
         <button
           type="button"
-          className="search-clear absolute right-1.5 size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          className="search-clear tap tap-y-6 absolute right-1.5 z-[2] size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
           onClick={() => {
             onChange("")
             // 清完把焦点留在框里：接着打下一个词不用再点一次。

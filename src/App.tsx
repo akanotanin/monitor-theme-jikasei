@@ -355,7 +355,7 @@ export default function App() {
               no back button of its own. A 32px disc of the site's own icon leads
               it; the address is a theme setting, the built-in one is the
               fallback. */}
-          <button className="flex items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
+          <button className="tap tap-8 flex items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
             <SiteIcon key={config.siteIcon} src={config.siteIcon} onSettle={setSettledIcon} />
             {me.site_name || "Monitor"}
           </button>
@@ -419,7 +419,7 @@ export default function App() {
               </a>
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={toggleTheme} title="切换主题">
+          <Button variant="ghost" size="icon" onClick={toggleTheme} title="切换主题" aria-label="切换主题">
             {dark ? <Sun /> : <Moon />}
           </Button>
         </div>

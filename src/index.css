@@ -8,7 +8,6 @@
 @import "tailwindcss" source(none);
 @source "../index.html";
 @source "../src";
-@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -317,3 +316,23 @@
 .search-input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
 .search-field .search-clear { display: none; }
 .search-field:focus-within .search-clear { display: grid; }
+
+/* 触屏命中区：**外观一点不动，只把可点范围往外撑**。
+   手指比鼠标粗 —— Apple 的通行线是 44×44，WCAG 2.2 的硬线（2.5.8）是 24×24。
+   撑出来的那圈是 ::before，透明、不参与布局，所以排版、间距、视觉都不受影响；
+   命中测试时它算作所属元素（`document.elementFromPoint` 返回的是宿主元素）。
+   类名跟着控件自己的高度走（size-9 = 36px 等），一眼看得出撑完是多少：
+     tap-9   36×36 → 44×44（顶栏那几枚图标、搜索方框）
+     tap-8   32 高  → 44    （站名）
+     tap-10  40 高  → 44
+     tap-y-6 24 高  → 44 高，横向不动 —— 密排的分段按钮之间别互相盖住
+   地区列表（.globe-reg）行距只有 8px，上下各撑 4px 到 28px 就不重叠了，再大就得动视觉。 */
+.tap { position: relative; }
+.tap::before { content: ""; position: absolute; border-radius: inherit; }
+.tap-9::before { inset: -4px; }
+.tap-8::before { inset: -6px; }
+.tap-10::before { inset: -2px; }
+.tap-y-9::before { inset: -4px 0; }
+.tap-y-6::before { inset: -10px 0; }
+.globe-reg { position: relative; }
+.globe-reg::before { content: ""; position: absolute; inset: -4px 0; border-radius: 4px; }
