@@ -32,7 +32,6 @@ export type Quality = "low" | "medium" | "high"
  * 一个精度档的取法。三档都实现了，`high` 目前没人用（上游把它开在站点设置里，
  * jikasei 的设置项已经满 6 项，加不进第 7 项）；窄屏自动走 `low`，其余走 `medium`。
  *
- *  `coastStride` 抽稀步长（只对点数 > 18 的环生效，短环原样画，免得小岛被抽没）
  *  `gridLon/gridLat` 经纬网间距（度）
  *  `curveStep` 经纬线每隔几度取一个点（越小越圆滑、越费）
  *  `sweepCount` 扫掠经线数量（`low` 不画）
@@ -42,7 +41,6 @@ export type Quality = "low" | "medium" | "high"
 export type Profile = {
   key: Quality
   land: "coarse" | "detailed"
-  coastStride: number
   gridLon: number
   gridLat: number
   curveStep: number
@@ -53,9 +51,9 @@ export type Profile = {
 
 export function globeProfile(value: unknown): Profile {
   const q = String(value ?? "medium").trim().toLowerCase()
-  if (q === "low") return { key: "low", land: "coarse", coastStride: 1, gridLon: 60, gridLat: 30, curveStep: 8, sweepCount: 0, linkMode: 0, idleMs: 90 }
-  if (q === "high") return { key: "high", land: "detailed", coastStride: 2, gridLon: 30, gridLat: 30, curveStep: 4, sweepCount: 4, linkMode: 2, idleMs: 48 }
-  return { key: "medium", land: "detailed", coastStride: 3, gridLon: 30, gridLat: 30, curveStep: 7, sweepCount: 1, linkMode: 1, idleMs: 64 }
+  if (q === "low") return { key: "low", land: "coarse", gridLon: 60, gridLat: 30, curveStep: 8, sweepCount: 0, linkMode: 0, idleMs: 90 }
+  if (q === "high") return { key: "high", land: "detailed", gridLon: 30, gridLat: 30, curveStep: 4, sweepCount: 4, linkMode: 2, idleMs: 48 }
+  return { key: "medium", land: "detailed", gridLon: 30, gridLat: 30, curveStep: 7, sweepCount: 1, linkMode: 1, idleMs: 64 }
 }
 
 /**
@@ -148,20 +146,27 @@ export function camera(lon0: number, lat0: number, view = VIEW): Camera {
  */
 export type Prepared = { vec: Float64Array; offsets: Int32Array }
 
-export function prepareRings(rings: Ring[], stride = 1): Prepared {
+/**
+ * ★**这里不做抽稀**（曾经做过，是错的）。
+ *
+ * 原来按「每 N 个点取 1」抽稀（medium 档 N=3）。这套岸线本身已经很稀疏（79 个环、共 1483 点，
+ * 平均 0.3°/点），在它上面再砍 2/3 抹掉的是**真实形状**：把地球停在固定角度、819 个采样点
+ * 逐个对账，medium 档有 **5.5% 的陆地该画没画、5.0% 的海被填成陆地**，缺的地方各半径都有
+ * ——转动起来就是用户报的「陆地残缺」。去掉抽稀后同一份对账降到 1.5% / 0.7%（且全在贴地平线
+ * 那一圈，是七次二分找边缘的正常误差）。
+ *
+ * 换成保形抽稀（道格拉斯–普克）也试过：在这个分辨率下 eps 只要小于点间距就等于不抽，
+ * eps 大到真能减点（1° ≈ 1.6px）时形状误差又上来了。既然数据本身已经稀疏，就不抽了 ——
+ * 真要给更大的机群省这一帧的成本，该做的是换一套更粗的岸线数据，而不是在这套上做减法。
+ * 判据落在 `tools/verify_globe_land.mjs`：采样整个圆盘，逐点比对「该是陆地/画出来是不是陆地」。
+ */
+export function prepareRings(rings: Ring[]): Prepared {
   const kept: Ring[] = []
   let total = 0
   for (const raw of rings) {
     if (!raw || raw.length < 3) continue
-    // 短环不抽稀：一个只有十个点的小岛，隔两点取一个就没了（上游同此）。
-    const ring = stride > 1 && raw.length > 18 ? raw.filter((_, i) => i % stride === 0) : raw
-    if (ring.length < 3) {
-      kept.push(raw)
-      total += raw.length
-      continue
-    }
-    kept.push(ring)
-    total += ring.length
+    kept.push(raw)
+    total += raw.length
   }
   const vec = new Float64Array(total * 3)
   const offsets = new Int32Array(kept.length + 1)

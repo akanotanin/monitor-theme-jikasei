@@ -44,7 +44,7 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
   const quality: Quality = narrow ? "low" : "medium"
   const profile = useMemo(() => globeProfile(quality), [quality])
   const prep = useMemo(
-    () => prepareRings(profile.land === "coarse" ? COARSE_WORLD_OUTLINES : WORLD_OUTLINES, profile.coastStride),
+    () => prepareRings(profile.land === "coarse" ? COARSE_WORLD_OUTLINES : WORLD_OUTLINES),
     [profile],
   )
   const points = useMemo(() => globeNodes(nodes), [nodes])

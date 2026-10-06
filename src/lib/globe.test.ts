@@ -120,7 +120,7 @@ ok(compared > 7000, `真的比对了 5 个视角 × 全部岸线点（实际 ${c
 /* ---------------------------------------------------------------- 岸线路径 */
 
 const cam = camera(80, 30)
-const prep = prepareRings(WORLD_OUTLINES, globeProfile("medium").coastStride)
+const prep = prepareRings(WORLD_OUTLINES)
 const land = landPaths(cam, prep)
 ok(land.fill.length > 2000, "岸线填充路径非空")
 ok(land.stroke.length > 2000, "岸线描边路径非空")
@@ -135,13 +135,14 @@ ok(coords.length > 400, `描边路径里有坐标（${coords.length} 个）`)
 const outside = coords.filter(([x, y]) => Math.hypot(x - VIEW.cx, y - VIEW.cy) > VIEW.r + 0.05)
 eq(outside.length, 0, "岸线不越出圆盘（背面的大陆没翻到正面）")
 
-// 抽稀：medium 的岸线点数应当明显少于原始点数，但仍是个地球的样子。
-const dense = prepareRings(WORLD_OUTLINES, 1)
-ok(prep.vec.length < dense.vec.length * 0.6, "medium 的抽稀真的生效了")
-ok(prep.vec.length > 1200, "抽稀之后还剩足够多的点（不是抽成空壳）")
-eq(prepareRings(WORLD_OUTLINES, 3).vec.length, prep.vec.length, "同参数重复调用结果一致")
-// 短环不抽稀：粗岸线里那个只有十几点的日本环不能抽没。
-eq(prepareRings(COARSE_WORLD_OUTLINES, 4).offsets.length, COARSE_WORLD_OUTLINES.length + 1, "粗岸线的每个环都还在")
+// 岸线**不做抽稀**：这套数据本身已经稀疏（79 环 1483 点），做减法会抹掉半岛与海湾
+// （实测过：medium 档 5.5% 的陆地该画没画、5.0% 的海被填成陆地 —— 用户报的「陆地残缺」）。
+// 逐点比对「该是陆地 / 画出来是不是陆地」的判据在 tools/verify_globe_land.mjs 里。
+const rawPoints = WORLD_OUTLINES.reduce((n, r) => n + (r?.length ?? 0), 0)
+eq(prep.vec.length, rawPoints * 3, "每个环都原样进来（不抽稀）")
+eq(prep.offsets.length, WORLD_OUTLINES.length + 1, "环数一个不少")
+// 短环（十几点的小岛）当然也在。
+eq(prepareRings(COARSE_WORLD_OUTLINES).offsets.length, COARSE_WORLD_OUTLINES.length + 1, "粗岸线的每个环都还在")
 
 /* ---------------------------------------------------------------- 经纬网 */
 
