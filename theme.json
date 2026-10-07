@@ -1,8 +1,8 @@
 {
   "name": "jikasei",
   "short": "jikasei",
-  "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.25.1",
+  "description": "自家制の极简探针（Monitor）主题：五种卡片形态、节点地球、分组筛选、明暗双色。",
+  "version": "1.25.2",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
