@@ -3,8 +3,11 @@
 //   · themeMode = system：跟访客系统的 prefers-color-scheme 走（两档各验一次）
 //   · themeMode = auto：按**北京时间** 19:00–07:00 用暗色 —— 用 CDP 把时钟冻在
 //     北京时间 22:00 与 14:00 各跑一次（冻结的是页面里的 Date，不改本机时间）
-//   · globeOn = false：整个地球面板不渲染（不是藏起来）；true：渲染
-//   · 访客自己的选择优先：站点设 light、访客 localStorage 记着 dark → 页面是暗的
+//   · globeOn = false：整个地球面板不渲染（不是藏起来）、**顶栏那枚地球开关也不出现**
+//     ——「面板即事实」：站长关掉这一块之后，页面上不该留一个点得动却什么也不开的按钮；
+//     访客存在自己浏览器里的旧偏好也不许把站长关掉的整块顶回来。
+//   · 访客自己的选择优先：站点设 light、访客 localStorage 记着 dark → 页面是暗的；
+//     站点设 globeOn=开、访客自己关过 → 地球不渲染但**开关还在**（他自己能开回来）
 //
 // 用法：node tools/verify_appearance.mjs
 import { spawn } from 'node:child_process'
@@ -71,7 +74,7 @@ async function setFrozen(iso) {
   })
 }
 
-async function load({ config, systemDark = false, visitor = null, freeze = null }) {
+async function load({ config, systemDark = false, visitor = null, globePref = undefined, freeze = null }) {
   CONFIG = config
   await setFrozen(freeze)
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: systemDark ? 'dark' : 'light' }] })
@@ -82,11 +85,16 @@ async function load({ config, systemDark = false, visitor = null, freeze = null 
   //   不清理就会把「跟着站点走」验成一个带残留值的状态（看着通过、其实没验到）。
   if (visitor === null) await js("localStorage.removeItem('theme')")
   else if (visitor !== undefined) await js(`localStorage.setItem('theme', ${JSON.stringify(visitor)})`)
-  if (visitor !== undefined) { await send('Page.reload'); await sleep(1500) }
+  // ★ 访客那枚地球偏好（`jikasei:globe`）同理要显式清掉才算「没动过」：同一个 profile 里
+  //   上一轮写下的值会留着，不清理就会把「站长关掉」验成一个带残值的状态（看着通过、其实没验到）。
+  if (globePref === undefined) await js("localStorage.removeItem('jikasei:globe')")
+  else await js(`localStorage.setItem('jikasei:globe', ${JSON.stringify(String(globePref))})`)
+  if (visitor !== undefined || globePref !== undefined) { await send('Page.reload'); await sleep(1500) }
   return JSON.parse(await js(`JSON.stringify({
     dark: document.documentElement.classList.contains('dark'),
     globe: !!document.querySelector('.globe-atlas svg'),
     globePanel: !!document.querySelector('.globe-panel'),
+    globeToggle: !!document.querySelector('.globe-toggle'),
     ls: (() => { const o = {}; try { for (let i = 0; i < localStorage.length; i += 1) { const k = localStorage.key(i); o[k] = localStorage.getItem(k) } } catch {} return o })(),
     // theme-color（手机浏览器那一圈）：App 起来之后应当只剩一份没有 media 的，值等于页面实际底色。
     themeColors: [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => ({ content: m.content, media: m.getAttribute('media') })),
@@ -139,12 +147,24 @@ check('theme-color：自动档夜里（与系统相反）→ 跟着页面的暗�
 console.log('\n=== 节点地球开关 ===')
 s = await load({ config: { themeMode: 'light', globeOn: true } })
 check('globeOn=true：地球渲染出来了', s.globe === true, `globe=${s.globe}`)
+check('globeOn=true：顶栏那枚地球开关在', s.globeToggle === true, `toggle=${s.globeToggle}`)
 s = await load({ config: { themeMode: 'light', globeOn: false } })
 check('globeOn=false：地球整块不渲染', s.globePanel === false && s.globe === false, `panel=${s.globePanel}`)
-s = await load({ config: { themeMode: 'light', globeOn: false }, visitor: null })
+check('★ globeOn=false：顶栏那枚开关也不出现（没了一个点了什么也不开的按钮）', s.globeToggle === false, `toggle=${s.globeToggle}`)
+// ★ 访客存在自己浏览器里的旧偏好不许把站长关掉的整块顶回来：老版本的访客可能存过 "1"（那时
+//   站长那档是关的、他自己开过），站长现在关掉之后，页面必须是干净的关闭态。
+s = await load({ config: { themeMode: 'light', globeOn: false }, globePref: '1' })
+check('★ globeOn=false 且访客存过「要」：地球与那枚开关都不出现（面板即事实）',
+  s.globePanel === false && s.globe === false && s.globeToggle === false, `panel=${s.globePanel} toggle=${s.globeToggle}`)
+// 反过来：站长开着的时候，访客自己关过 → 地球不渲染，但那枚开关必须还在（不然他开不回来）
+s = await load({ config: { themeMode: 'light', globeOn: true }, globePref: '0' })
+check('globeOn=true 且访客自己关过：地球不渲染，但那枚开关还在（他开得回来）',
+  s.globePanel === false && s.globeToggle === true, `panel=${s.globePanel} toggle=${s.globeToggle}`)
 // 老配置里没有 globeOn 这个键 → 走默认（显示）
 s = await load({ config: { themeMode: 'light' } })
-check('老站点配置（没有 globeOn）→ 按默认显示', s.globe === true, `globe=${s.globe}`)
+check('老站点配置（没有 globeOn）→ 按默认显示', s.globe === true && s.globeToggle === true, `globe=${s.globe} toggle=${s.globeToggle}`)
+check('上面那几轮没在访客浏览器里留下地球偏好（清理到位，判据才可信）',
+  s.ls['jikasei:globe'] === undefined, JSON.stringify(s.ls))
 
 console.log('\n=== 访客自己的选择优先 ===')
 s = await load({ config: { themeMode: 'light', globeOn: false }, visitor: 'dark' })

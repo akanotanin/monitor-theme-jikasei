@@ -228,6 +228,8 @@ export default function App() {
   const [region, setRegion] = useState<string | null>(null)
   // 访客自己的两个偏好（都只存在他自己浏览器里，见 @/lib/theme-config）：
   // 地球看不看，以及列表用哪种卡片形态 —— 后者没选过时跟着站长的设置走。
+  // ★ 站长那档是「节点地球」的**闸门**：他关掉时 `globeOn` 一律是 false，顶栏那枚开关也一起
+  //   不挂（见下面那段渲染条件）——关掉的整块不该在页面上留一枚点了没落点的按钮。
   const [globeOn, toggleGlobe] = useGlobeVisible(config.globeOn)
   const [cardStyle, chooseStyle] = useCardStyle(config.cardStyle)
   // 顶栏那个搜索框：词与「窄屏那一行展开了没」都留在这儿 —— 进详情页再回来，
@@ -428,8 +430,10 @@ export default function App() {
             <CardStyleMenu value={cardStyle} siteDefault={config.cardStyle} onPick={chooseStyle} />
           )}
           {/* 地球开关：只长在列表页 —— 地球就在那一页的顶上，站在某台机器页里按它没有落点。
+              ★ 站长在「主题设置 → 节点地球」里关掉时**整枚按钮都不挂**（不是藏起来／不是禁用）：
+              那一块功能是关着的，留着按钮就成了一件点了什么也不开的摆设（访客会以为「点不动」）。
               与养鸡场入口、主题开关同规格（图标 + 悬停提示，不带文字，见 memory 里的顶栏惯例）。 */}
-          {open === null && (
+          {open === null && config.globeOn && (
             <Button
               variant="ghost"
               size="icon"
