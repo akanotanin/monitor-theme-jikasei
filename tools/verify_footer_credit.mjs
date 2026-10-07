@@ -210,13 +210,19 @@ const common = (m, where) => {
   const narrow = m.viewport.w < 640
   const mid = m.creditText ? (m.creditText.x + m.creditText.right) / 2 : NaN
   const mainMid = m.main ? (m.main.left + m.main.right) / 2 : NaN
-  check(narrow ? `${where}：窄屏下署名居中（文字中线 ≈ 主内容中线）` : `${where}：右沿与主内容右沿对齐（右对齐，不是居中/靠左）`,
+  const inset = m.creditText && m.main ? m.main.contentRight - m.creditText.right : NaN
+  check(narrow ? `${where}：窄屏下署名居中（文字中线 ≈ 主内容中线）` : `${where}：右对齐、但比内容右沿往左收 8~16px（2026-10-07 站长要求「稍微往左一点点」）`,
     narrow
       ? !!m.creditText && !!m.main && Math.abs(mid - mainMid) <= 1.5 && m.creditText.w > 0 && m.creditText.w <= 300
-      : !!m.creditText && !!m.main && Math.abs(m.creditText.right - m.main.contentRight) <= 1
+      : !!m.creditText && !!m.main && inset >= 8 && inset <= 16
         && m.creditText.x > m.main.left + (m.main.right - m.main.left) / 2
         && m.creditText.w > 0 && m.creditText.w <= 300,
-    `文字 ${m.creditText?.x}→${m.creditText?.right}（中线 ${mid?.toFixed(1)}）｜主内容 ${m.main?.left}→${m.main?.right}（中线 ${mainMid?.toFixed(1)}）｜内容右沿 ${m.main?.contentRight}`)
+    `文字 ${m.creditText?.x}→${m.creditText?.right}（中线 ${mid?.toFixed(1)}，离内容右沿 ${inset}px）｜主内容 ${m.main?.left}→${m.main?.right}（中线 ${mainMid?.toFixed(1)}）｜内容右沿 ${m.main?.contentRight}`)
+  // 窄屏还要**贴着正文**（同日要求「往上挪、更贴近卡片底部」）：文字上沿离主内容下沿不远
+  // —— 列表自己的下边距加一行行高约 17px，留到 26 以内；改回 pt-4 那会儿是 33px。
+  if (narrow) check(`${where}：署名贴着正文（上沿离主内容下沿 ≤26px）`,
+    !!m.creditText && !!m.main && (m.creditText.y - m.main.bottom) >= 0 && (m.creditText.y - m.main.bottom) <= 26,
+    `署名 y=${m.creditText?.y} 主内容 bottom=${m.main?.bottom} → 间距 ${m.creditText && m.main ? m.creditText.y - m.main.bottom : '?'}px`)
   check(`${where}：排在正文之后（不是压在列表上）`, !!m.footer && !!m.main && m.footer.top >= m.main.bottom - 1,
     `footer.top=${m.footer?.top} main.bottom=${m.main?.bottom}`)
   check(`${where}：比顶栏站名浅（对比度更低），但仍看得见（≥1.6）`,

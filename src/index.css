@@ -274,11 +274,6 @@
   gap: 8px;
   width: 100%;
   margin: 0;
-  /* ★ 这一行原来只有 20px 高（文字的行高就是它的全部高度）—— 手机上那只有 4mm，
-     手指点不准（WCAG 2.2 的硬线是 24，本站主控件的标准是 44）。撑到 32（≈7mm）：
-     面板因此高约 70px，换来的是一列点得准的地区行；桌面那列（7 行 224px）仍装得下 280 高的格子。
-     行与行之间留着 .globe-side 的 8px gap，命中区不会叠到邻居身上。 */
-  min-height: 32px;
   padding: 0;
   border: 0;
   background: none;
@@ -290,6 +285,14 @@
 .globe-reg:hover { color: var(--foreground); }
 /* 「全部」独占一整行：它是一条汇总（本分组一共几台），跟具体地区并排会读成"第一个地区"；
    而两列的地区列表本来就要从它下面开始排。 */
+/* ★ 地区行撑到 32（≈7mm）**只留给窄屏**：面板在那里是上下两段、手指操作，20px（4mm）
+   点不准（WCAG 2.2 的硬线是 24）。桌面用鼠标 —— 站长 2026-10-07 看过桌面之后说
+   「电脑端的地区显示改回原来那样」，于是这里按 900px 那道坎分开：桌面维持原来的行高
+   （面板也正好是 280 高的格子），窄屏才撑高。行与行之间留着 .globe-side 的 8px gap，
+   命中区不会叠到邻居身上（撑高后命中 40，正好等于行高 32 + 行距 8）。 */
+@media (max-width: 899px) {
+  .globe-reg { min-height: 32px; }
+}
 .globe-reg-all { grid-column: 1 / -1; }
 .globe-reg span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .globe-reg b { color: var(--foreground); font-weight: 500; font-variant-numeric: tabular-nums; }

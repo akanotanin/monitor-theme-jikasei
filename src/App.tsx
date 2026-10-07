@@ -534,11 +534,12 @@ export default function App() {
 
       {/* 页脚署名：一行浅色小字，桌面在右下角、手机上**居中**（2026-10-07 站长说手机上看它
           「位置不好看」—— 右下角一行孤零零的灰字、左边整片空着，读起来像水印；窄屏居中之后
-          它才像页脚）。窄屏也把上间距拉开（pt-4）、底边留够（pb-6），别贴着最后一张卡。
+          它才像页脚）。窄屏**贴着卡片**（pt-0：再往上就是列表自己的下边距了）、底边留够（pb-6）；
+          桌面右对齐但**往左收 12px**（sm:pr-3）—— 齐着卡片右沿时看着像贴在屏幕角上。
           「jikasei」那截点开去本主题的源码仓库 —— 新标签页打开，别把访客从状态页带走
           （链接地址与 theme.json 的 url 是同一个，见上面的 REPO_URL）。样式见 index.css 的 .theme-credit。 */}
-      <footer className="mx-auto w-full max-w-[1280px] px-4 pb-6 pt-4 sm:px-6 sm:pb-5 sm:pt-1">
-        <p className="theme-credit text-center sm:text-right">
+      <footer className="mx-auto w-full max-w-[1280px] px-4 pb-6 pt-0 sm:px-6 sm:pb-5 sm:pt-1">
+        <p className="theme-credit text-center sm:pr-3 sm:text-right">
           Theme by{" "}
           <a href={REPO_URL} target="_blank" rel="noreferrer">
             jikasei

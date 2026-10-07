@@ -322,6 +322,10 @@ check('点的是东京那一行', String(clicked).indexOf('Tokyo') >= 0, String(
 check('★ 下面的列表只剩该地区的机器（3 台）', filtered.cards === 3, `${filtered.cards} 张卡片`)
 check('★ 那一行被标成选中（其余都没选中）', filtered.regs.filter((r) => r.on).length === 1 && filtered.regs.find((r) => r.text.indexOf('Tokyo') >= 0)?.on === true, JSON.stringify(filtered.regs.filter((r) => r.on)))
 check('侧栏标题变成「地区 · 已定位」', filtered.sideTitle === '地区 · 已定位', filtered.sideTitle)
+// ★ 桌面（1440）上地区行是**原来的紧凑高度**：2026-10-07 站长看过桌面之后要求「改回原来那样」——
+//   撑到 32 只留给窄屏（≤899px，手指操作）。这里钉住桌面这一支，免得哪天又全局撑高。
+const rowH = await js(`Math.round(document.querySelector('.globe-reg').getBoundingClientRect().height)`)
+check('桌面地区行是紧凑高度（≤24px；撑高只留给窄屏）', rowH <= 24, `${rowH}px`)
 check('地球上多了一枚定位标记', filtered.selected === 1, `${filtered.selected}`)
 check('视角飞过去了（文案里的经度接近东京 139.7°E）', Math.abs(lonOf(filtered.caption) - 140) <= 1, filtered.caption)
 check('钉住之后不再自转', (await (async () => {
