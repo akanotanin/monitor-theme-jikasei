@@ -351,14 +351,19 @@ export default function App() {
     // 署名也落在屏幕的右下角，而不是紧贴在列表底下浮在半空中。
     <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-4 py-3 sm:px-6">
+        {/* ★ 这一行在窄屏上横向余量很紧：390 宽的手机上原本要 407px（站名 101 + 搜索 22 +
+            五枚 36px 图标 + 六个 gap-3 = 72 + 左右内边距 32），于是整页能横向拖动 ——
+            桌面量不出来（窗口够宽），手机上一眼就能看出页面被推歪了。两处收口：
+            间距窄屏收到 gap-2（省 24px）；站名那格 min-w-0 + truncate（省下站长起长名字的余量，
+            名字太长时是自己那行变省略号，不会把整页撑宽）。 */}
+        <div className="mx-auto flex max-w-[1280px] items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6">
           {/* The site name is the way back to the list, so a node page needs
               no back button of its own. A 32px disc of the site's icon leads
               it — `/favicon.svg` is the one address that answers with the
               panel's site icon (or the theme's own when none is set). */}
-          <button className="tap tap-8 flex items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
+          <button className="tap tap-8 flex min-w-0 items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
             <SiteIcon />
-            {me.site_name || "Monitor"}
+            <span className="truncate">{me.site_name || "Monitor"}</span>
           </button>
           <div className="flex-1" />
           {/* 搜索（名称 / 地区 / 系统）：只长在列表页 —— 它收窄的就是下面那张列表，

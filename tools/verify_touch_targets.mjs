@@ -117,6 +117,11 @@ const PROBE = `(() => {
     header: pick(document.querySelector('header') || document.body).map(describe),
     main: pick(document.querySelector('main') || document.body).slice(0, 24).map(describe),
     vp: { w: innerWidth, h: innerHeight },
+    // ★ 窄屏的横向溢出：内容比视口宽时整页能横向拖动（手机上看着就是「页面被推歪了」）。
+    // 这个数必须拿 clientWidth 比（visualViewport 在移动模拟下会是放大后的值）。
+    overflow: { scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth },
+    // 地区行（地球右边那列）：原来只有 20px 高，手机上点不准。
+    regions: [...document.querySelectorAll('.globe-reg')].map((el) => ({ label: (el.textContent || '').trim().slice(0, 10), box: +el.getBoundingClientRect().height.toFixed(1), hit: reach(el).h })),
     theme: document.documentElement.className,
   })
 })()`
@@ -156,6 +161,17 @@ check('站名那格：盒子高度仍是 32（外观不动），命中高度 ≥
   !!site && site.box.h === 32 && site.hit.h >= MIN,
   site ? `盒子 ${site.box.w}×${site.box.h}，命中 ${site.hit.w}×${site.hit.h}` : '没找到 32 高的顶栏控件')
 
+// ②b 窄屏不许横向溢出。390 宽上顶栏那一行原本要 407px（站名 101 + 搜索 22 + 五枚 36px 图标
+//    + 六个 gap-3 = 72 + 左右内边距 32），整页因此能横向拖动 —— 桌面窗口够宽量不出来，
+//    只有拿手机视口跑才看得见。收口是 gap-2 + 站名 truncate，这里把它钉死。
+check('390 宽上页面没有横向溢出（顶栏那一行装得下）',
+  m.overflow.scrollW <= m.overflow.clientW, `scrollW ${m.overflow.scrollW} vs clientW ${m.overflow.clientW}`)
+
+// ②c 地区行：原 20px 高（≈4mm）手指点不准，现在 ≥32；行间留着 8px gap，命中区不叠邻居。
+const regs = m.regions || []
+check('地区行的命中高度 ≥32（原来 20px，手机上点不准）',
+  regs.length >= 3 && regs.every((c) => c.hit >= 32), JSON.stringify(regs.map((c) => `${c.label} 盒子${c.box} 命中${c.hit}`)))
+
 // ③ 相邻控件的命中区不许重叠：拿每个控件的中心点去问别人的命中区。
 const overlap = []
 // 只比「互相独立」的控件：搜索那格同时量了外层 span 与里面的 input（同一件事的两层），
@@ -185,6 +201,7 @@ check('详情页 24px 高的分段按钮还在（量程 / 资源 / 网络延迟�
 check('外观一点没动：盒子仍是 24 高', seg.length > 0 && seg.every((c) => c.box.h === 24), JSON.stringify(seg.map((c) => c.box.h)))
 check('外观一点没动：横向没被撑开（±2px 是测量噪声）', seg.length > 0 && seg.every((c) => Math.abs(c.hit.w - c.box.w) <= 2), JSON.stringify(seg.map((c) => `${c.label} ${c.hit.w} vs ${c.box.w}`)))
 check('命中区都 ≥24（WCAG 2.2 硬线）', seg.length > 0 && seg.every((c) => c.hit.h >= 24), JSON.stringify(seg.map((c) => `${c.label} ${c.hit.h}`)))
+check('详情页也没有横向溢出', d.overflow.scrollW <= d.overflow.clientW, `scrollW ${d.overflow.scrollW} vs clientW ${d.overflow.clientW}`)
 const ranges = seg.filter((c) => /小时|天/.test(c.label))
 check(`量程那几枚（${ranges.map((c) => c.label).join('/')}）命中区 ≥44`,
   ranges.length >= 3 && ranges.every((c) => c.hit.h >= MIN),

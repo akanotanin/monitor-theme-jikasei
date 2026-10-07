@@ -269,10 +269,16 @@
 .globe-side-title { grid-column: 1 / -1; color: var(--muted-foreground); }
 .globe-reg {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
   margin: 0;
+  /* ★ 这一行原来只有 20px 高（文字的行高就是它的全部高度）—— 手机上那只有 4mm，
+     手指点不准（WCAG 2.2 的硬线是 24，本站主控件的标准是 44）。撑到 32（≈7mm）：
+     面板因此高约 70px，换来的是一列点得准的地区行；桌面那列（7 行 224px）仍装得下 280 高的格子。
+     行与行之间留着 .globe-side 的 8px gap，命中区不会叠到邻居身上。 */
+  min-height: 32px;
   padding: 0;
   border: 0;
   background: none;
