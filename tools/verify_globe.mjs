@@ -28,7 +28,8 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '
 
 // 七台演示机（**合成夹具，不含任何真实站点的数据**）：国家分布与常见的自建机队一样
 // （US×3 / JP×3 / DE×1），名字里带城市线索（圣何塞 / 东京 / 法兰克福）正好走城市线索那条路，
-// 另有一台没有城市线索（Ashburn）落到国家落点。初始视角下这七台一半在地球背面 ——
+// 另有一台 Ashburn —— 它是新补进线索表的城市（旧版这台落国家码「US」，现在有城名，
+// 顺带证明线索表扩展真的生效）。初始视角下这七台一半在地球背面 ——
 // 「背面不画」那条边界就是靠它压出来的（26 台那套全在正面，压不出这个）。
 const LIVE = JSON.parse(readFileSync('tools/globe-nodes-fixture.json', 'utf8'))
 // 合成那一套：26 台、八个国家、一台离线 —— 拿它压一压标签堆叠与左右分流
@@ -194,7 +195,7 @@ const READ = `(() => {
     svgBox: svg ? (() => { const r = svg.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)] })() : null,
     caption: caption ? caption.textContent : null,
     sideTitle: panel ? panel.querySelector('.globe-side-title').textContent : null,
-    regs: regs.map((b) => ({ text: b.querySelector('span').textContent, count: Number(b.querySelector('b').textContent), on: b.getAttribute('aria-pressed') === 'true' })),
+    regs: regs.map((b) => ({ text: b.querySelector('span').textContent, count: Number(b.querySelector('b').textContent), on: b.getAttribute('aria-pressed') === 'true', title: b.getAttribute('title') || '', dot: b.querySelector('.globe-reg-dot') !== null })),
     flags: regs.length - 1 === (panel ? panel.querySelectorAll('.globe-reg-flag').length : 0),
     flagSrc: panel && panel.querySelector('.globe-reg-flag') ? panel.querySelector('.globe-reg-flag').getAttribute('src') : null,
     atlas: atlas ? { h: Math.round(atlas.getBoundingClientRect().height), w: Math.round(atlas.getBoundingClientRect().width), touch: getComputedStyle(atlas).touchAction, cursor: getComputedStyle(atlas).cursor } : null,
@@ -272,8 +273,8 @@ check('引线抽样与公式一致', s.links === expectLinks(s.hitData), `${s.li
 check('左右两摞数量均衡（差 ≤ 2）', Math.abs(s.labelSide.filter((x) => x === 'L').length - s.labelSide.filter((x) => x === 'R').length) <= 2, JSON.stringify(s.labelSide))
 check('底部文案：ORTHOGRAPHIC + 经纬度 + 档位', /^ORTHOGRAPHIC · \d+°[EW] \d+°[NS] · MEDIUM$/.test(s.caption || ''), s.caption)
 check('地区列表第一行是「全部」并给出总台数', s.regs[0]?.text === '全部' && s.regs[0]?.count === 7, JSON.stringify(s.regs[0]))
-check('地区按台数从多到少（东京 3、圣何塞 2、法兰克福 1、US 1）',
-  JSON.stringify(s.regs.slice(1).map((r) => [r.text, r.count])) === JSON.stringify([['Tokyo', 3], ['San Jose', 2], ['Frankfurt am Main', 1], ['US', 1]]),
+check('地区按台数从多到少（东京 3、圣何塞 2、法兰克福 1、阿什本 1）',
+  JSON.stringify(s.regs.slice(1).map((r) => [r.text, r.count])) === JSON.stringify([['Tokyo', 3], ['San Jose', 2], ['Frankfurt am Main', 1], ['Ashburn', 1]]),
   JSON.stringify(s.regs.slice(1).map((r) => [r.text, r.count])))
 check('每一行地区都配了旗子（全部那行没有）', s.flags === true && s.flagSrc === '/flags/JP.svg', `${s.flagSrc}`)
 check('没选地区时选中的只有「全部」那一行', s.regs[0].on === true && s.regs.slice(1).every((r) => !r.on), JSON.stringify(s.regs.map((r) => r.on)))
@@ -475,6 +476,19 @@ check('★ 一个 HK 只有一行（带线索与不带线索不再裂成「HK」
 check('★ 兜底的国家不出裸码行（HK/TW/SG/JP/KR 都有城名；US/DE 这类照旧退国家码）',
   !s.regs.slice(1).some((r) => ['HK', 'TW', 'SG', 'JP', 'KR'].includes(r.text)) && s.regs.some((r) => r.text === 'US'),
   JSON.stringify(s.regs.map((r) => r.text)))
+// ★ 2026-10-08：地区行上的离线可见性（这块面板以前对「离线」一个字都不说 —— 针的颜色
+//   也不分在线离线）。有离线的行挂一枚小点 + 悬停写明台数；全在线的行不许有点。
+{
+  const hkRow = s.regs.find((r) => r.text === 'Hong Kong')
+  check('★ 地区里有离线机器时行上看得到（HK 那行：小点 + 悬停「5 台 · 1 台离线」）',
+    hkRow?.dot === true && (hkRow.title || '').indexOf('5 台') >= 0 && (hkRow.title || '').indexOf('1 台离线') >= 0,
+    JSON.stringify(hkRow))
+  const usRow = s.regs.find((r) => r.text === 'US')
+  check('★ 全在线的地区不带离线点（US 那行）', usRow?.dot === false, JSON.stringify(usRow))
+  check('「全部」那行悬停写明合计口径（27 台里有 2 台认不出国家、不上地区列表）',
+    (s.regs[0].title || '').indexOf('27 台') >= 0 && (s.regs[0].title || '').indexOf('2 台') >= 0 && (s.regs[0].title || '').indexOf('认不出国家') >= 0,
+    s.regs[0].title)
+}
 check('控制台无异常', errors.length === 0, errors.join(' | '))
 await shot('03-synth-desktop.png')
 

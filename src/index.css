@@ -296,6 +296,17 @@
 .globe-reg-all { grid-column: 1 / -1; }
 .globe-reg span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .globe-reg b { color: var(--foreground); font-weight: 500; font-variant-numeric: tabular-nums; }
+/* 地区行上的「有机器离线」小点：这台地区里有离线时挂在台数后面（全在线不出现），
+   悬停的 title 里写着「N 台 · M 台离线」。颜色跟针同一族的琥珀色。 */
+.globe-reg-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 4px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--warn);
+}
 /* 选中的那一行加粗提亮（上游是加大字号；这里跟着本站的字重语言走，不为一行改字号，
    否则整块的行高会跟着跳）。 */
 .globe-reg[aria-pressed="true"] { color: var(--foreground); font-weight: 600; }

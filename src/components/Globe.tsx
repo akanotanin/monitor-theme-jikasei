@@ -81,6 +81,9 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
   )
   const points = useMemo(() => globeNodes(nodes), [nodes])
   const rows = useMemo(() => regionRows(nodes), [nodes])
+  // 「全部」那一行的悬停说明：合计里有多少台认不出国家（不上地球与地区列表）——
+  // 「全部 N」与地区分项合计对不上这件事，就在那里有一句明面上的说法。
+  const unplaced = nodes.length - rows.reduce((sum, row) => sum + row.count, 0)
 
   // 初始视角与上游一致：东经 80°、北纬 30°（亚洲那一面，机器最密的地方）。
   const [view, setView] = useState({ lon: 80, lat: 30 })
@@ -330,7 +333,13 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
         <div className="globe-side-title">
           地区{pinned && region ? " · 已定位" : ""}
         </div>
-        <button type="button" className="globe-reg globe-reg-all" aria-pressed={!region} onClick={() => pick(null)}>
+        <button
+          type="button"
+          className="globe-reg globe-reg-all"
+          aria-pressed={!region}
+          onClick={() => pick(null)}
+          title={unplaced > 0 ? `共 ${nodes.length} 台，其中 ${unplaced} 台认不出国家（不上地球与地区列表）` : `共 ${nodes.length} 台`}
+        >
           <span>全部</span>
           <b>{nodes.length}</b>
         </button>
@@ -341,12 +350,16 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
             className="globe-reg"
             aria-pressed={region === row.region.key}
             onClick={() => pick(row.region.key, row.aim)}
+            title={row.offline > 0 ? `${row.count} 台 · ${row.offline} 台离线` : undefined}
           >
             <span>
               <RegionFlag code={row.region.code} />
               {row.region.label}
             </span>
-            <b>{row.count}</b>
+            <b>
+              {row.count}
+              {row.offline > 0 && <i className="globe-reg-dot" aria-hidden="true" />}
+            </b>
           </button>
         ))}
       </aside>

@@ -193,6 +193,15 @@ eq(regionOf(node(25, "幽灵机四", "KR"))?.key, "KR · Korea", "KR 认不出�
 eq(regionOf(node(26, "阿里 西雅图", "US"))?.key, "US · Seattle", "兜底不影响城市线索（US 照旧认西雅图）")
 eq(regionOf(node(27, "幽灵机五", "US"))?.key, "US", "没有兜底的国家照旧退国家码（US）")
 
+// ★ 2026-10 数据扩展：国家表 12 → 80+、城市线索 24 → ~100（第三方的大机群以前大半
+//   认不出城市、全堆在国家码下；表外国家的机器干脆整个地区功能里看不见）。
+eq(cityHint(node(28, "RackNerd Ashburn", "US"))?.name, "Ashburn", "新补的美国城市线索（阿什本）认得出")
+eq(regionOf(node(28, "RackNerd Ashburn", "US"))?.key, "US · Ashburn", "新线索进地区键（不再落裸的 US）")
+eq(regionOf(node(29, "某台机器", "RU"))?.key, "RU", "表外国家扩进来了（RU 现在上地球、进地区列表）")
+eq(regionOf(node(30, "某台机器二", "ZA"))?.key, "ZA", "同上（ZA）")
+ok(Object.keys(COUNTRY_LL).length >= 80, `国家表已覆盖常见 IDC 国家（${Object.keys(COUNTRY_LL).length} 国）`)
+ok(regionOf(node(31, "莫斯科一号", "RU"))?.key === "RU · Moscow", "莫斯科这类新城市线索也按城市落")
+
 const fleet = [
   node(1, "腾讯 SH", "CN"),
   node(2, "阿里 广州", "CN"),
@@ -241,6 +250,11 @@ const rows = regionRows(fleet)
 //   也一起落 `JP · Japan`（旧版这里会显示裸的「JP」）。
 eq(rows.map((r) => [r.region.key, r.count]), [["JP · Japan", 4], ["HK · Hong Kong", 2], ["CN", 1], ["CN · Guangzhou", 1], ["KR · Seoul", 1]], "地区分桶与台数（按台数从多到少）")
 eq(rows.reduce((sum, r) => sum + r.count, 0), 9, "各地区台数合计 = 有落点的机器数")
+// ★ 地区行也把离线台数带出来：列表里才看得见哪个地区有机器离线（行上那枚小点用它）。
+eq(rows.find((r) => r.region.key === "JP · Japan")?.offline, 0, "全在线的地区离线台数为 0")
+const offlineRows = regionRows(fleet.map((n) => (n.id === 7 ? { ...n, online: false } : n)))
+eq(offlineRows.find((r) => r.region.key === "JP · Japan")?.offline, 1, "有离线的地区统计得出来（JP 那行 1 台）")
+eq(offlineRows.find((r) => r.region.key === "HK · Hong Kong")?.offline, 0, "别的地区不受影响")
 
 const rv = regionView(fleet, "JP · Japan")
 eq(rv.shown.map((n) => n.id), [5, 6, 7, 8], "按地区筛选只留下该地区的机器")
@@ -318,7 +332,14 @@ eq(WORLD_OUTLINES.length, 79, "岸线 79 个环")
 eq(WORLD_OUTLINES.reduce((sum, r) => sum + r.length, 0), 1483, "岸线共 1483 个点")
 ok(WORLD_OUTLINES.every((r) => r.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat) && lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90)), "岸线坐标都在合法区间")
 eq(COARSE_WORLD_OUTLINES.length, 8, "粗岸线 8 个环")
-eq(Object.keys(COUNTRY_LL).length, 12, "国家落点表 12 个国家")
+// ★ 2026-10：国家表从原站那 12 国有意扩到常见 IDC 国家全集（表外国家在地区功能里
+//   完全看不见）。原表那 12 条要**逐字不变**，扩的是新增条目。
+eq(Object.keys(COUNTRY_LL).length, 87, "国家落点表覆盖到常见 IDC 国家（原站 12 国 + 75 国扩展）")
+eq(["HK", "JP", "DE", "NL", "US", "TW", "AU", "SG", "KR", "GB", "FR", "CN"].map((cc) => [cc, COUNTRY_LL[cc]]), [
+  ["HK", [114.2, 22.3]], ["JP", [139.7, 35.7]], ["DE", [8.7, 50.1]], ["NL", [4.9, 52.4]],
+  ["US", [-98.6, 39.8]], ["TW", [121.0, 23.7]], ["AU", [134.5, -25.7]], ["SG", [103.82, 1.35]],
+  ["KR", [127.8, 36.3]], ["GB", [-2.5, 54.5]], ["FR", [2.2, 46.2]], ["CN", [104.2, 35.8]],
+], "原站那 12 国的坐标一字未动（扩表只加不改）")
 
 if (failed) {
   console.error(`\n✗ globe: ${failed} 条断言没过`)

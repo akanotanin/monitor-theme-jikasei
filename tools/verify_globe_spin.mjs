@@ -179,6 +179,13 @@ const measure = async (lon0, lat0) => {
 mkdirSync(OUT, { recursive: true })
 const report = []
 console.log('地区行顺序：', ROWS.map((r) => `${r.region.label}(${r.aim[0].toFixed(0)},${r.aim[1].toFixed(0)})`).join(' '))
+// ★ 12 个城市必须全都上得了地球：早先只有 6 个（BR/IN/ZA/CA/AE/CL 在 COUNTRY_LL 之外、
+//   整个地区功能里看不见），这个工具就在不知不觉中只测了 6 个角度。国家表扩全后它是 12。
+{
+  const ok12 = ROWS.length === 12
+  console.log(`  ${ok12 ? 'PASS' : 'FAIL'}  12 个城市都上了地球（点得到地区行）${ok12 ? '' : ` — 只有 ${ROWS.length} 个`}`)
+  if (!ok12) process.exitCode = 1
+}
 for (let i = 0; i < ROWS.length; i += 1) {
   const row = ROWS[i]
   await js(`(() => { const b = document.querySelectorAll('button.globe-reg')[${i + 1}]; if (b) b.click(); return true })()`)
