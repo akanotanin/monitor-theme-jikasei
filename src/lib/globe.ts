@@ -870,7 +870,7 @@ export function layoutLabels(cam: Camera, points: GlobeNode[], sides: Map<string
     })
   }
   // 两摞都要完全落在圆盘外面：460 宽的画布里留给它们的正是 123 / 337 这两条线
-  // —— 与上游 mm-design 的 `<text x>` 逐字一致（实测它的标签就是 123/337）。
+  // —— 与上游那套的 `<text x>` 逐字一致（实测它的标签就是 123/337）。
   stack(left, 123, true)
   stack(right, 337, false)
   return items
