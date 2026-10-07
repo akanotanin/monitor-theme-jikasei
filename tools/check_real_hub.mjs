@@ -43,7 +43,7 @@ sock.onmessage = (m) => {
   const x = JSON.parse(m.data)
   if (x.id && pending.has(x.id)) { pending.get(x.id)(x.result); pending.delete(x.id); return }
   if (x.method === 'Runtime.exceptionThrown') errs.push(x.params.exceptionDetails.text)
-  if (x.method === 'Network.requestWillBeSent' && /site-icon|favicon/.test(x.params.request.url)) iconReqs.push(new URL(x.params.request.url).pathname)
+  if (x.method === 'Network.requestWillBeSent' && /favicon|apple-touch/.test(x.params.request.url)) iconReqs.push(new URL(x.params.request.url).pathname)
 }
 const send = (method, params = {}) => new Promise((r) => { const i = ++id; pending.set(i, r); sock.send(JSON.stringify({ id: i, method, params })) })
 const js = async (e) => (await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true })).result?.value
@@ -64,8 +64,6 @@ for (const round of [1, 2]) {
   const d = JSON.parse(await js(`JSON.stringify({
     log: window.__titleLog,
     titleSource: window.__titleProbeSource ?? '(未设)',
-    iconSource: window.__iconProbeSource ?? '(未设)',
-    settledAt: window.__iconSettledAt ?? null,
     headerIcon: (() => { const i = document.querySelector('header img'); return i ? i.getAttribute('src') : null })(),
     favicon: document.querySelector('link[rel~="icon"]')?.getAttribute('href') ?? null,
     touch: document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href') ?? null,
@@ -73,7 +71,7 @@ for (const round of [1, 2]) {
   })`))
   console.log(`\n=== 第 ${round} 次加载（${round === 1 ? '冷' : '热'}）===`)
   console.log('  标题: ' + d.log.join('  |  '))
-  console.log(`  标题来源=${d.titleSource}  图标来源=${d.iconSource}  顶栏站标=${d.headerIcon}  favicon=${d.favicon}  touch=${d.touch}`)
+  console.log(`  标题来源=${d.titleSource}  顶栏站标=${d.headerIcon}  favicon=${d.favicon}  touch=${d.touch}`)
   console.log(`  缓存=${JSON.stringify(d.ls)}  图标请求=[${iconReqs.join(', ')}]  控制台异常=${errs.length ? errs.join(' | ') : '无'}`)
 }
 sock.close(); chrome.kill(); server.kill()

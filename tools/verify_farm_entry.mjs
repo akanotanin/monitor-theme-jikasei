@@ -1,18 +1,21 @@
-// 「养鸡场入口」的验收：本机伺服 dist/ + 桩 /api/* 与 /chicken/api/nodes，用 headless Chrome
-// 跑七种情况，断言这枚图标该出现时出现、该消失时消失，地址与打开方式正确，
+// 顶栏「入口图标」（小鸡农场）的验收：本机伺服 dist/ + 桩 /api/* 与 /chicken/api/nodes，
+// 用 headless Chrome 跑七种情况，断言这枚图标该出现时出现、该消失时消失，地址与打开方式正确，
 // 并与相邻两枚图标按钮逐项同款（它存在的理由就是「看起来像本来就长在那里」）。
 //
 // 用法：node tools/verify_farm_entry.mjs [截图目录=shots/farm-entry]
 //   先 `npm run build` —— 验的是 dist/，不是源码。
 //
-// 两条最要紧的断言：
-//   · 本站没养鸡场 + 站长没填地址 → **不许出现**。否则访客点到的是一枚没有落点的图标：
+// 1.25.0 起这枚图标**没有设置项**：一律自动探测本站 `/chicken/`，装了才出现。所以三条最要紧的断言是：
+//   · 本站没装 + 老配置里什么都没填 → **不许出现**。否则访客点到的是一枚没有落点的图标：
 //     hub 对未知路径回落到主题 index.html，看着像「点了没反应 / 又回首页」。
-//   · 「本站有没有养鸡场」不能拿状态码探：hub 的回落让 /chicken/ 在「装了」与「没装」
-//     两种情况下都是 200，所以这里专门有一个「桩回 200 + HTML」的用例——那就是回落本身。
+//   · 「本站装没装」不能拿状态码探：hub 的回落让 /chicken/ 在「装了」与「没装」两种情况下都是 200，
+//     所以这里专门有一个「桩回 200 + HTML」的用例 —— 那就是回落本身。
+//   · 老配置里那几个键（farmUrl / showFarmEntry，1.25.0 之前那两代）**一律不再读**：
+//     填过自定义地址的、填过 off 的、关过开关的，现在都只看探测结果 —— 面板上已经没有那一格，
+//     页面要是还听它的，站长就成了「想关也关不掉」（同 siteIcon 那条口径）。
 //
-// 为什么走本机伺服而不是真 hub：这些断言里有「按设置变化」和「按本站有没有养鸡场变化」
-// 两类分支，只有能随手改桩状态才验得全；真站上还隔着 CF 与反代缓存，会把缓存问题算到主题头上。
+// 为什么走本机伺服而不是真 hub：这些断言里有「按本站装没装变化」和「按老配置残留变化」两类分支，
+// 只有能随手改桩状态才验得全；真站上还隔着 CF 与反代缓存，会把缓存问题算到主题头上。
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -127,23 +130,19 @@ const READ = `(() => {
 // 搜索那格不在这张表里：它是个 <input>（收起时是一枚方形图标），不是按钮，见 tools/verify_search.mjs。
 const HIDDEN_TITLES = '登录,卡片形态,隐藏节点地球,切换主题'
 const SCENARIOS = [
-  // 只装主题、没装养鸡场、站长也没填地址 —— 最常见的形态：这一枚不许出现。
-  { name: '本站没养鸡场（默认设置）', config: {}, farm: false, visible: false, probes: 1 },
-  // 部署完养鸡场、什么都不用配：图标自己出现，指到本站 /chicken/。
-  { name: '本站有养鸡场（默认设置 → 自动出现）', config: {}, farm: true, visible: true, href: '/chicken/', blank: false, probes: 1 },
-  // 桩回 200 + HTML 就是 hub 的回落：拿状态码探会把它误判成「有养鸡场」。
-  { name: '只有 hub 回落的 200 + HTML（不许当成有养鸡场）', config: {}, farm: false, visible: false, probes: 1 },
-  // 站长自己填了地址：以他填的为准，这时不再探测。
-  { name: '站长填了跨站地址', config: { farmUrl: 'https://farm.example.com/play' }, farm: false, visible: true, href: 'https://farm.example.com/play', blank: true, probes: 0 },
-  { name: '站长填了同域路径', config: { farmUrl: '/chicken/' }, farm: false, visible: true, href: '/chicken/', blank: false, probes: 0 },
-  // 「不显示」现在用 farmUrl 自己的 off 值表达（1.6.0 把旧的两个键并进这一格）。
-  { name: 'off：即便本站有养鸡场也不显示', config: { farmUrl: 'off' }, farm: true, visible: false, probes: 0 },
-  // ── 1.5.0 两个键的迁移（showFarmEntry 开关 + farmUrl 地址 → farmUrl 一格） ──
-  // 老站点关了开关而地址键从没动过 → 落成 off，入口不许自己冒出来。
-  { name: '老配置：1.5.0 关了入口、没填地址（→ off，不显示）', config: { showFarmEntry: false }, farm: true, visible: false, probes: 0 },
-  // 但地址键一旦存在就按它来：后台那个输入框的初值就是 saved.farmUrl，
-  // 若让孤儿开关压过它，这批站点在面板里填什么都不会生效（永久点了没反应）。
-  { name: '老配置：关了开关但填过地址（地址键优先 → 按地址显示）', config: { showFarmEntry: false, farmUrl: '/chicken/' }, farm: false, visible: true, href: '/chicken/', blank: false, probes: 0 },
+  // 只装主题、没装小鸡农场 —— 最常见的形态：这一枚不许出现。
+  { name: '本站没装小鸡农场（默认设置）', config: {}, farm: false, visible: false, probes: 1 },
+  // 部署完小鸡农场、什么都不用配：图标自己出现，指到本站 /chicken/。
+  { name: '本站装了小鸡农场 → 自动出现', config: {}, farm: true, visible: true, href: '/chicken/', probes: 1 },
+  // 桩回 200 + HTML 就是 hub 的回落：拿状态码探会把它误判成「装了」。
+  { name: '只有 hub 回落的 200 + HTML（不许当成装了）', config: {}, farm: false, visible: false, probes: 1 },
+  // ── 1.25.0 起没有设置项了：老配置里那几个键一律不再读，只看探测结果 ──
+  // 填过跨站地址的老站：地址不再生效，本站没装就不显示（那条「指向别处」的能力随设置项一起去掉了）。
+  { name: '老配置填过跨站地址（不再读 → 没装就不显示）', config: { farmUrl: 'https://farm.example.com/play' }, farm: false, visible: false, probes: 1 },
+  { name: '老配置填过同域路径（不再读 → 没装就不显示）', config: { farmUrl: '/chicken/' }, farm: false, visible: false, probes: 1 },
+  // 填过 off / 关过旧开关的老站：也拦不住了 —— 装了就会显示（面板里没那一格，页面不该再听它的）。
+  { name: '老配置填过 off（不再读 → 装了照样显示）', config: { farmUrl: 'off' }, farm: true, visible: true, href: '/chicken/', probes: 1 },
+  { name: '老配置：1.5.0 关过入口（showFarmEntry=false，不再读）', config: { showFarmEntry: false }, farm: true, visible: true, href: '/chicken/', probes: 1 },
 ]
 
 let pass = 0, fail = 0
@@ -175,12 +174,9 @@ for (const [n, scenario] of SCENARIOS.entries()) {
     check('相邻两枚仍在（只是这一枚不在，不是整行倒了）', state.titles.join(',') === HIDDEN_TITLES, state.titles.join(','))
   } else {
     check('入口在（真画出来了，有尺寸）', state.farmCount === 1 && (state.box.farm?.w ?? 0) > 0, `count=${state.farmCount} box=${JSON.stringify(state.box.farm)}`)
-    check('href = 设置里的地址 / 自动认出的 /chicken/', state.href === scenario.href, `href=${state.href}`)
-    if (scenario.blank) {
-      check('跨站：新标签页打开且不带走 referrer', state.target === '_blank' && state.rel === 'noreferrer', `target=${state.target} rel=${state.rel}`)
-    } else {
-      check('同域：当前标签页打开（属于站内导航）', state.target === null && state.rel === null, `target=${state.target} rel=${state.rel}`)
-    }
+    check('href = 自动认出的 /chicken/', state.href === scenario.href, `href=${state.href}`)
+    // 现在只有同域这一种：地址不再可配，图标永远是本站 `/chicken/`，就在当前标签页打开。
+    check('同域：当前标签页打开（属于站内导航）', state.target === null && state.rel === null, `target=${state.target} rel=${state.rel}`)
     check('顺序与参考图一致：扳手 → 卡片形态 → 地球 → 鸡 → 月亮', state.titles.join(',') === '登录,卡片形态,隐藏节点地球,养鸡场,切换主题', state.titles.join(','))
     check('三枚的 class 逐字符相同（画风靠它保证）', state.cls.farm === state.cls.moon && state.cls.farm === state.cls.admin)
     // box 里只比尺寸——位置天生不同（它是另一枚按钮），比位置等于恒红。

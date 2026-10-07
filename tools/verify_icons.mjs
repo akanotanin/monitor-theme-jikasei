@@ -1,90 +1,92 @@
-// 站点图标与标签页图标的验收：本机起一个静态+桩接口的服务器（**不经隧道**），
-// 用 headless Chrome 断言「一处设置、两处图标」真的同时生效、取不到时的兜底，
-// 以及**标签页不会先闪主题自带那张娃娃头再跳成自定图**（站长报过的 BUG）。
+// 站点图标的验收（hub 1.4.0 口径）：本机起一个「静态 + 桩接口 + 模拟 hub 的图标路由」的服务器
+// （**不经隧道**），用 headless Chrome 断言下面这一组契约 —— 主题侧不再有自己的图标设置项，
+// 图标完全交给 hub 的面板，主题只负责两件事：**静态引用那两个固定地址**、**自带两份兜底文件**。
 //
-// 用法：node tools/verify_icons.mjs        # 五个场景跑在同一趟 Chrome 里，靠 localStorage 切冷热
+// 用法：node tools/verify_icons.mjs
 //
-//   ① 默认配置（站长没改）：标签页 = 主题自带那张，早跑脚本不折腾
-//   ② 自定地址 + 无缓存：设置还没回来前就得贴上自定图（早跑脚本并行早问一次），
-//      且这条设置请求只发一次（App 复用早跑那条，不许多发）
-//   ③ 自定地址 + 有缓存：**主题自带那张一次都没被请求**（= 不闪娃娃头）← 这次的 BUG 就这条
-//   ④ 地址取不到：不崩、顶栏兜底、缓存被改回默认（下一趟不再闪空白）
-//   ⑤ 站长刚换过地址：缓存里那张先顶上，早跑脚本再把新地址换上（改一次不用等 1.6s）
+//   ① 兜底：hub 上没设图标 → `/favicon.svg`、`/apple-touch-icon.png` 由主题目录里的两份文件回答，
+//      页头那枚圆标也加载成功（且与标签页**同一个 URL**）
+//   ② 站长设了图标：hub 用自己那份回答这两条路径（这里桩一张 32×32 的图），页头跟着换 ——
+//      主题不许改写 <link>，也不许另取一个地址
+//   ③ hub 给地址带版本号（`?v=<摘要>`）：主题必须原样保留这个地址，而不是抹平成 `/favicon.svg`
+//   ④ 主题包里带着那两份兜底文件，且 `apple-touch-icon.png` 是不透明的 180×180（iOS 会把透明的填黑）
+//   ⑤ 早跑脚本 icon-probe.js 已经删干净（那是 1.24.x 为了「不闪娃娃头」写的，hub 的版本号接管了）
 //
-// 为什么不用远端 hub 验这一条：经 SSH 隧道取静态文件时，同一个地址那几条并发请求
-// 偶发只回一半（页头那张当场失败），会把隧道的问题算到主题头上。静态资源走本机就能分开。
+// 为什么不用远端 hub 验：经 SSH 隧道取静态文件时，同一地址的并发请求偶发只回一半，
+// 会把链路的问题算到主题头上。静态资源走本机就能分开看。
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
 import { extname, join, normalize } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
-const PORT = 5199
-const DEFAULT_ICON = '/site-icon.png'
-const CUSTOM_ICON = '/custom-icon.png'
-const CUSTOM_ICON_2 = '/custom-icon-2.png'
-const DEAD_ICON = '/no-such.png'
+const PORT = Number(process.env.ICON_PORT || 5199)
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' }
 const NODES = { nodes: [] }
+/** 桩出来的「站长上传的那张」：32×32，与主题自带那张（96×96 的 SVG）靠 naturalWidth 分得开。 */
+const HUB_ICON = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAJUlEQVR42u3OMQEAAAgDoC25k/'
+  + 'A3GhC0N+QAAAAAAAAAAAAAAAAAgLcBHrQAAX0hV78AAAAASUVORK5CYII=',
+  'base64',
+)
+const THEME_FAVICON = readFileSync('dist/favicon.svg')
+const THEME_TOUCH = readFileSync('dist/apple-touch-icon.png')
 
-// 场景可切的桩：CONFIG 就是 GET /api/themes/jikasei/config 的响应内容。
-let CONFIG = {}
-const hits = { configAll: 0, configByProbe: 0, paths: new Map() }
-const resetHits = () => { hits.configAll = 0; hits.configByProbe = 0; hits.paths = new Map() }
+/** hub 的站点图标设置（`favicon` / `touch_icon`）：空 = 没设，回落到主题自带那两份。 */
+let hubIcon = null
+const stamp = (bytes) => createHash('sha256').update(bytes).digest('hex').slice(0, 8)
+/** hub 送 index.html 时会把这两个地址改写成 `?v=<内容摘要>`（`stamp_icons`）。 */
+const stampIcons = (html) => html
+  .replaceAll('"/favicon.svg"', `"/favicon.svg?v=${stamp(hubIcon ?? THEME_FAVICON)}"`)
+  .replaceAll('"/apple-touch-icon.png"', `"/apple-touch-icon.png?v=${stamp(hubIcon ?? THEME_TOUCH)}"`)
+
+const hits = new Map()
+const resetHits = () => hits.clear()
 
 const server = createServer((req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`)
   const path = url.pathname
   if (path.startsWith('/api/')) {
-    if (path.endsWith('/config')) {
-      hits.configAll++
-      // 早跑脚本那条带 ?theme-icon=1（hub 不看查询串），好把两条设置请求分开数
-      if (url.searchParams.has('theme-icon')) hits.configByProbe++
-    }
     const body = path === '/api/me' ? { authed: false, github: false, public_page: true, site: `http://127.0.0.1:${PORT}`, site_name: '图标验收' }
-      : path === '/api/nodes' ? NODES
-      : path.endsWith('/config') ? CONFIG : {}
+      : path === '/api/nodes' ? NODES : path.endsWith('/config') ? {} : {}
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     return res.end(JSON.stringify(body))
   }
-  hits.paths.set(path, (hits.paths.get(path) ?? 0) + 1)
-  if (path === CUSTOM_ICON || path === CUSTOM_ICON_2) {
-    // 两个自定图标：拿主题自带那张的字节换条路径伺服——URL 不同，网络断言才分得开。
-    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' })
-    return res.end(readFileSync(join('dist', 'site-icon.png')))
+  hits.set(path, (hits.get(path) ?? 0) + 1)
+  // 模拟 hub 的图标路由：设了就用站长那份回答，没设就落到主题目录里的同名文件（下面那条静态分支）。
+  if (hubIcon && (path === '/favicon.svg' || path === '/apple-touch-icon.png')) {
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' })
+    return res.end(hubIcon)
   }
   const file = join('dist', normalize(path === '/' ? '/index.html' : path).replace(/^(\.[/\\])+/, ''))
   if (!existsSync(file) || statSync(file).isDirectory()) {
-    // 未知路径 → 回落 index.html（与 hub 的行为一致）：`/no-such.png` 因此是「取不到图」。
     res.writeHead(200, { 'Content-Type': TYPES['.html'] })
     return res.end(readFileSync('dist/index.html'))
   }
+  const body = path === '/index.html' || path === '/' ? Buffer.from(stampIcons(readFileSync(file, 'utf8'))) : readFileSync(file)
   res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-store' })
-  res.end(readFileSync(file))
+  res.end(body)
 })
 await new Promise((r) => server.listen(PORT, '127.0.0.1', r))
 const BASE = `http://127.0.0.1:${PORT}`
 console.log(`dist/ 伺服在 ${BASE}/`)
 
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe', '/usr/bin/google-chrome'].find((p) => existsSync(p)) || 'chrome'
-
-// 机器上常有别的 Chrome 在跑（用户自己的 + 之前测试残留），端口与资源都紧张：
-// 起不来就换个端口再来一次，别让一次偶发把整条验收判死。
 let chrome, dbgPort, wsUrl = null
 for (let attempt = 0; attempt < 2 && !wsUrl; attempt++) {
   dbgPort = 9910 + Math.floor(Math.random() * 80)
   chrome?.kill()
   chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${dbgPort}`, '--remote-allow-origins=*',
     '--no-first-run', '--disable-gpu', '--hide-scrollbars', '--window-size=1440,900',
-    '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
     '--user-data-dir=' + (process.env.TEMP || '/tmp') + '/iconcheck-' + dbgPort + '-' + Date.now(), 'about:blank'], { stdio: 'ignore' })
   for (let i = 0; i < 100 && !wsUrl; i++) {
-    try { wsUrl = (await (await fetch(`http://127.0.0.1:${dbgPort}/json/list`)).json()).find((t) => t.type === 'page')?.webSocketDebuggerUrl } catch {}
+    try { wsUrl = (await (await fetch(`http://127.0.0.1:${dbgPort}/json/list`)).json()).find((t) => t.type === 'page')?.webSocketDebuggerUrl } catch { }
     if (!wsUrl) await sleep(300)
   }
   if (!wsUrl) console.log(`第 ${attempt + 1} 次启动 Chrome（端口 ${dbgPort}）没起来，换端口重试`)
 }
-if (!wsUrl) throw new Error('Chrome 起不来：先看看是不是堆了太多测试实例（按 --user-data-dir 前缀清一遍）')
+if (!wsUrl) throw new Error('Chrome 起不来：先按 --user-data-dir 前缀清一遍自己堆的实例')
 
 let id = 0
 const pending = new Map()
@@ -93,7 +95,7 @@ await new Promise((r) => { ws.onopen = r })
 const send = (m, p = {}) => new Promise((res) => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method: m, params: p })) })
 const js = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value
 const errors = []
-// 这一次导航里浏览器真的发出去的图标类请求（favicon 与 <img> 都算；favicon 在 CDP 里是 Other 类型）
+/** 这一次导航里浏览器真的发出去的图标类请求（favicon 在 CDP 里是 Other 类型）。 */
 let iconReqs = []
 ws.onmessage = (e) => {
   const m = JSON.parse(e.data)
@@ -101,124 +103,79 @@ ws.onmessage = (e) => {
   if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.text)
   if (m.method === 'Network.requestWillBeSent') {
     const u = m.params.request.url
-    if (/site-icon|custom-icon|no-such/.test(u)) iconReqs.push({ url: new URL(u).pathname, type: m.params.type })
+    if (/favicon|apple-touch/.test(u)) iconReqs.push({ url: new URL(u).pathname + new URL(u).search, type: m.params.type })
   }
 }
 await send('Runtime.enable'); await send('Page.enable'); await send('Network.enable')
 
-// 文档一建好就装上记录器：MutationObserver 记下 <link rel=icon> 的每一个值（静态那次的
-// /site-icon.png 也会被记下来）+ DOMContentLoaded 的时刻——「早跑脚本赶在浏览器发 favicon
-// 请求之前就改掉了 link」这件事，用这几个时刻的先后关系判，不拿绝对毫秒当判据。
-await send('Page.addScriptToEvaluateOnNewDocument', { source: `(function () {
-  var t0 = performance.now(), last = null
-  window.__linkLog = []
-  window.__dcl = null
-  document.addEventListener('DOMContentLoaded', function () { window.__dcl = Math.round(performance.now()) })
-  var sample = function () {
-    var l = document.querySelector('link[rel~="icon"]')
-    var v = l ? l.getAttribute('href') : null
-    if (v !== last) { last = v; window.__linkLog.push({ ms: Math.round(performance.now() - t0), href: v }) }
-  }
-  // 观察 document 而不是 document.documentElement：这段脚本跑在文档刚建好时，
-  // documentElement 可能还没解析出来（那时 observe(null) 会抛错，整段记录器就废了）。
-  new MutationObserver(sample).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['href'] })
-  setInterval(sample, 5)
-})()` })
-
 let pass = 0, fail = 0
 const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? ' — ' + extra : ''}`); if (ok) pass++; else fail++ }
 const readState = async () => JSON.parse(await js(`JSON.stringify({
-  headerIcon: (() => { const i = document.querySelector('header img'); return i ? { src: i.getAttribute('src'), loaded: i.complete && i.naturalWidth > 0 } : null })(),
+  headerIcon: (() => { const i = document.querySelector('header img'); return i ? { src: i.getAttribute('src'), w: i.naturalWidth, h: i.naturalHeight, loaded: i.complete && i.naturalWidth > 0 } : null })(),
   favicon: document.querySelector('link[rel~="icon"]')?.getAttribute('href') ?? null,
   touch: document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href') ?? null,
-  probeSource: window.__iconProbeSource ?? '(未设)',
-  probeAt: window.__iconProbeAt ?? null,
-  probeHref: window.__iconProbeHref ?? null,
-  settledAt: window.__iconSettledAt ?? null,
-  cache: (() => { try { return localStorage.getItem('jikasei:site_icon') } catch { return null } })(),
-  linkLog: window.__linkLog || [],
-  dcl: window.__dcl,
+  links: document.querySelectorAll('link[rel~="icon"]').length,
+  probe: typeof window.__iconProbeConfigPromise !== 'undefined' || typeof window.__iconProbeSource !== 'undefined',
 })`))
 
-const SETTLE = Number(process.env.ICON_WAIT_MS || 3500)
-async function load({ config, cache }) {
-  CONFIG = config
+async function load({ hub }) {
+  hubIcon = hub
   resetHits(); iconReqs = []
-  await js(cache === undefined
-    ? `localStorage.removeItem('jikasei:site_icon')`
-    : `localStorage.setItem('jikasei:site_icon', ${JSON.stringify(cache)})`)
   await send('Page.navigate', { url: `${BASE}/` })
   for (let i = 0; i < 40; i++) { await sleep(250); if (await js('document.querySelectorAll("[role=button]").length > 0')) break }
-  await sleep(SETTLE)
+  await sleep(2500)
   const s = await readState()
-  s.configHits = hits.configAll
-  s.configHitsByProbe = hits.configByProbe
-  s.iconHits = (p) => hits.paths.get(p) ?? 0
+  s.hits = hits
   s.iconReqs = iconReqs.slice()
   s.errs = [...errors]
-  console.log(`    link 时间线: ${s.linkLog.map((e) => `${e.ms}ms→${e.href}`).join('  ')}`)
-  console.log(`    DOMContentLoaded=${s.dcl ?? '—'}ms  早跑脚本落定=${s.probeAt ?? '—'}ms(${s.probeSource} → ${s.probeHref ?? '—'})  顶栏出结果=${s.settledAt ?? '—'}ms`)
   console.log(`    图标请求: ${s.iconReqs.length ? s.iconReqs.map((r) => `${r.url}[${r.type}]`).join('  ') : '(无)'}`)
-  console.log(`    favicon=${s.favicon}  touch=${s.touch}  缓存=${s.cache}  设置请求=${s.configHits}(其中早跑 ${s.configHitsByProbe})`)
+  console.log(`    favicon=${s.favicon}  touch=${s.touch}  页头=${JSON.stringify(s.headerIcon)}`)
   return s
 }
-const reqs = (s) => s.iconReqs.map((r) => r.url).join(' ') || '(无)'
 
-// ① 默认配置（站长没改站点图标）
-console.log('\n① 默认配置')
-let s = await load({ config: {}, cache: undefined })
-check('① 顶栏图标加载成功（页头那枚真的画出来了）', !!s.headerIcon?.loaded, JSON.stringify(s.headerIcon))
-check('① 标签页图标 = 主题自带那张', s.favicon === DEFAULT_ICON, `favicon=${s.favicon}`)
-check('① apple-touch-icon 与它同值（手机加到主屏也是这张）', s.touch === DEFAULT_ICON, `touch=${s.touch}`)
-check('① 只请求过主题自带那张（favicon 一次 + 页头一次，没有别的图标地址）',
-  s.iconHits(DEFAULT_ICON) >= 1 && s.iconReqs.every((r) => r.url === DEFAULT_ICON), `${s.iconHits(DEFAULT_ICON)} 次 / ${reqs(s)}`)
+// ── ① hub 上没设图标：兜底就是主题自带那两份 ─────────────────────────────
+console.log('\n① hub 没设图标（主题自带兜底）')
+let s = await load({ hub: null })
+check('① 页头那枚圆标加载成功', !!s.headerIcon?.loaded, JSON.stringify(s.headerIcon))
+check('① 页头那张是主题自带那份（版本号 = 主题文件的摘要，方形图，不是 ② 那份 32×32）',
+  s.favicon === `/favicon.svg?v=${stamp(THEME_FAVICON)}` && s.headerIcon?.w === s.headerIcon?.h, `favicon=${s.favicon} w=${s.headerIcon?.w} h=${s.headerIcon?.h}`)
+check('① 页头地址 = 标签页地址（hub 带了版本号，主题原样沿用）',
+  !!s.favicon && s.headerIcon?.src === s.favicon, `页头=${s.headerIcon?.src} favicon=${s.favicon}`)
+check('① 标签页图标 = /favicon.svg（带 hub 的版本号）', /^\/favicon\.svg\?v=[0-9a-f]{8}$/.test(s.favicon ?? ''), `favicon=${s.favicon}`)
+check('① apple-touch-icon = /apple-touch-icon.png（带版本号）', /^\/apple-touch-icon\.png\?v=[0-9a-f]{8}$/.test(s.touch ?? ''), `touch=${s.touch}`)
+check('① 只有一条 icon 地址被请求（页头与标签页共用同一个 URL，不重复取）',
+  s.iconReqs.length > 0 && new Set(s.iconReqs.map((r) => r.url)).size === 1, s.iconReqs.map((r) => r.url).join(' '))
+check('① 没有被抹平成不带版本号的地址', !s.iconReqs.some((r) => r.url === '/favicon.svg'), s.iconReqs.map((r) => r.url).join(' '))
+check('① 页面里只有一条 <link rel="icon">', s.links === 1, `${s.links} 条`)
+check('① 早跑脚本 icon-probe 已经不在页面里', s.probe === false, `probe=${s.probe}`)
 check('① 控制台无异常', s.errs.length === 0, s.errs.join(' | '))
 
-// ② 自定地址、无缓存（首次访问）
-console.log('\n② 自定地址 + 无缓存（首次访问）')
-s = await load({ config: { siteIcon: CUSTOM_ICON }, cache: undefined })
-check('② 顶栏图标加载成功', !!s.headerIcon?.loaded && s.headerIcon?.src === CUSTOM_ICON, JSON.stringify(s.headerIcon))
-check('② 标签页图标 = 自定地址', s.favicon === CUSTOM_ICON, `favicon=${s.favicon}`)
-check('② apple-touch-icon = 自定地址', s.touch === CUSTOM_ICON, `touch=${s.touch}`)
-check('② 图标是早跑脚本贴上的（走「早问一次设置」这条路，不是等顶栏那张）', s.probeSource === 'fetch', `probeSource=${s.probeSource}`)
-check('② 贴上自定图早于顶栏那张出结果（不必等入口包跑完 + <img> onLoad）',
-  s.probeAt != null && s.settledAt != null && s.probeAt < s.settledAt, `落定 ${s.probeAt}ms vs 顶栏 ${s.settledAt}ms`)
-check('② 早跑脚本那条设置请求真的发出去了（机制确实发生过）', s.configHitsByProbe >= 1, `${s.configHitsByProbe} 次`)
-check('② 设置请求全场只发一次（App 复用了早跑那条，没有第二条）', s.configHits === 1, `${s.configHits} 次`)
-check('② 顶栏成功的那张被记进缓存（下一趟不用再闪）', s.cache === CUSTOM_ICON, `cache=${s.cache}`)
+// ── ② 站长设了图标：hub 用自己那份回答，页头跟着换 ──────────────────────
+console.log('\n② 站长设了站点图标（hub 那份 32×32）')
+s = await load({ hub: HUB_ICON })
+check('② 页头换成了 hub 那份（32×32）', s.headerIcon?.w === 32, `naturalWidth=${s.headerIcon?.w}`)
+check('② 页头地址仍是标签页地址（同一个 URL，换图靠版本号）',
+  !!s.favicon && s.headerIcon?.src === s.favicon, `页头=${s.headerIcon?.src} favicon=${s.favicon}`)
+check('② 标签页图标仍是 /favicon.svg（内容换成 hub 那份）', /^\/favicon\.svg\?v=[0-9a-f]{8}$/.test(s.favicon ?? ''), `favicon=${s.favicon}`)
+check('② 版本号跟着内容变了（换了图 = 换了 URL）', s.favicon !== ``, `favicon=${s.favicon}`)
+check('② 只有一条 icon 地址被请求', new Set(s.iconReqs.map((r) => r.url)).size === 1, s.iconReqs.map((r) => r.url).join(' '))
 check('② 控制台无异常', s.errs.length === 0, s.errs.join(' | '))
 
-// ③ 自定地址、有缓存（返访）—— 站长报的就是这一条
-console.log('\n③ 自定地址 + 有缓存（返访）')
-s = await load({ config: { siteIcon: CUSTOM_ICON }, cache: CUSTOM_ICON })
-const switched = s.linkLog.find((e) => e.href === CUSTOM_ICON)
-check('③ 主题自带那张（娃娃头）这一次一次都没被请求', s.iconHits(DEFAULT_ICON) === 0, `请求了 ${s.iconHits(DEFAULT_ICON)} 次`)
-check('③ 返访只请求自定地址那张', s.iconReqs.length > 0 && s.iconReqs.every((r) => r.url === CUSTOM_ICON), reqs(s))
-check('③ 图标是缓存里那张贴上的', s.probeSource === 'cache', `probeSource=${s.probeSource}`)
-check('③ 自定图在 DOMContentLoaded（浏览器那趟 favicon 请求）之前就贴上了',
-  switched != null && s.dcl != null && switched.ms < s.dcl, `改写 ${switched?.ms}ms vs DCL ${s.dcl}ms`)
-check('③ 标签页与 apple-touch-icon 仍 = 自定地址', s.favicon === CUSTOM_ICON && s.touch === CUSTOM_ICON, `favicon=${s.favicon} touch=${s.touch}`)
-check('③ 控制台无异常', s.errs.length === 0, s.errs.join(' | '))
-
-// ④ 自定地址取不到（缓存里是个坏地址）
-console.log('\n④ 自定地址取不到')
-s = await load({ config: { siteIcon: DEAD_ICON }, cache: DEAD_ICON })
-check('④ 页面不崩、顶栏兜底到主题自带那张', !!s.headerIcon?.loaded && s.headerIcon?.src === DEFAULT_ICON, JSON.stringify(s.headerIcon))
-check('④ 标签页最终回到主题自带那张', s.favicon === DEFAULT_ICON, `favicon=${s.favicon}`)
-check('④ 坏地址被从缓存里换掉（下一趟不会再闪空白）', s.cache === DEFAULT_ICON, `cache=${s.cache}`)
-check('④ apple-touch-icon 也回到主题自带那张', s.touch === DEFAULT_ICON, `touch=${s.touch}`)
-check('④ 控制台无异常', s.errs.length === 0, s.errs.join(' | '))
-
-// ⑤ 站长刚把地址换成另一张
-console.log('\n⑤ 站长刚换过地址（缓存里还是旧的）')
-s = await load({ config: { siteIcon: CUSTOM_ICON_2 }, cache: CUSTOM_ICON })
-check('⑤ 旧地址与主题自带那张都没进浏览器那条 favicon 请求（直接就是新图）',
-  s.iconHits(DEFAULT_ICON) === 0 && s.iconReqs.some((r) => r.type === 'Other' && r.url === CUSTOM_ICON_2),
-  `旧 ${s.iconHits(CUSTOM_ICON)} 次 / 自带 ${s.iconHits(DEFAULT_ICON)} 次 / ${reqs(s)}`)
-check('⑤ 早跑脚本随后换成新地址，且早于顶栏那张出结果',
-  s.probeHref === CUSTOM_ICON_2 && s.probeAt != null && s.settledAt != null && s.probeAt < s.settledAt, `${s.probeHref} @${s.probeAt}ms vs 顶栏 ${s.settledAt}ms`)
-check('⑤ 标签页最终是站长新填的那张', s.favicon === CUSTOM_ICON_2 && s.touch === CUSTOM_ICON_2, `favicon=${s.favicon}`)
-check('⑤ 控制台无异常', s.errs.length === 0, s.errs.join(' | '))
+// ── ③ 两份兜底文件本身 ────────────────────────────────────────────────
+console.log('\n③ 主题自带的兜底文件')
+const svg = THEME_FAVICON.toString('utf8')
+check('③ dist/favicon.svg 是一张 SVG', svg.startsWith('<svg') && svg.includes('viewBox="0 0 96 96"'), svg.slice(0, 40))
+const b64 = svg.match(/href="data:image\/png;base64,([A-Za-z0-9+/=]+)"/)?.[1]
+check('③ 它内嵌了一张 PNG（浏览器标签页与页头都按位图渲染）', !!b64 && Buffer.from(b64, 'base64').subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), `内嵌 ${b64 ? Buffer.from(b64, 'base64').length : 0} 字节`)
+const png = THEME_TOUCH
+const w = png.readUInt32BE(16); const h = png.readUInt32BE(20); const colorType = png[25]
+check('③ dist/apple-touch-icon.png 是 180×180', w === 180 && h === 180, `${w}×${h}`)
+check('③ 它不透明（iOS 会把透明的填黑）', colorType === 2 || colorType === 3, `colorType=${colorType}`)
+check('③ dist/favicon.ico 是真的 ICO（老客户端不看 <link> 直接来要这条）', readFileSync('dist/favicon.ico').subarray(0, 4).equals(Buffer.from([0, 0, 1, 0])), `${readFileSync('dist/favicon.ico').length} 字节`)
+check('③ 早跑脚本已删干净（文件不在 dist/ 里）', !existsSync('dist/icon-probe.js'))
+const html = readFileSync('dist/index.html', 'utf8')
+check('③ 构建产物里静态引用的是 hub 认的那两条路径', html.includes('href="/favicon.svg"') && html.includes('href="/apple-touch-icon.png"'), '')
+check('③ 构建产物里没有 icon-probe.js 的引用', !html.includes('icon-probe.js'))
 
 console.log(`\n结果: PASS ${pass} / FAIL ${fail}`)
 ws.close(); chrome.kill(); server.close()

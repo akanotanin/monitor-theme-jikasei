@@ -97,7 +97,7 @@ const server = createServer((req, res) => {
     }
     const body = path === '/api/me' ? { authed: false, github: false, public_page: true, site: BASE, site_name: '图表' }
       : path === '/api/nodes' ? NODES
-        : path.endsWith('/config') ? { siteIcon: '/site-icon.png', listTop: 'both', cardStyle: 'detailed', remarkPlacement: 'both', pingLines: '' }
+        : path.endsWith('/config') ? { listTop: 'both', cardStyle: 'detailed', remarkPlacement: 'both', pingLines: '' }
           : path.includes('/metrics') ? (full.includes('series=metrics') ? METRICS : full.includes('series=ping') ? PING : { metrics: [], ping: [], probes: {}, loss: {} })
             : {}
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })

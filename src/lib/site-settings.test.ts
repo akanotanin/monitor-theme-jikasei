@@ -4,14 +4,15 @@
 // 重点在三处容易静默出错的迁移：
 //   1. cardStyle：≤1.2.9 的 "detail" 现在叫 "latency"，1.9.0 起多了 "compact";
 //   2. listTop：≤1.4.0 是两个布尔开关（showSummary / showGroupTabs），1.5.0 合成四选一；
-//   3. farmUrl：≤1.5.0 是两个键（showFarmEntry + farmUrl），1.6.0 并成一个三态键。
+//   3. farmUrl / showFarmEntry：1.25.0 起**连设置项一起删了**（顶栏入口改成自动探测本站
+//      `/chicken/`），这里断的是「老键一律不再读、也不冒出多余字段」。
 // 下面双向断「theme.json 声明了没 / DEFAULTS 兜底了没」——半截状态（字段删了、对话框还画着一格）
 // 最难发现。备注不在这一层：它由 hub 按节点下发（公开备注给访客、私有备注只给管理员，见
 // notes.test.ts），主题设置里那份「服务器备注」清单已删（试过一版又删掉），所以这里反过来断「它不许回来」。
 // 读不出来的表现不是报错，而是「站长开着的那一项自己关了」。
 import { readFileSync } from "node:fs"
 
-import { CARD_STYLES, DEFAULTS, FARM_OFF, cardStyleOf, cardStyleOrNull, hasGroupTabs, hasSummary, isBudgetLayout, listTopOf, normalizeConfig, remarksOnCards, remarksOnDetail } from "./site-settings.ts"
+import { CARD_STYLES, DEFAULTS, cardStyleOf, cardStyleOrNull, hasGroupTabs, hasSummary, isBudgetLayout, listTopOf, normalizeConfig, remarksOnCards, remarksOnDetail } from "./site-settings.ts"
 
 let failed = 0
 function eq(got: unknown, want: unknown, what: string) {
@@ -73,36 +74,36 @@ eq(TOPS.map((t) => [t, hasSummary(t), hasGroupTabs(t), isBudgetLayout(t)]),
 const sorted = (o: unknown) => JSON.stringify(Object.fromEntries(Object.entries(o as Record<string, unknown>).sort()))
 eq(sorted(normalizeConfig(null)), sorted(DEFAULTS), "什么都没存 → 全默认")
 eq(sorted(normalizeConfig({})), sorted(DEFAULTS), "空对象 → 全默认")
-eq(normalizeConfig({ siteIcon: "   " }).siteIcon, DEFAULTS.siteIcon, "站点图标只有空白 → 回落默认")
-eq(normalizeConfig({ siteIcon: " https://x/i.png " }).siteIcon, "https://x/i.png", "站点图标去首尾空白")
-// farmUrl / pingLines 的空串是「有意义的值」（自动探测 / 自动取前三条），不能被顶成默认。
-eq(normalizeConfig({ farmUrl: "" }).farmUrl, "", "养鸡场入口空串保留（自动探测）")
-eq(normalizeConfig({ farmUrl: "  /chicken/  " }).farmUrl, "/chicken/", "养鸡场地址去首尾空白")
-eq(normalizeConfig({ farmUrl: "off" }).farmUrl, FARM_OFF, "养鸡场入口的 off 值保留")
-// ── 养鸡场入口：1.5.0 的两个键并入一个（showFarmEntry / farmUrl → farmUrl） ──
-// 老站点把入口关了而地址键从没动过：必须落成 off，否则会静默又冒出一枚它关掉的图标。
-eq(normalizeConfig({ showFarmEntry: false }).farmUrl, FARM_OFF, "老配置：关掉入口 → off")
-// 地址键一旦存在就按它来（哪怕是空串）——这是站长明确定过的值，
-// 也覆盖「并入之后重新填了地址」的情形（那时旧键 showFarmEntry 可能还是 false）。
-eq(normalizeConfig({ showFarmEntry: false, farmUrl: "" }).farmUrl, "", "地址键存在时按地址来（空串＝自动）")
-eq(normalizeConfig({ showFarmEntry: false, farmUrl: "/farm/" }).farmUrl, "/farm/", "地址键存在时优先于旧开关")
-eq(normalizeConfig({ showFarmEntry: true }).farmUrl, "", "老配置：开着入口（没填地址）→ 自动探测")
-eq(normalizeConfig({ showFarmEntry: "no" }).farmUrl, "", "旧开关类型不对 → 当作没存过，自动探测")
+// 站点图标 1.25.0 起由 hub 的面板设置管，主题侧不再有这个键 —— 老配置里留着也不该冒出多余字段。
+eq(Object.keys(normalizeConfig({ siteIcon: "/x.png" })).includes("siteIcon"), false, "老配置里的 siteIcon 不再进主题配置")
+// 顶栏入口（养鸡场）1.25.0 起没有设置项了：主题一律自动探测本站 `/chicken/`。
+// 老配置里那几个键（farmUrl / showFarmEntry）**一律不再读**——面板上已经没有那一格，
+// 页面要是还听它的，就成了「看不见的开关」（站长想关也关不掉）。与 siteIcon 同一条口径：
+// 断「老键不再冒出多余字段」，而不是断它读到什么值。
+for (const old of [{ farmUrl: "" }, { farmUrl: "off" }, { farmUrl: "/farm/" }, { showFarmEntry: false }, { showFarmEntry: true }]) {
+  eq(Object.keys(normalizeConfig(old)).includes("farmUrl"), false, `老配置里的 ${Object.keys(old)[0]} 不再进主题配置`)
+}
+eq(Object.keys(DEFAULTS).includes("farmUrl"), false, "DEFAULTS 里也没有 farmUrl 了")
 eq(normalizeConfig({ pingLines: "" }).pingLines, "", "延迟线路空串保留")
 eq(normalizeConfig({ cardStyle: "detail" }).cardStyle, "latency", "normalizeConfig 也走 cardStyle 迁移")
 eq(normalizeConfig({ showSummary: true }).listTop, "summary", "normalizeConfig 也走 listTop 迁移")
 eq(normalizeConfig({ listTop: "both" }).listTop, "both", "新值优先")
 
-// ── 护栏：设置项别超过 6 个 ──────────────────────────────────────────
-// Hub 1.3.0 的「主题设置」对话框在非标题字段 > 6 时会把布局从左导航 + 单列换成两列 + 分组导航，
-// 两列里每格只有半宽：说明折成四五行的同时并排两项高矮不齐、每组最后一行还空半格。
-// 1.5.0 就是为此把两个顶部开关并成一个四选一的；以后再想加设置项，先想清楚这一条。
+// ── 护栏：设置项数别失控 ────────────────────────────────────────────
+// Hub 的「主题设置」对话框在非标题字段 > 6 时会把布局换成**左导航 + 右侧两列**
+// （hub 1.4.0 源码：`const large = fields.length > 6`，再 `paged = large && sections.length > 1`）。
+// 两列里每格只有半宽，说明文字容易折成四五行 —— 1.5.0 就是为此把两个顶部开关并成一个四选一的。
+//
+// ★ 2026-10-07 站长先要了「节点地球」与「主题模式」两项（7 个），随后**把「养鸡场入口」删掉**
+//   （顶栏入口改成自动探测，不再需要设置项）→ 回到 **6 个**，面板也回到那套一页平铺的单列版式
+//   （最好看的那一档）。**上限仍是 7**：再加第 8 项之前先问清楚，或者先想能不能并进现有的某一格。
 const manifest = JSON.parse(readFileSync(new URL("../../theme.json", import.meta.url), "utf8"))
 const fields = manifest.config.filter((f: { type: string }) => f.type !== "title")
-if (fields.length > 6) {
+if (fields.length > 7) {
   failed++
-  console.error(`✗ theme.json 的非标题设置项有 ${fields.length} 个（> 6）：面板会切成两列 + 分组导航，排版会散开`)
+  console.error(`✗ theme.json 的非标题设置项有 ${fields.length} 个（> 7）：面板的两列版式已经吃满，再加就要先想清楚`)
 }
+eq(fields.length, 6, "就是 6 个设置项（≤6 走单列平铺版式）")
 // 两边的 key 必须一一对上：面板按 theme.json 画表单，页面按 DEFAULTS 兜底。
 const keys = fields.map((f: { key: string }) => f.key).sort()
 eq(keys, Object.keys(DEFAULTS).sort(), "theme.json 的字段与 DEFAULTS 的键一致")

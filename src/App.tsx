@@ -13,7 +13,8 @@ import { api, groupView, useNodes } from "@/lib/api"
 import { regionView } from "@/lib/globe"
 import { hasDetailRemarks } from "@/lib/notes"
 import { searchNodes } from "@/lib/search"
-import { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, isBudgetLayout, useCardStyle, useGlobeVisible, useLocalFarm, useSiteFavicon, useThemeConfig } from "@/lib/theme-config"
+import { hasGroupTabs, hasSummary, isBudgetLayout, useCardStyle, useGlobeVisible, useLocalFarm, useThemeConfig } from "@/lib/theme-config"
+import { isBeijingNight, resolveDark, type ThemeMode } from "@/lib/site-settings"
 import type { RemarkPlacement } from "@/lib/site-settings"
 import { FarmIcon } from "@/components/FarmIcon"
 
@@ -142,7 +143,7 @@ const DARK_MEDIA = matchMedia("(prefers-color-scheme: dark)")
  * landing between the first render and the effect that would have attached the
  * listener is otherwise never heard, and the next one is a day away.
  */
-function useTheme() {
+function useTheme(siteMode: ThemeMode) {
   const [saved, setSaved] = useState(() => localStorage.getItem("theme"))
   const system = useSyncExternalStore(
     (notify) => {
@@ -151,7 +152,18 @@ function useTheme() {
     },
     () => DARK_MEDIA.matches,
   )
-  const dark = saved ? saved === "dark" : system
+  // 「随北京时间自动」要自己跨过 19:00 / 07:00：每分钟问一次现在几点（几乎不要钱），
+  // 到点前后最多差一分钟。别的档不挂这个定时器。
+  const [night, setNight] = useState(() => isBeijingNight())
+  useEffect(() => {
+    if (siteMode !== "auto") return
+    setNight(isBeijingNight())
+    const timer = setInterval(() => setNight(isBeijingNight()), 60_000)
+    return () => clearInterval(timer)
+  }, [siteMode])
+  // 站长那一档是**默认**；访客点过那枚图标（localStorage 里有 `theme`）就以他的为准。
+  const fromSite = siteMode === "auto" ? night : resolveDark(siteMode, system)
+  const dark = saved ? saved === "dark" : fromSite
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark)
@@ -161,37 +173,26 @@ function useTheme() {
     dark,
     () => {
       const next = dark ? "light" : "dark"
-      localStorage.setItem("theme", next)
-      setSaved(next)
+      // 点成与站长那一档一致时**删掉记录**（= 重新跟着站长走，与 useGlobeVisible 同一套口径）。
+      const record = (next === "dark") === fromSite ? null : next
+      try {
+        if (record === null) localStorage.removeItem("theme")
+        else localStorage.setItem("theme", record)
+      } catch {
+        // 存储被禁用（隐私模式）：这次会话照样切，只是记不住。
+      }
+      setSaved(record)
     },
   ] as const
 }
 
-/**
- * 站内那套养鸡场（同域）用当前标签页打开就好，它属于本站导航；指向别的站时才开新标签页——
- * 默认值就是那样的一座公开养鸡场，不该把访客从状态页带走。
- */
-function farmLinkProps(url: string) {
-  try {
-    if (new URL(url, location.href).origin === location.origin) return {}
-  } catch {
-    // 地址本身不合法就按外链处理：让它自己在新标签页里报错，别把本站带跑。
-  }
-  return { target: "_blank", rel: "noreferrer" }
-}
-
 export default function App() {
-  const [dark, toggleTheme] = useTheme()
-  const { config, loaded } = useThemeConfig()
-  // 站长没填地址时，自动认本站约定的那个位置（`/chicken/`）有没有养鸡场；
-  // 填了就以他填的为准，填 `off` 则一律不显示。**等设置到了再探**（loaded）——不然
-  // 「关掉入口」「填了自己地址」的站都会白探一次，那两次探测还会让护栏分不清「该探没探」。
-  const farmAuto = config.farmUrl === ""
-  const detectedFarm = useLocalFarm(loaded && farmAuto)
-  const farmUrl = farmAuto ? detectedFarm : config.farmUrl === FARM_OFF ? "" : config.farmUrl
-  // 顶栏那张站标最终用的是哪个地址（加载成功才知道），标签页图标跟着它走。
-  const [settledIcon, setSettledIcon] = useState<string | null>(null)
-  useSiteFavicon(settledIcon)
+  const config = useThemeConfig()
+  // 明暗：站长那一档（`themeMode`）当默认，访客点过顶栏那枚图标就以他的为准。
+  const [dark, toggleTheme] = useTheme(config.themeMode)
+  // 顶栏那枚入口图标（1.25.0 起没有设置项）：挂载即探一次本站约定的 `/chicken/`，
+  // 装了那座小鸡农场才出现、没装不占位（判据是内容而不是状态码，见 useLocalFarm）。
+  const farmUrl = useLocalFarm()
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
   const { nodes, error, closed } = useNodes()
@@ -202,7 +203,7 @@ export default function App() {
   const [region, setRegion] = useState<string | null>(null)
   // 访客自己的两个偏好（都只存在他自己浏览器里，见 @/lib/theme-config）：
   // 地球看不看，以及列表用哪种卡片形态 —— 后者没选过时跟着站长的设置走。
-  const [globeOn, toggleGlobe] = useGlobeVisible()
+  const [globeOn, toggleGlobe] = useGlobeVisible(config.globeOn)
   const [cardStyle, chooseStyle] = useCardStyle(config.cardStyle)
   // 顶栏那个搜索框：词与「窄屏那一行展开了没」都留在这儿 —— 进详情页再回来，
   // 搜到的那几台还在（与分组标签、地区选择同一套「看哪几台」的记忆）。
@@ -352,11 +353,11 @@ export default function App() {
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-[1280px] items-center gap-3 px-4 py-3 sm:px-6">
           {/* The site name is the way back to the list, so a node page needs
-              no back button of its own. A 32px disc of the site's own icon leads
-              it; the address is a theme setting, the built-in one is the
-              fallback. */}
+              no back button of its own. A 32px disc of the site's icon leads
+              it — `/favicon.svg` is the one address that answers with the
+              panel's site icon (or the theme's own when none is set). */}
           <button className="tap tap-8 flex items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
-            <SiteIcon key={config.siteIcon} src={config.siteIcon} onSettle={setSettledIcon} />
+            <SiteIcon />
             {me.site_name || "Monitor"}
           </button>
           <div className="flex-1" />
@@ -410,11 +411,11 @@ export default function App() {
               <GlobeIcon />
             </Button>
           )}
-          {/* 养鸡场入口：站长填了地址就指向那里；留空则本站 `/chicken/` 上真装了养鸡场
-              才出现（自动探测，见 useLocalFarm）；填 `off` 则一律不出现。 */}
+          {/* 入口图标：本站 `/chicken/` 上真装了那座小鸡农场才出现（自动探测，见 useLocalFarm）；
+              同域，就在当前标签页里打开。 */}
           {farmUrl && (
             <Button variant="ghost" size="icon" asChild>
-              <a href={farmUrl} title="养鸡场" aria-label="养鸡场" {...farmLinkProps(farmUrl)}>
+              <a href={farmUrl} title="养鸡场" aria-label="养鸡场">
                 <FarmIcon />
               </a>
             </Button>
@@ -509,28 +510,25 @@ export default function App() {
 }
 
 /**
- * 顶栏的圆形站标。默认用主题自带的 `/site-icon.png`，站长可以在后台换成任意地址；
- * 换的那个取不到就退回自带这张，两张都取不到就不占位——不留一枚破图。
+ * 顶栏的圆形站标：**就是站点图标本身**，而且用的是**标签页那条 `<link rel="icon">` 的地址**。
+ *
+ * hub 1.4.0 起这条路径由面板「设置 → 站点图标」管（没设时回落到主题自带的同名文件），
+ * 而且 hub 送 index.html 时会把它改写成 `?v=<内容摘要>` —— 所以「取哪张图」这件事在静态
+ * HTML 里就定下来了，主题只要沿用同一条地址即可：
+ *
+ *   · 页头与标签页是**同一个 URL** → 浏览器只取一次、缓存共用一份（弱链路上尤其重要，
+ *     以前两处各取一次会把页头那张挤掉）；
+ *   · 站长换了图，hub 给的版本号就变了，浏览器自己会重新取，不需要任何早跑脚本。
+ *
+ * 取不到就不占位：不留一枚破图。
  */
-function SiteIcon({ src, onSettle }: { src: string; onSettle: (icon: string | null) => void }) {
-  // 去重：站长填回默认地址时只有一个候选，出错就没有下一个。
-  const candidates = [...new Set([src, DEFAULTS.siteIcon].filter(Boolean))]
-  const [step, setStep] = useState(0)
-  // 站长那一项到得比首帧晚：调用处用 key={src} 让它重挂，候选与步骤都从头来，
-  // 不用在 effect 里回头改状态（那会多一轮渲染）。
-  const current = candidates[step]
-  // 候选全试完还把 onSettle 留在 null —— 标签页图标就维持静态值，不留破图。
-  useEffect(() => { if (!current) onSettle(null) }, [current, onSettle])
-  if (!current) return null
+function SiteIcon() {
+  const [href] = useState(() => document.querySelector('link[rel~="icon"]')?.getAttribute("href") || "/favicon.svg")
+  const [broken, setBroken] = useState(false)
+  if (broken) return null
   return (
     <span className="size-8 shrink-0 overflow-hidden rounded-full bg-muted ring-1 ring-border/60">
-      <img
-        src={current}
-        alt=""
-        className="size-full object-cover"
-        onLoad={() => onSettle(current)}
-        onError={() => setStep((n) => n + 1)}
-      />
+      <img src={href} alt="" className="size-full object-cover" onError={() => setBroken(true)} />
     </span>
   )
 }

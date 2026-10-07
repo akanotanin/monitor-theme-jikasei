@@ -101,9 +101,13 @@ export type Camera = {
   edge(p: Pt): Pt
   /**
    * 地平线上从 a 到 b 的中间点（按方位角插值，`stepDeg` 是最大步长）。
-   * 跨度超过 60° 时绕行方向按 `winding` 来 —— 免得为了走近路而穿过圆盘。
+   *
+   * `fromAz`/`toAz` 给定时用它俩当起止方位角（收口那条弧要**按顶点顺序展开**的角，
+   * 不是两点各自的方位角，见 `landPaths`）；不给就按 a、b 自己算（取近路）。
    */
-  arc(a: Pt, b: Pt, winding: number, stepDeg?: number): Pt[]
+  arc(a: Pt, b: Pt, stepDeg?: number, fromAz?: number, toAz?: number): Pt[]
+  /** 屏幕点在球面上的经纬度（正交投影的逆解）。收口判「弧在陆地里面还是外面」用。 */
+  lonLat(p: Pt): [number, number]
 }
 
 export function camera(lon0: number, lat0: number, view = VIEW): Camera {
@@ -135,14 +139,16 @@ export function camera(lon0: number, lat0: number, view = VIEW): Camera {
 
   const onEdge = (t: number): Pt => ({ x: view.cx + view.r * Math.cos(t), y: view.cy - view.r * Math.sin(t), k: 0 })
 
-  const arc = (a: Pt, b: Pt, winding: number, stepDeg = 10): Pt[] => {
-    const A = azimuth(a)
-    const B = azimuth(b)
+  const arc = (a: Pt, b: Pt, stepDeg = 10, fromAz?: number, toAz?: number): Pt[] => {
+    const A = fromAz ?? azimuth(a)
+    const B = toAz ?? azimuth(b)
     let d = B - A
-    while (d > Math.PI) d -= Math.PI * 2
-    while (d < -Math.PI) d += Math.PI * 2
-    // 大跨度（>60°）时方向跟着这一环的绕向走：走近路可能横穿圆盘，那就错了。
-    if (Math.abs(d) > Math.PI / 3 && winding !== 0) d = Math.abs(d) * (winding > 0 ? 1 : -1)
+    // 调用方给了明确的起止方位角时**不许再折回近路**：收口那条弧可能故意要走远路
+    // （跨过 180° 才落在陆地里面），折回就会画到另一边去。
+    if (fromAz === undefined || toAz === undefined) {
+      while (d > Math.PI) d -= Math.PI * 2
+      while (d < -Math.PI) d += Math.PI * 2
+    }
     const steps = Math.max(1, Math.ceil(Math.abs(d) / ((stepDeg * Math.PI) / 180)))
     const out: Pt[] = []
     for (let i = 1; i < steps; i += 1) out.push(onEdge(A + (d * i) / steps))
@@ -155,6 +161,20 @@ export function camera(lon0: number, lat0: number, view = VIEW): Camera {
     flat,
     edge: (p: Pt) => onEdge(azimuth(p)),
     arc,
+    /**
+     * 屏幕点（在球面上）的经纬度 —— 收口时判断「这条弧落在陆地里面还是外面」要用它。
+     * 圆盘内的点用正交投影的逆解；地平线上的点（k=0）解出来的就是那个方位的球面点。
+     */
+    lonLat(p) {
+      const u = (p.x - view.cx) / view.r
+      const v = (view.cy - p.y) / view.r
+      const k2 = Math.max(0, 1 - u * u - v * v)
+      const k = Math.sqrt(k2)
+      const x = u * ex[0] + v * ey[0] + k * ez[0]
+      const y = u * ex[1] + v * ey[1] + k * ez[1]
+      const z = u * ex[2] + v * ey[2] + k * ez[2]
+      return [(Math.atan2(x, z) * 180) / Math.PI, (Math.asin(Math.max(-1, Math.min(1, y))) * 180) / Math.PI]
+    },
     at(lon, lat) {
       const l = (lon * Math.PI) / 180
       const p = (lat * Math.PI) / 180
@@ -188,7 +208,7 @@ export function camera(lon0: number, lat0: number, view = VIEW): Camera {
  * （`vec[3i], vec[3i+1], vec[3i+2]`），环与环之间用 `offsets` 分隔。
  * 抽稀在这里做掉，于是每帧只读不算。
  */
-export type Prepared = { vec: Float64Array; offsets: Int32Array }
+export type Prepared = { vec: Float64Array; offsets: Int32Array; rings: Ring[] }
 
 /**
  * ★**这里不做抽稀**（曾经做过，是错的）。
@@ -228,11 +248,21 @@ export function prepareRings(rings: Ring[]): Prepared {
     }
   })
   offsets[kept.length] = w
-  return { vec, offsets }
+  return { vec, offsets, rings: kept }
 }
 
 /** SVG 路径要的小数位：一位小数，和上游一样（半像素以内，够圆滑也够短）。 */
 const f1 = (n: number) => n.toFixed(1)
+
+/**
+ * 收口策略。默认 `limb`：从段尾沿地平线走回段首、方向取「弧落在陆地里面」的那一边。
+ * `walk` 是旧做法（沿背面顶点的方位角贴到下一个可见顶点，再 `Z` 拉一刀）—— 只留给反向自测
+ * （`GLOBE_CLOSE=walk`），因为它在大环被切成两段时会留下一条横跨圆盘的弦。
+ */
+const CLOSE_MODE: "limb" | "walk" = (() => {
+  const g = globalThis as { process?: { env?: Record<string, string | undefined> } }
+  return g.process?.env?.GLOBE_CLOSE === "walk" ? "walk" : "limb"
+})()
 
 /**
  * 一次投影出全部海岸线，返回给 `<path d>` 的两份串：`fill` 每段闭合（填充要）、
@@ -245,12 +275,16 @@ const f1 = (n: number) => n.toFixed(1)
  * ★**收段不能用直线 `Z` 一拉了事**（这里曾经就是，也是「陆地随着转动残缺」的根因）：
  * 段的两头都落在地平线上，直线收口等于把**弦**画进了圆盘 —— 弦与圆弧之间那一牙陆地丢了
  * （实测各角度漏 5%~22%），而绕到对面再露头的大环（南极洲那种）那条弦会**横穿整个圆盘**
- * （实测多填到 9.6%）。正确做法是**沿地平线圆弧收口**：背面那些顶点虽然看不见，但它们的
- * 投影方向仍然告诉了我们它们该在地平线的哪个方位角上 —— 把投影半径拉到边缘，从段尾顺着
- * 这些方位角走回段首，收出来的就是贴着边缘的那条弧。
+ * （实测多填到 9.6%）。正确做法是**沿地平线圆弧收口**，而且这条弧必须是**陆地内部**那一侧
+ * 的边缘弧 —— 方向由「弧上采几个点、用经纬度射线法数一数落没落在陆地里面」定（见 `closeByLimb`）。
+ *
+ * ★ 收口走到哪儿为止也踩过坑：旧做法沿背面顶点的方位角贴到「下一个可见顶点」就停，再 `Z`
+ * 拉回段首 —— 一个环被地平线切成两段以上时（大环常见），这一刀就是一条**横跨圆盘的弦**
+ * （实测 200°E/65°N 有 99.9 单位，直径才 184），弦与地平线之间那一牙陆地整个丢掉，正是站长
+ * 圈出来的「本来是陆地却没有正确显示」。现在一律沿边缘走回**本段段首**，弦长 ≤ 8° 的弧步。
  */
 export function landPaths(cam: Camera, prep: Prepared): { fill: string; stroke: string } {
-  const { vec, offsets } = prep
+  const { vec, offsets, rings } = prep
   const view = cam.view
   const fill: string[] = []
   const stroke: string[] = []
@@ -260,6 +294,7 @@ export function landPaths(cam: Camera, prep: Prepared): { fill: string; stroke: 
     const from = offsets[r]
     const n = offsets[r + 1] - from
     if (n < 3) continue
+    const ring = rings[r] ?? []
     for (let i = 0; i < n; i += 1) {
       const o = (from + i) * 3
       vis[i] = cam.vec(vec[o], vec[o + 1], vec[o + 2])
@@ -283,21 +318,74 @@ export function landPaths(cam: Camera, prep: Prepared): { fill: string; stroke: 
     }
     const order: number[] = []
     for (let k = 0; k < n; k += 1) order.push(firstBack > 0 ? (firstBack + k) % n : k)
-    // 这一环在屏幕上的绕向（用「y 向上」的坐标系算，与 arc 的方位角同向）。
-    let area2 = 0
-    for (let i = 0; i < n; i += 1) {
-      const j = (i + 1) % n
-      area2 += flat[i].x * (view.cy - flat[j].y) - flat[j].x * (view.cy - flat[i].y)
-    }
-    const winding = Math.sign(area2)
     const coast: string[] = []
     const shaped: string[] = []
     let cur: string[] = []
     let tail = -1 // 当前段最后一个可见顶点下标
     let drawing = false
+    /** 当前段最后一个点的坐标：收口时那条沿地平线的弧要从它起步（见下）。 */
+    let last: Pt | null = null
+    /** 当前段的**段首**：收口要沿地平线回到它。 */
+    let segStart: Pt | null = null
     const start = (p: Pt) => {
       cur.push(`M ${f1(p.x)} ${f1(p.y)}`)
       drawing = true
+      last = p
+      segStart = p
+    }
+    /** 地平线上某个方位角上的点。 */
+    const onEdgeAz = (az: number): Pt => ({ x: view.cx + view.r * Math.cos(az), y: view.cy - view.r * Math.sin(az), k: 0 })
+    /** 点是不是贴在地平线上（收口能用「沿边缘走」的前提）。 */
+    const onLimb = (p: Pt | null) => !!p && Math.hypot(p.x - view.cx, p.y - view.cy) > view.r * 0.97
+    /** 这一环在经纬度上的内点判定（射线法，与逐像素对账用的真值同一套）。 */
+    const insideRing = (lon: number, lat: number) => {
+      let c = false
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i]
+        const [xj, yj] = ring[j]
+        if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) c = !c
+      }
+      return c
+    }
+    /**
+     * ★★ 收口：从段尾**沿地平线走回段首**，方向取「这条弧落在陆地里面」的那一边。
+     *
+     * 曾经的做法是沿背面顶点的方位角贴到「下一个可见顶点」就停，再 `Z` 拉一刀回段首。
+     * 一个环在圆盘边缘被切成两段以上时（大环常见），那一刀就是一条**横跨圆盘的弦**：
+     * 实测 200°E/65°N 那一眼里有一条弦长 99.9 单位（直径 184），弦与地平线之间那一牙
+     * 陆地整个丢了 —— 站长圈出来的「本来是陆地却没有正确显示」就是它。
+     *
+     * 正确的收口是：这条弧必须是**陆地内部**那一侧的边缘弧（圆盘边缘上，陆地与海的分界
+     * 就在这几条弧之间交替）。所以把两个方向各采样几个点、用经纬度射线法数一数落在
+     * 陆地里的比例，谁多走谁 —— 便宜（每段十来个点），但方向永远不会反。
+     */
+    const closeByLimb = (): string[] => {
+      const a = segStart as Pt
+      const b = last as Pt
+      const azA = Math.atan2(view.cy - a.y, a.x - view.cx)
+      const azB = Math.atan2(view.cy - b.y, b.x - view.cx)
+      let d = azB - azA
+      while (d > Math.PI) d -= Math.PI * 2
+      while (d < -Math.PI) d += Math.PI * 2
+      const score = (dd: number) => {
+        let s = 0
+        for (const t of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+          const [lon, lat] = cam.lonLat(onEdgeAz(azA + dd * t))
+          if (insideRing(lon, lat)) s += 1
+        }
+        return s
+      }
+      const dLong = d > 0 ? d - Math.PI * 2 : d + Math.PI * 2
+      const sShort = score(d), sLong = score(dLong)
+      // ★ 远路（>180°）要**赢得很明显**才走：短弧和远弧都可能是「贴着陆地那一侧」，
+      //   而采样本身有噪声 —— 实测 204°E/50°N 那一眼里 短=0/长=1，远路靠一个运气点胜出，
+      //   于是收口绕圆盘一整圈（357°、45 步），整个圆盘被填成陆地（站长截图里的那种）。
+      //   判据改成「远弧 5 点里 ≥4 点落在陆地、且比短弧多 ≥2」；打平就按短弧（南极洲那种
+      //   整条地平线都在陆地里的情形，正确解本来就是短弧）。
+      const use = sLong >= 4 && sLong >= sShort + 2 ? dLong : d
+      const out: string[] = []
+      for (const mid of cam.arc(b, a, 8, azB, azB - use)) out.push(`L ${f1(mid.x)} ${f1(mid.y)}`)
+      return out
     }
     /** 收段。`open` = 两头都在地平线上 —— 这时要沿边缘收，不能拉直线。 */
     const flush = (open: boolean) => {
@@ -307,22 +395,56 @@ export function landPaths(cam: Camera, prep: Prepared): { fill: string; stroke: 
       if (!open) {
         shaped.push(`${d} Z`)
         cur = []
+        segStart = null
         return
       }
-      // ★走到**下一个可见顶点**就停 —— 不能走到「段首」：段首可能是这条环的 index 0
+      // ★两头都在地平线上时，收口沿边缘走回段首（方向按「弧落在陆地里面」选，见 closeByLimb）。
+      //   GLOBE_CLOSE=walk 可以切回旧做法，用来做反向自测。
+      if (CLOSE_MODE !== "walk" && onLimb(segStart) && onLimb(last)) {
+        const back = closeByLimb()
+        shaped.push(`${d}${back.length ? " " + back.join(" ") : ""} Z`)
+        cur = []
+        segStart = null
+        return
+      }
+      // ↓ 下面是**兜底**路径：段首/段尾不在地平线上（交点算不出来那种）或 GLOBE_CLOSE=walk 时才走。
+      //   ★走到**下一个可见顶点**就停 —— 不能走到「段首」：段首可能是这条环的 index 0
       //   （可见的），那样会把段尾之后所有可见顶点也贴到地平线上绕圆盘一整圈，
       //   整块圆盘就被填成陆地了（实测 Frankfurt/London 多填 99%~100%）。
       const back: string[] = []
       let k = (tail + 1) % n
       let guard = 0
-      let prev: Pt | null = null
+      /**
+       * ★ 收口沿地平线走，方向**按这一环的顶点顺序展开**（unwrap），不靠整环的投影绕向。
+       *
+       * 曾经的做法是「跨度 >60° 时按这一环的投影绕向来」，实测会把方向搞反：280°E 那一眼里
+       * 有一步的方位角是 161.9° → 90.9°（差 −71°，本该顺时针走 71°），绕向判定选了逆时针，
+       * 于是弧从 161.9° 一路走到 224.2° 再**直线跳回** 90.9° —— 一条 168.9 单位（几乎直径）
+       * 的弦，南太平洋被填成陆地 76%、陆地又漏 24%。整圈 36 个角度的逐像素对账：
+       * 按绕向 漏 1.83% / 多填 3.14%（最差单角 105%）；按顶点顺序展开 漏 1.25% / 多填 1.15%
+       * （最差单角 29.9%）。
+       *
+       * 展开的做法：背面顶点的方位角在「正对反极点」那一带是不稳定的（会来回跳），所以不直接
+       * 用它的绝对值，而是**累加相邻两次的角差**（取 (−180°,180°]），得到一条连续的走向；
+       * 再从段尾沿这条走向一步步插值回下一个可见顶点 —— 于是这条边永远贴着地平线走。
+       */
+      let prev: Pt | null = last
+      let prevAz = last ? Math.atan2(view.cy - last.y, last.x - view.cx) : null
       while (guard < n && !vis[k]) {
         guard += 1
         const raw = flat[k]
         // 投影半径太小的点（正对观察者反极点那一带）方位角没有意义，跳过。
         if (Math.hypot(raw.x - view.cx, raw.y - view.cy) > view.r * 0.06) {
           const p = cam.edge(raw)
-          if (prev) for (const mid of cam.arc(prev, p, winding)) back.push(`L ${f1(mid.x)} ${f1(mid.y)}`)
+          const az = Math.atan2(view.cy - p.y, p.x - view.cx)
+          if (prev && prevAz !== null) {
+            let d = az - prevAz
+            while (d > Math.PI) d -= Math.PI * 2
+            while (d < -Math.PI) d += Math.PI * 2
+            const target = prevAz + d
+            for (const mid of cam.arc(prev, p, 10, prevAz, target)) back.push(`L ${f1(mid.x)} ${f1(mid.y)}`)
+            prevAz = target
+          }
           back.push(`L ${f1(p.x)} ${f1(p.y)}`)
           prev = p
         }
@@ -330,6 +452,7 @@ export function landPaths(cam: Camera, prep: Prepared): { fill: string; stroke: 
       }
       shaped.push(`${d}${back.length ? " " + back.join(" ") : ""} Z`)
       cur = []
+      segStart = null
     }
     for (let step = 0; step < n; step += 1) {
       const i = order[step]
@@ -341,11 +464,15 @@ export function landPaths(cam: Camera, prep: Prepared): { fill: string; stroke: 
       if (a && b) {
         if (!drawing) start(a)
         cur.push(`L ${f1(b.x)} ${f1(b.y)}`)
+        last = b
         tail = j
       } else if (a && !b) {
         const c = cam.limb(av, bv)
         if (!drawing) start(a)
-        if (c) cur.push(`L ${f1(c.x)} ${f1(c.y)}`)
+        if (c) {
+          cur.push(`L ${f1(c.x)} ${f1(c.y)}`)
+          last = c
+        }
         tail = i
         flush(true)
         drawing = false
@@ -353,6 +480,7 @@ export function landPaths(cam: Camera, prep: Prepared): { fill: string; stroke: 
         const c = cam.limb(bv, av)
         if (!drawing) start(c ?? b)
         cur.push(`L ${f1(b.x)} ${f1(b.y)}`)
+        last = b
         tail = j
       }
     }
@@ -433,6 +561,11 @@ export function globeCaption(lon: number, lat: number, quality: Quality): string
 /**
  * 标签宽度：等宽字体下一个半角 5.05、一个全角 8.6（上游同一份估法）。
  * 这是给「左右两摞标签要留多宽」用的，不需要像素级准确，只需要中西文有区别。
+ *
+ * ★ 它只是**兜底**：等宽字体实际字宽 ≈0.6em，这份估法偏小一成（上游也是这么估的），
+ * 拿它判「这行字放不放得下」会漏 —— 漏了那半句话就被 SVG 的视口直接裁掉、页面上什么都不报。
+ * 所以组件会传一个**真量**的函数进来（`measureText`，字体与 `.globe-label` 同一套）；
+ * 量不出来（老浏览器、没有 canvas）才退回这里。
  */
 export function labelWidth(text: string): number {
   let w = 0
@@ -445,6 +578,17 @@ export function inkWidth(text: string): number {
   return labelWidth(text) * 1.18
 }
 
+/** 真量一行字有多宽（用户单位）。组件用 canvas 的 `measureText` 实现，纯函数层不认识 DOM。 */
+export type LabelMeasure = (text: string) => number
+
+/** `.globe-label` 是 `stroke-width: 3` + `paint-order: stroke`：墨迹比字宽每边还多 1.5。 */
+const INK_STROKE = 3
+
+/** 一行标签的墨迹宽度：给了真量函数就用它（更准、也更省字），否则退回估法。 */
+export function inkWidthWith(measure: LabelMeasure | undefined, text: string): number {
+  return measure ? measure(text) + INK_STROKE : inkWidth(text)
+}
+
 /**
  * 把一段文字截到放得下为止，多出来的用 `…`。
  *
@@ -452,14 +596,14 @@ export function inkWidth(text: string): number {
  * 窄屏是按宽度贴合的，溢出的部分会被 SVG 的视口直接裁掉、页面上什么都不报）。
  * 宁可少几个字，也不留半句话。
  */
-export function trimLabel(text: string, max: number): string {
-  if (!Number.isFinite(max) || inkWidth(text) <= max) return text
+export function trimLabel(text: string, max: number, measure?: LabelMeasure): string {
+  if (!Number.isFinite(max) || inkWidthWith(measure, text) <= max) return text
   const chars = [...text]
   let out = ""
   for (const ch of chars) {
     const next = out + ch
-    // 留出省略号本身的位置（估 8），否则截完反而多出一点、又被裁。
-    if (inkWidth(`${next}…`) > max) break
+    // 留出省略号本身的位置，否则截完反而多出一点、又被裁。
+    if (inkWidthWith(measure, `${next}…`) > max) break
     out = next
   }
   return `${out.trimEnd()}…`
@@ -670,19 +814,19 @@ export type Placed = GlobeNode & {
  *
  * `maxWidth` 是"一行标签最宽能有多宽"（用户单位，见组件的画布留白那段）：宽屏上它很大
  * （两侧的空白也算进去），窄屏上就只剩两摞标签到画布边缘的那点地方 —— 超出的字用 `…` 截掉，
- * 绝不留给 SVG 视口去裁。
+ * 绝不留给 SVG 视口去裁。`measure` 是那个**真量字宽**的函数（见 `inkWidthWith`）。
  */
-export function layoutLabels(cam: Camera, points: GlobeNode[], sides: Map<string, "L" | "R">, maxWidth = Infinity, cx = VIEW.cx): Placed[] {
+export function layoutLabels(cam: Camera, points: GlobeNode[], sides: Map<string, "L" | "R">, maxWidth = Infinity, cx = VIEW.cx, measure?: LabelMeasure): Placed[] {
   const items: Placed[] = []
   for (const point of points) {
     const p = cam.at(point.ll[0], point.ll[1])
     if (!p) continue
-    const left = trimLabel(`${point.name} · ${point.code}`, maxWidth)
-    const right = trimLabel(`${point.code} · ${point.name}`, maxWidth)
+    const left = trimLabel(`${point.name} · ${point.code}`, maxWidth, measure)
+    const right = trimLabel(`${point.code} · ${point.name}`, maxWidth, measure)
     items.push({
       ...point, px: p.x, py: p.y, lx: 0, ly: 0, end: false, label: right,
       // 两个方向都排得下才算这一行长；宽度也按截断之后的算，左右两摞才配得平。
-      width: Math.max(labelWidth(left), labelWidth(right)),
+      width: Math.max(inkWidthWith(measure, left), inkWidthWith(measure, right)),
       left, right,
     } as Placed)
   }
@@ -725,9 +869,10 @@ export function layoutLabels(cam: Camera, points: GlobeNode[], sides: Map<string
       sides.set(item.key, end ? "L" : "R")
     })
   }
-  // 两摞都要完全落在圆盘外面：460 宽的画布里留给它们的正是 126 / 334 这两条线。
-  stack(left, 126, true)
-  stack(right, 334, false)
+  // 两摞都要完全落在圆盘外面：460 宽的画布里留给它们的正是 123 / 337 这两条线
+  // —— 与上游 mm-design 的 `<text x>` 逐字一致（实测它的标签就是 123/337）。
+  stack(left, 123, true)
+  stack(right, 337, false)
   return items
 }
 

@@ -12,47 +12,46 @@ import { cardStyleOrNull, DEFAULTS, normalizeConfig, type ThemeConfig } from "@/
 const SHORT = "jikasei"
 
 /**
- * 顶栏那张站标最终加载成功的地址，缓存在访客浏览器里（本站自己的来源，不涉及隐私）。
- * 下次刷新时 `public/icon-probe.js` 会在文档最早就把它贴上——浏览器那条 favicon 请求
- * 因此直接就是自定图，标签页不会再先闪主题自带那张娃娃头（站长报过的 BUG）。
- * **必须与 public/icon-probe.js 里的 KEY 一致。**
- */
-export const ICON_CACHE_KEY = "jikasei:site_icon"
-
-/**
  * 访客自己的两个偏好：**看不看节点地球**、**列表用哪种卡片形态**。都只存在他自己浏览器里，
  * 不写 hub —— 这与「站点级设置只存 hub、访客偏好才放 localStorage」是同一条规矩（见
  * `monitor-theme-porting` 铁律 4）。两者的默认都来自站长的设置：没选过（或存的值读不懂）
  * 就跟着设置走。
  *
- * 为什么不做成主题设置项：站点设置项一到 7 个，后台那个对话框就切成两列、排版散掉
- * （hub 的判据是"非标题字段 > 6"，实测过）。而这两件事本来就该访客自己定。
+ * 为什么还要给访客一份：站长那一档是**全站默认**（「节点地球」开关 2026-10-07 加进主题设置，
+ * 与「主题模式」一起共 6 项、面板仍是一页平铺的单列），而访客仍该能自己关掉 —— 他的选择只影响
+ * 他自己，站长改默认也不会被他的旧选择顶掉（选成与站长相同＝删掉记录、重新跟着走）。
  */
 const GLOBE_KEY = "jikasei:globe"
 const CARD_STYLE_KEY = "jikasei:card_style"
 
-/** 节点地球看不看：默认看（只记"关掉"这一个动作）。 */
-export function useGlobeVisible(): [boolean, () => void] {
-  const [on, setOn] = useState(() => {
+/**
+ * 节点地球看不看：默认取**站长在「主题设置 → 节点地球」里那一档**（`siteDefault`）；
+ * 访客自己在顶栏那枚图标上动过，就以他的为准。
+ *
+ * 选成与站长相同的那一档时**把记录删掉**（= 重新「跟着站长走」，以后站长改默认他也跟着变）——
+ * 与 `useCardStyle` 同一套口径。存储被禁用（隐私模式）时这次会话里照样能开关，只是记不住。
+ */
+export function useGlobeVisible(siteDefault: boolean): [boolean, () => void] {
+  const [saved, setSaved] = useState<string | null>(() => {
     try {
-      return localStorage.getItem(GLOBE_KEY) !== "0"
+      return localStorage.getItem(GLOBE_KEY)
     } catch {
-      // 隐私模式 / 存储被禁用：这次会话里照样能开关，只是记不住。
-      return true
+      return null
     }
   })
+  const on = saved === null ? siteDefault : saved !== "0"
   return [
     on,
     () => {
-      setOn((prev) => {
-        const next = !prev
-        try {
-          localStorage.setItem(GLOBE_KEY, next ? "1" : "0")
-        } catch {
-          // 同上：记不住就记不住，界面照常。
-        }
-        return next
-      })
+      const next = !on
+      const record = next === siteDefault ? null : next ? "1" : "0"
+      try {
+        if (record === null) localStorage.removeItem(GLOBE_KEY)
+        else localStorage.setItem(GLOBE_KEY, record)
+      } catch {
+        // 同上：记不住就记不住，界面照常。
+      }
+      setSaved(record)
     },
   ] as const
 }
@@ -87,73 +86,35 @@ export function useCardStyle(siteDefault: ThemeConfig["cardStyle"]): [ThemeConfi
 
 // 类型、默认值、收窄与迁移都在 site-settings.ts；这里只留取数据与页面侧的钩子，
 // 顺手再导出一遍，页面统一从 `@/lib/theme-config` 拿。
-export { DEFAULTS, FARM_OFF, hasGroupTabs, hasSummary, isBudgetLayout } from "@/lib/site-settings"
+export { DEFAULTS, hasGroupTabs, hasSummary, isBudgetLayout } from "@/lib/site-settings"
 export type { ThemeConfig } from "@/lib/site-settings"
 
+// ★ 站点图标（标签页／书签／手机桌面快捷方式）1.25.0 起**不在这里管了**：
+// hub 1.4.0 的面板「设置 → 站点图标」一设，`/favicon.svg`、`/favicon.ico`、`/apple-touch-icon.png`
+// 都由 hub 回答，而且 hub 在送 index.html 时会把这两个地址改写成 `?v=<内容摘要>` —— 站长换了图，
+// URL 就变了，浏览器自己会重新取（Chrome 对标签页图标是按 URL 记的，不换 URL 就不重取）。
+// 所以主题侧既不需要那个设置项，也不需要早跑脚本去改写 `<link>`；顶栏那枚圆标直接指同一个地址。
+// 主题自带的 `public/favicon.svg` + `public/apple-touch-icon.png`（同一枚站标生成，
+// 见 tools/make_icons.py）是 hub 上没设图标时的兜底。
+
 /**
- * 标签页／书签／手机桌面快捷方式的图标，跟顶栏那枚站标用同一个地址：
- * 站长在「主题设置」里只填一处，页头与标签页就不会各是各的。
+ * 本站约定的位置（`/chicken/`）上有没有装那座小鸡农场。装了就把入口指过去，没装就什么都不显示——
+ * 「装主题」与「部署小鸡农场」是两件事，不能因为装了主题就多出一枚点不到东西的图标。
  *
- * 页面里可能有多个 `<link rel="icon">`（不同尺寸/格式），也可能一个都没有——
- * 一律就地改写、缺的补一个；`apple-touch-icon` 也一并跟上（iOS 加到主屏读的是它）。
- * **等顶栏那张出了结果才动这里**：站长那张图第一次是从零开始下载的，标签页与页头
- * 同时去要同一个地址，两条并发请求在弱链路（隧道、窄上行）上会互相踩——页头那张当场
- * 失败、顶栏的图标整块消失。跟着顶栏走就不会有两条并发，兜底也与它同一套。
- */
-export function useSiteFavicon(icon: string | null) {
-  useEffect(() => {
-    // 传 null = 顶栏那张还没出结果：先维持 index.html 里的静态值，别抢跑。
-    if (!icon) return
-    const setIcons = (href: string) => {
-      const icons = document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')
-      if (icons.length) icons.forEach((link) => { link.href = href })
-      else {
-        const link = document.createElement("link")
-        link.rel = "icon"
-        link.href = href
-        document.head.append(link)
-      }
-      let touch = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]')
-      if (!touch) {
-        touch = document.createElement("link")
-        touch.rel = "apple-touch-icon"
-        document.head.append(touch)
-      }
-      touch.href = href
-    }
-
-    // 验收用（tools/verify_icons.mjs）：顶栏那张出结果的时刻——早跑脚本贴上的图标
-    // 应当早于它，否则就还是「等入口包 + <img> onLoad」那条老路。
-    ;(window as unknown as { __iconSettledAt?: number }).__iconSettledAt = Math.round(performance.now())
-    setIcons(icon)
-    // 记下这次真的加载成功的那张：下次刷新时 public/icon-probe.js 先把它贴上，标签页
-    // 就不会再闪主题自带那张（站长报过这个 BUG）。取不到时这里是兜底那张（= DEFAULTS），
-    // 下一趟照旧；两级都取不到则进不来（调用处传的是 null），缓存维持上一次的值不动。
-    try {
-      localStorage.setItem(ICON_CACHE_KEY, icon)
-    } catch {
-      // 隐私模式 / 存储被禁用：不缓存，图标照常按设置显示。
-    }
-  }, [icon])
-}
-
-/**
- * 本站约定的位置（`/chicken/`）上有没有养鸡场。装了就把入口指过去，没装就什么都不显示——
- * 「装主题」与「部署养鸡场」是两件事，不能因为装了主题就多出一枚点不到东西的图标。
+ * ★ 1.25.0 起**没有设置项了**（原来那格「养鸡场入口」可以填地址或填 `off` 关掉）：探测就是唯一的
+ * 来源，挂载即探一次。站长在面板里没有可配的开关，也就不存在「面板关了、页面还开着」这种看不见的状态。
  *
  * ★ 判据是**内容**而不是状态码：hub 对未知路径会回落到当前主题的 `index.html` 并回 200，
  * 所以 `/chicken/` 在「装了」与「没装」两种情况下都是 200 —— 拿状态码探等于恒真。
- * 养鸡场的 location 里有一条 `^~ /chicken/api/` 反代到 hub，回的是 JSON；
+ * 小鸡农场的 location 里有一条 `^~ /chicken/api/` 反代到 hub，回的是 JSON；
  * 没装时同一条路径同样落到 index.html（HTML），`res.json()` 会抛错。
  *
- * 代价是没装养鸡场的站每次加载多一次请求（落回 index.html，约 1KB）；装了的那次拿到的
- * 就是它自己的节点列表。站长想省掉这次探测、或指向别处（包括别人的公开养鸡场），
- * 在「主题设置」里填一个地址即可，那时这个钩子整个不跑（`enabled` 为假）。
+ * 代价是没装小鸡农场的站每次加载多一次请求（落回 index.html，约 1KB）；装了的那次拿到的
+ * 就是它自己的节点列表。
  */
-export function useLocalFarm(enabled: boolean): string {
+export function useLocalFarm(): string {
   const [found, setFound] = useState(false)
   useEffect(() => {
-    if (!enabled) return
     let alive = true
     fetch("/chicken/api/nodes", { headers: { Accept: "application/json" } })
       .then((res) => res.json())
@@ -164,43 +125,28 @@ export function useLocalFarm(enabled: boolean): string {
         // 没装、或装了但那台没回 JSON：都不显示入口，不报错、不占位。
       })
     return () => { alive = false }
-  }, [enabled])
-  // 关掉开关 / 填了地址时不返回地址（不必把探测结果清掉：站点设置在一次加载里只会到一次，
-  // enabled 至多从假变真一回，页面上没有会让它翻回去的路径；真改了设置就是整页重载）。
-  return enabled && found ? "/chicken/" : ""
+  }, [])
+  return found ? "/chicken/" : ""
 }
 
 /**
  * 读回本站的设置。任何失败都回落默认值：后台没存过（Hub 回 `{}`）、旧 hub 没这个接口、
  * 反代拦了——都不该让公开页白屏或缺一块。收窄与迁移见 `normalizeConfig`。
  */
-export function useThemeConfig(): { config: ThemeConfig; loaded: boolean } {
+export function useThemeConfig(): ThemeConfig {
   const [config, setConfig] = useState(DEFAULTS)
-  // 设置到没到。顶栏那枚养鸡场图标靠它决定要不要去探测本站（见 useLocalFarm）：
-  // 没等到设置就探，会让「填了自己地址」和「关掉入口」的站白探一次。
-  const [loaded, setLoaded] = useState(false)
   useEffect(() => {
     let active = true
-    // public/icon-probe.js 在文档最早就问过同一份设置了（标签页图标要赶在浏览器发 favicon
-    // 请求之前决定贴哪张），它把 promise 挂在 window 上转交过来：这里直接复用，同一次加载
-    // 因此只发一条设置请求。它没起来（老包 / CSP）或没拿到（返回 null）时，这里自己再问一次。
-    const early = (window as unknown as { __iconProbeConfigPromise?: Promise<Partial<ThemeConfig> | null> }).__iconProbeConfigPromise
-    const request = early
-      ? early.then((prefetched) => prefetched ?? api<Partial<ThemeConfig>>(`/themes/${SHORT}/config`))
-      : api<Partial<ThemeConfig>>(`/themes/${SHORT}/config`)
-    request
+    api<Partial<ThemeConfig>>(`/themes/${SHORT}/config`)
       .then((saved) => {
         if (!active) return
         // 逐项收窄 + 旧值迁移都在 site-settings.ts（那里能单测）。
         setConfig(normalizeConfig(saved))
-        setLoaded(true)
       })
       .catch(() => {
-        // 取不到设置（旧 hub、反代拦了）也要置真：否则那次自动探测会被永远挡着、
-        // 图标永远不出现。默认值已经就位，公开页照常渲染。
-        setLoaded(true)
+        // 取不到设置（旧 hub、反代拦了）就维持默认值：公开页照常渲染，不该白屏或缺一块。
       })
     return () => { active = false }
   }, [])
-  return { config, loaded }
+  return config
 }

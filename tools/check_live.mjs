@@ -43,7 +43,7 @@ await send('Page.addScriptToEvaluateOnNewDocument', { source: `(function () {
   const ric = window.requestIdleCallback
   window.requestIdleCallback = function (cb, opt) { window.__m.idleRequests.push(Math.round(performance.now())); return ric.call(window, cb, opt) }
   try { new PerformanceObserver(function (l) { for (const e of l.getEntries()) if (/NodeDetail-/.test(e.name)) { window.__m.chunkCount++; if (window.__m.chunkMs === null) { window.__m.chunkMs = Math.round(e.startTime); window.__m.chunkUrl = e.name } } }).observe({ type: 'resource', buffered: true }) } catch (e) {}
-  setInterval(function () { if (window.__m.chart === null && document.querySelector('.recharts-surface')) window.__m.chart = Math.round(performance.now()) }, 5)
+  setInterval(function () { if (window.__m.chart === null && document.querySelector('[data-chart]')) window.__m.chart = Math.round(performance.now()) }, 5)
 })()` })
 await send('Network.setCacheDisabled', { cacheDisabled: true })
 await send('Page.navigate', { url: SITE + '/' })
@@ -69,9 +69,9 @@ await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.
 await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', clickCount: 1 })
 for (let i = 0; i < 150; i++) { await sleep(200); if (await js('window.__m.chart !== null')) break }
 const raw = JSON.parse(await js('JSON.stringify(window.__m)'))
-const charts = await js(`document.querySelectorAll('.recharts-surface').length`)
+const charts = await js(`document.querySelectorAll('[data-chart]').length`)
 console.log(`  ${charts > 0 ? 'PASS' : 'FAIL'}  点开一台机器后画出了图表（${charts} 张，点击→图表 ${raw.chart === null ? '未画出' : raw.chart - raw.clickAt + 'ms'}）`)
-const iconReqs = net.filter((u) => /favicon|site-icon/.test(u))
+const iconReqs = net.filter((u) => /favicon|apple-touch/.test(u))
 console.log(`  图标请求：${JSON.stringify([...new Set(iconReqs.map((u) => u.replace(SITE, '')))])}`)
 console.log(`  控制台异常：${errs.length ? errs.slice(0, 3).join(' | ') : '无'}`)
 sock.close(); chrome.kill()

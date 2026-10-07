@@ -31,8 +31,8 @@ if (stale.length) {
   throw new Error(`dist/ 比这些源文件旧，先跑 npm run build：\n  ${stale.join('\n  ')}`)
 }
 
-// public/ 里的东西必须原样落到 dist/：国旗与站标都是静态文件，缺了页面照样 200。
-for (const file of ['dist/site-icon.png', 'dist/flags', 'dist/title-probe.js']) {
+// public/ 里的东西必须原样落到 dist/：国旗、站点图标、标题探针都是静态文件，缺了页面照样 200。
+for (const file of ['dist/favicon.svg', 'dist/favicon.ico', 'dist/apple-touch-icon.png', 'dist/flags', 'dist/title-probe.js']) {
   if (!existsSync(file)) throw new Error(`dist/ 里缺 ${file}，public/ 没被拷进去？`)
 }
 
@@ -55,7 +55,7 @@ execFileSync('tar', ['-czf', archive, '-C', staging, ...files], { stdio: 'inheri
 // 按 CRLF 也切：Windows 的 bsdtar 列出的每行末尾带 \r，只切 \n 的话每个条目都多一个尾随字符，
 // 下面那些字面量比对就会全部落空（Linux / macOS 的 tar 不受影响）。
 const listing = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).trim().split(/\r?\n/)
-for (const need of ['theme.json', 'dist/index.html', 'dist/site-icon.png', 'preview.png']) {
+for (const need of ['theme.json', 'dist/index.html', 'dist/favicon.svg', 'preview.png']) {
   if (!listing.includes(need)) throw new Error(`包内缺 ${need}（共 ${listing.length} 项）`)
 }
 const size = statSync(archive).size

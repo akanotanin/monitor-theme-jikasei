@@ -9,26 +9,12 @@
  * `scripts/check-config.mjs` 在打包前对一遍。
  */
 
-/**
- * 顶栏养鸡场入口的「关闭」值：与「留空＝自动探测本站」「填地址＝自定义」并列的第三种状态。
- * 1.6.0 把原来两个键（`showFarmEntry` 开关 + `farmUrl` 地址）并进 `farmUrl` 这一个键，
- * 三种状态挤在一格里，靠这个哨兵值表达「关掉」。
- */
-export const FARM_OFF = "off"
-
 export type ThemeConfig = {
-  /** 顶栏那枚圆形站标的地址，同时也是标签页图标；取不到就退回主题自带那张。 */
-  siteIcon: string
-  /**
-   * 顶栏养鸡场入口：空串 = 自动探测本站的 `/chicken/`；`FARM_OFF` = 不显示入口；
-   * 其它 = 自定义地址（同域路径或完整网址）。
-   */
-  farmUrl: string
   /**
    * 卡片形态：classic = 速率与总量各一行（2×2 四格）、不含延迟；plain = 网络合成一行，
    * 读数窗另换一套视觉处理（标签提亮、条压细、底注变小）、不含延迟；latency = 网络一行 +
    * 三网延迟；detailed = 再加在线时长、价格与到期；compact = 一行一台的表格（密度最高）。
-   * 默认是 plain（站长的选择，2026-10-01 起）。
+   * 默认「详细」（2026-10-06 站长定的）。
    */
   cardStyle: "classic" | "latency" | "detailed" | "plain" | "compact"
   /**
@@ -44,7 +30,20 @@ export type ThemeConfig = {
   pingLines: string
   /** 「备注显示位置」：备注小卡片摊在哪儿（卡片 / 整页详情 / 两边都摊）。 */
   remarkPlacement: RemarkPlacement
+  /**
+   * 节点地球显不显示：这是**站长给的默认**，访客在顶栏那枚图标上自己关/开过的记在他自己浏览器里
+   * （localStorage），以他的为准（与 `cardStyle` 同一套口径：站点级设置存 hub、访客偏好才落本地）。
+   */
+  globeOn: boolean
+  /** 站点用哪一档明暗：随系统 / 随北京时间自动 / 固定亮 / 固定暗（访客自己的开关优先）。 */
+  themeMode: ThemeMode
 }
+
+/** 四档明暗：`system` 随系统、`auto` 按北京时间自动、`light`/`dark` 固定。 */
+export type ThemeMode = "system" | "auto" | "light" | "dark"
+
+/** 四档的取值与顺序（后台那格下拉、`normalizeConfig` 都照它）。 */
+export const THEME_MODES: ThemeMode[] = ["system", "auto", "light", "dark"]
 
 /** 「备注显示位置」：`both` 卡片与详情页（默认）/ `card` 只在卡片 / `detail` 只在整页详情 / `none` 都不显示。 */
 export type RemarkPlacement = "both" | "card" | "detail" | "none"
@@ -69,11 +68,6 @@ export function remarksOnDetail(p: RemarkPlacement): boolean {
 }
 
 export const DEFAULTS: ThemeConfig = {
-  siteIcon: "/site-icon.png",
-  // 留空 = 自动：本站在约定的 `/chicken/` 上真装了养鸡场才显示那枚图标。
-  // 「装主题」与「部署养鸡场」是两件事，站长没装就不该多出一枚点了没反应的图标；
-  // 想固定指向别处（包括别人的公开那座）就填地址，想一律不显示就填 `off`。
-  farmUrl: "",
   // 默认「详细」（2026-10-06 站长定的）：在「延迟」之上再摊在线时长、价格与到期，一眼看全一台机器。
   // 想更轻的站切「简约」（底部收成一行两段、不发延迟请求）；机器多、想一屏看全的切「紧凑」（一行一台的表格）。
   cardStyle: "detailed",
@@ -85,6 +79,10 @@ export const DEFAULTS: ThemeConfig = {
   pingLines: "",
   // 备注显示位置：默认两边都摊。
   remarkPlacement: "both",
+  // 地球默认显示：它本来就是这块页面的招牌，站长要更安静的版面可以在后台关掉。
+  globeOn: true,
+  // 明暗默认「随系统」：与 1.25.0 之前的行为一致（那时没有这一项，就是跟着系统走）。
+  themeMode: "system",
 }
 
 /** 卡片形态的五档，**按界面上要显示的顺序**（顶栏那枚菜单、后台那格下拉都照它排）。 */
@@ -158,34 +156,28 @@ export function isBudgetLayout(top: ThemeConfig["listTop"]): boolean {
 }
 
 /**
- * 顶栏养鸡场入口：1.5.0 及更早是两个键——`showFarmEntry`（布尔开关）+ `farmUrl`（地址，
- * 空串＝自动探测本站）。1.6.0 并成一个 `farmUrl`：空串＝自动、`off`＝关闭、其它＝地址。
- *
- * 要迁的是**「关掉」那一点信息**：老站点把入口关了（`showFarmEntry` 为假）而地址键从没动过，
- * 就直接落到 `off`——不迁的话，它会静默地又冒出一枚站长早就关掉的图标。地址键一旦存在
- * （哪怕是空串）就按它来：那是站长明确定过的值，也能覆盖「并入之后重新填了地址」的情形。
- */
-function farmEntryOf(s: Record<string, unknown>): string {
-  if (typeof s.farmUrl === "string") return s.farmUrl.trim()
-  if (s.showFarmEntry === false) return FARM_OFF
-  return DEFAULTS.farmUrl
-}
-
-/**
  * 收窄 Hub 存回来的设置。逐项收窄类型：Hub 存的是自由 JSON，站长清空输入框可能留下空串或 null，
- * 直接展开会让一个空串把默认图标顶掉。
+ * 直接展开会让一个空串把默认值顶掉。
+ *
+ * ★顶栏那枚入口图标（养鸡场）1.25.0 起**不再有设置项**：主题一律自动探测本站约定的
+ * `/chicken/`（见 `@/lib/theme-config` 的 `useLocalFarm`）——「装主题」与「部署养鸡场」是两件事，
+ * 装了才显示、没装不占位，站长不必配。老站点配置里若还留着 `farmUrl` / `showFarmEntry`
+ * （1.6.0 之前那两个键，或后来那个三态键），这里**一律不再读**：面板上已经没有那一格，
+ * 页面要是还听它的，就成了「看不见的开关」——站长想关也关不掉（与 1.6.0 并档时那条静默迁移
+ * 是相反方向的取舍：那次面板里还留着那一格，所以要让面板说了算；这次那一格已经不在面板上了）。
+ * 那些键留在 Hub 的站点配置里没人读，无害。
+ *
+ * 站点图标（`siteIcon`）1.25.0 起**不再由主题管**：hub 1.4.0 的面板「设置 → 站点图标」一设，
+ * `/favicon.svg`、`/favicon.ico`、`/apple-touch-icon.png` 全由 hub 回答，换主题也保留；主题只要
+ * 自带一份同名兜底（`public/favicon.svg`、`public/apple-touch-icon.png`）。老站点配置里若还留着
+ * 那个键，只是 Hub 站点配置里一个没人读的键（无害，与「服务器备注」同）。
  *
  * 备注不在这一层：hub 按节点下发的「公开备注」（给访客）与「私有备注」（只给登录的管理员）
- * 走 `/api/nodes`，见 `@/lib/notes`。主题这边没有备注设置项（1.15.x 那份「服务器备注」清单
- * 已删）；老站点配置里若还留着那个键，只是 Hub 站点配置里一个没人读的键（无害）。
+ * 走 `/api/nodes`，见 `@/lib/notes`。
  */
 export function normalizeConfig(saved: unknown): ThemeConfig {
   const s = (saved && typeof saved === "object" ? saved : {}) as Record<string, unknown>
   return {
-    siteIcon:
-      typeof s.siteIcon === "string" && s.siteIcon.trim() ? s.siteIcon.trim() : DEFAULTS.siteIcon,
-    // 养鸡场入口见 farmEntryOf：空串与 off 都是有意义的值，不能像 siteIcon 那样回落。
-    farmUrl: farmEntryOf(s),
     // select：值不在声明里的选项内（旧版本、手改）就当没保存过，回落默认；
     // 旧值 "detail" 迁到 "latency"（见 cardStyleOf）。
     cardStyle: cardStyleOf(s.cardStyle),
@@ -197,5 +189,42 @@ export function normalizeConfig(saved: unknown): ThemeConfig {
     remarkPlacement: REMARK_PLACEMENTS.includes(s.remarkPlacement as RemarkPlacement)
       ? (s.remarkPlacement as RemarkPlacement)
       : DEFAULTS.remarkPlacement,
+    // 开关：只认真布尔。老站点配置里没有这个键（→ 默认显示）；写成 "false" 这种字符串不算数。
+    globeOn: typeof s.globeOn === "boolean" ? s.globeOn : DEFAULTS.globeOn,
+    // 四档明暗：认不出来的取值（旧版本、手改）回落默认，别让页面卡在一个不存在的档上。
+    themeMode: THEME_MODES.includes(s.themeMode as ThemeMode) ? (s.themeMode as ThemeMode) : DEFAULTS.themeMode,
   }
+}
+
+/**
+ * 北京时间（UTC+8）现在是几点（0–23）。
+ *
+ * 用固定偏移而不是 `Intl`：中国全境不实行夏令时，UTC+8 就是北京时间；`Intl` 那套在
+ * 少数老浏览器/精简 ICU 上会抛，而这里要的只是一个钟点。
+ */
+export function beijingHour(at: Date = new Date()): number {
+  return (at.getUTCHours() + 8) % 24
+}
+
+/** 「随北京时间自动切换」的夜间窗口：**19:00 起、次日 07:00 止**（用暗色）。 */
+export const NIGHT_FROM = 19
+export const NIGHT_TO = 7
+
+/** 按北京时间算，现在是不是夜里（该用暗色）。 */
+export function isBeijingNight(at: Date = new Date()): boolean {
+  const h = beijingHour(at)
+  return h >= NIGHT_FROM || h < NIGHT_TO
+}
+
+/**
+ * 站点设置 + 系统的明暗偏好 → 最终该不该用暗色。
+ *
+ * `auto` 只按钟点走（不查日出日落：那要经纬度与天文算法，而站长要的是「白天亮、晚上暗」）；
+ * 访客自己点过那枚太阳/月亮图标的话，组件会拿他的选择**压过**这里的结论。
+ */
+export function resolveDark(mode: ThemeMode, systemDark: boolean, at: Date = new Date()): boolean {
+  if (mode === "dark") return true
+  if (mode === "light") return false
+  if (mode === "auto") return isBeijingNight(at)
+  return systemDark
 }

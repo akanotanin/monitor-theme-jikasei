@@ -426,7 +426,11 @@ check('★ 刷新之后仍然是关着的', reloaded.panel === false && reloaded
 await js(`document.querySelector('.globe-toggle').click()`)
 await sleep(400)
 const on = JSON.parse(await js(READ))
-check('再点一下就回来了', on.panel === true && on.stored === '1', `${on.panel} / ${on.stored}`)
+// ★ 2026-10-07 起站点设置里有了「节点地球」开关：访客点回**与站长那一档相同**的档位时，
+// 记录会被删掉（= 重新跟着站长走，与卡片形态同一套口径）。这个桩里站长那档是「开」（默认），
+// 所以点回来之后 localStorage 里**没有**这个键、面板照旧显示。
+check('再点一下就回来了（与站长那档相同，记录被清掉＝重新跟着站长走）',
+  on.panel === true && on.stored === null, `${on.panel} / ${on.stored}`)
 
 console.log(`\n=== 七、${FLEET.length} 台的合成机群（两摞标签都排满、有离线机器、有一个超长名字） ===`)
 fleet = FLEET

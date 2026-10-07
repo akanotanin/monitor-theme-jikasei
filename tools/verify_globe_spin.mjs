@@ -85,7 +85,7 @@ const sampleDisk = (lon0, lat0) => {
       const [x, y, z] = v.map((t) => t / n)
       const lat = (Math.asin(Math.max(-1, Math.min(1, y))) * 180) / Math.PI
       const lon = (Math.atan2(x, z) * 180) / Math.PI
-      pts.push({ x: +(VIEW.cx + VIEW.r * gx).toFixed(2), y: +(VIEW.cy - VIEW.r * gy).toFixed(2), r: +Math.sqrt(d2).toFixed(3), land: isLand(lon, lat) })
+      pts.push({ x: +(VIEW.cx + VIEW.r * gx).toFixed(2), y: +(VIEW.cy - VIEW.r * gy).toFixed(2), r: +Math.sqrt(d2).toFixed(3), land: isLand(lon, lat), lon: +lon.toFixed(2), lat: +lat.toFixed(2) })
     }
   }
   return pts
@@ -147,7 +147,7 @@ const measure = async (lon0, lat0) => {
     const cv = document.createElement('canvas'); cv.width = 460; cv.height = 240
     const cx = cv.getContext('2d'); const p = new Path2D(d)
     // 同一份路径数据，两种填充规则各量一遍：非零绕数 vs 奇偶
-    return JSON.stringify(${JSON.stringify(pts)}.map((pt) => ({ r: pt.r, land: pt.land, nz: cx.isPointInPath(p, pt.x, pt.y), eo: cx.isPointInPath(p, pt.x, pt.y, 'evenodd') })))
+    return JSON.stringify(${JSON.stringify(pts)}.map((pt) => ({ r: pt.r, land: pt.land, lon: pt.lon, lat: pt.lat, nz: cx.isPointInPath(p, pt.x, pt.y), eo: cx.isPointInPath(p, pt.x, pt.y, 'evenodd') })))
   })()`)) ?? 'null')
   const landPts = rows.filter((r) => r.land)
   const seaPts = rows.filter((r) => !r.land)
@@ -166,6 +166,13 @@ const measure = async (lon0, lat0) => {
     extraFar: extra.filter((r) => r.r >= 0.8).length,
     segs,
     missPts: missing.slice(0, 4).map((r) => `r=${r.r}`).join(','),
+    // DETAIL=1：把每个漏/多填的点连同经纬度打出来，用来定位「是哪块地画错了」。
+    detail: process.env.DETAIL === '1'
+      ? {
+        miss: missing.map((r) => `${r.lon},${r.lat} r=${r.r}`),
+        extra: extra.map((r) => `${r.lon},${r.lat} r=${r.r}`),
+      }
+      : undefined,
   }
 }
 
@@ -189,6 +196,8 @@ for (let i = 0; i < ROWS.length; i += 1) {
   else failed += 1
   report.push(m)
   console.log(`${row.region.label.padEnd(16)} 角度 ${m.want.padEnd(10)} 解出 ${String(m.solved).padEnd(26)} 陆地${String(m.land).padStart(3)} 漏 ${String(m.miss).padStart(3)}(${m.missRate.toFixed(1)}%) 内侧${m.missInner} 贴边${m.missFar} | 多填 ${String(m.extra).padStart(3)}(${m.extraRate.toFixed(1)}%) 内侧${m.extraInner} | 段 ${m.segs}`)
+  if (m.detail?.miss.length) console.log(`   漏点：${m.detail.miss.join('  |  ')}`)
+  if (m.detail?.extra.length) console.log(`   多填点：${m.detail.extra.join('  |  ')}`)
 }
 writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 2))
 const worst = report.reduce((a, b) => (b.missRate > a.missRate ? b : a), report[0])

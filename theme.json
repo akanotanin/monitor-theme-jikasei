@@ -2,31 +2,20 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题。",
-  "version": "1.24.2",
+  "version": "1.25.0",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
     {
       "type": "title",
-      "label": "顶栏"
-    },
-    {
-      "type": "string",
-      "key": "siteIcon",
-      "label": "站点图标",
-      "default": "/site-icon.png",
-      "help": "站名左边那枚圆形图标，也是浏览器标签页与书签的图标。"
-    },
-    {
-      "type": "string",
-      "key": "farmUrl",
-      "label": "养鸡场入口",
-      "default": "",
-      "help": "留空＝自动探测本站 /chicken/；填 off＝不显示入口；填地址＝指向别处（同域路径或完整网址）。"
-    },
-    {
-      "type": "title",
       "label": "列表与卡片"
+    },
+    {
+      "type": "boolean",
+      "key": "globeOn",
+      "label": "节点地球",
+      "default": true,
+      "help": "列表页顶部那颗会自转的地球；关掉＝整块不渲染（访客也能自己关）。"
     },
     {
       "type": "select",
@@ -59,7 +48,7 @@
           "label": "两个都显示·概览卡片价值版"
         }
       ],
-      "help": "分组标签 = 全部 / 各组那一行；概览卡片 = 那行统计卡片，分原版与月度预算剩余价值版两种排法。"
+      "help": "分组标签行与概览卡片行各要哪一档；概览卡片分原版与价值版两种排法。"
     },
     {
       "type": "select",
@@ -88,11 +77,11 @@
           "label": "紧凑：一行一台的表格，密度最高"
         }
       ],
-      "help": "经典＝速率与总量各一行、延迟在浮层；简约＝网络一行；延迟＝加三网延迟；详细＝加时长与计费；紧凑＝表格。这里选的是**访客默认看到的那一档**；访客可以在顶栏自己换（换成与这里相同的那档＝重新跟着这里的设置走），他的选择只存在他自己的浏览器里，不影响别人。"
+      "help": "访客默认看到的档位；访客可在顶栏自行更换。"
     },
     {
       "type": "title",
-      "label": "备注"
+      "label": "节点信息"
     },
     {
       "type": "select",
@@ -117,11 +106,7 @@
           "label": "都不显示"
         }
       ],
-      "help": "卡片＝列表里那几处（含紧凑展开行）；详情页＝点进去的那一整页。备注在后台节点里填（公开给访客、私有给自己），逗号分隔＝多枚标签，留空＝不显示。"
-    },
-    {
-      "type": "title",
-      "label": "三网延迟"
+      "help": "备注在后台节点里填（公开给访客、私有给自己）；卡片与详情页都摊，逗号分隔＝多枚标签，留空＝不显示。"
     },
     {
       "type": "text",
@@ -129,6 +114,35 @@
       "label": "显示的延迟线路",
       "default": "",
       "help": "每行一个 ping 任务名，最多三条；留空自动取前三条。"
+    },
+    {
+      "type": "title",
+      "label": "外观"
+    },
+    {
+      "type": "select",
+      "key": "themeMode",
+      "label": "主题模式",
+      "default": "system",
+      "options": [
+        {
+          "value": "system",
+          "label": "随系统设置"
+        },
+        {
+          "value": "auto",
+          "label": "随北京时间自动切换"
+        },
+        {
+          "value": "light",
+          "label": "亮色"
+        },
+        {
+          "value": "dark",
+          "label": "暗色"
+        }
+      ],
+      "help": "站点明暗；按北京时间自动那档＝19:00–07:00 用暗色（访客可自行覆盖）。"
     }
   ]
 }
