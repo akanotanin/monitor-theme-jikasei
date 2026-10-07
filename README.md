@@ -32,11 +32,11 @@
 
 | **简约形态** | **经典形态** |
 |:---:|:---:|
-| ![简约形态](preview-plain.png?v=3) | ![经典形态](preview-classic.png?v=4) |
+| ![简约形态](preview-plain.png?v=4) | ![经典形态](preview-classic.png?v=5) |
 | **延迟形态** | **详细形态（默认）** |
-| ![延迟形态](preview-latency.png?v=4) | ![详细形态](preview-detailed.png?v=3) |
+| ![延迟形态](preview-latency.png?v=5) | ![详细形态](preview-detailed.png?v=4) |
 | **紧凑形态** | |
-| ![紧凑形态](preview-compact.png?v=3) | |
+| ![紧凑形态](preview-compact.png?v=4) | |
 
 ## 访客自己换卡片形态
 
