@@ -22,10 +22,10 @@ type Props = {
  * 详细档也照旧：只是在表名前多一枚图标，颜色仍与其余两档同一套灰——图标随所在的
  * 弱化灰文字走 currentColor，不另上色。
  *
- * ★ 填色是**前景色的 65%**，不是纯前景色（2026-10-08 站长反馈「进度条有些突兀，尤其服务器多的
+ * ★ 填色是**前景色的 70%**，不是纯前景色（2026-10-08 站长反馈「进度条有些突兀，尤其服务器多的
  * 时候」）：纯前景色与正文字色相同（亮 18.7:1 / 暗 12.6:1），那是卡片上最重的一笔，一页
- * 4×N 根条（30 台就是 120 根）排下来会把读数与标签都压住。65% 合成到卡片底之后实测
- * 亮 5.8:1 / 暗 5.9:1 —— 明显轻于正文，又远高于图形判读的下限（WCAG 非文本 3:1），
+ * 4×N 根条（30 台就是 120 根）排下来会把读数与标签都压住。70% 合成到卡片底之后实测
+ * 亮 7.0:1 / 暗 6.7:1 —— 明显轻于正文，又远高于图形判读的下限（WCAG 非文本 3:1），
  * 低百分比的短条也还认得出来。判据在 tools/verify_card_styles.mjs（两档各两条）。
  */
 export function Meter({ label, pct, foot, empty = "—", icon: Icon, plain = false }: Props) {
@@ -45,7 +45,7 @@ export function Meter({ label, pct, foot, empty = "—", icon: Icon, plain = fal
         </span>
       </div>
       <div className={`w-full overflow-hidden rounded-full bg-muted ${plain ? "my-1.5 h-1" : "mt-1.5 h-1.5"}`}>
-        <div className="h-full rounded-full bg-foreground/65 transition-[width] duration-500" style={{ width: `${filled}%` }} />
+        <div className="h-full rounded-full bg-foreground/70 transition-[width] duration-500" style={{ width: `${filled}%` }} />
       </div>
       <div className={`tnum truncate text-muted-foreground ${plain ? "text-[11px]" : "mt-1.5 text-xs"}`}>{foot}</div>
     </div>
