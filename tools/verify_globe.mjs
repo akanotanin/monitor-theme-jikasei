@@ -140,6 +140,12 @@ const shot = async (name) => {
   const r = await send('Page.captureScreenshot', { format: 'png' })
   if (r.result?.data) (await import('node:fs')).writeFileSync(join(OUT, name), Buffer.from(r.result.data, 'base64'))
 }
+/** 只截**地区侧栏**那一块：改前/改后对照图（HK 一行 / 两行）用它，与站长报的那张同一口径。 */
+const shotSide = async (name) => {
+  const raw = await js(`(() => { const r = document.querySelector('.globe-side').getBoundingClientRect(); return JSON.stringify({ x: Math.round(r.x), y: Math.round(r.y + scrollY), width: Math.round(r.width), height: Math.round(r.height), scale: 2 }) })()`)
+  const r = await send('Page.captureScreenshot', { format: 'png', clip: JSON.parse(raw) })
+  if (r.result?.data) (await import('node:fs')).writeFileSync(join(OUT, name), Buffer.from(r.result.data, 'base64'))
+}
 
 // 页面上要断言的都在这一段里取回来。**别在模板字符串里写反引号或正则**（踩过）。
 const READ = `(() => {
@@ -460,6 +466,15 @@ check('★ 地区按台数从多到少（结构不变式，不写死某一套数
   JSON.stringify(s.regs.slice(1, 5).map((r) => [r.text, r.count])))
 check('地区台数合计 = 有落点的台数（没落点的不进地区列表，但仍然算在「全部」里）',
   s.regs.slice(1).reduce((sum, r) => sum + r.count, 0) === LOCATED, `${s.regs.slice(1).reduce((sum, r) => sum + r.count, 0)} / ${LOCATED}`)
+// ★ 回归：站长截图里「🇭🇰 HK 3 ｜ 🇭🇰 Hong Kong 3」并排出现 —— 同一个地方两行、两面一样的旗。
+//   根因：移植时漏了上游 `fallbackCity` 的国家级兜底城名 —— 名字里带城市线索的 HK 落
+//   `HK · Hong Kong`，没带的落裸 `HK`。这份夹具正是 2 台不带 + 3 台带 —— 修好后**只能有一行**。
+check('★ 一个 HK 只有一行（带线索与不带线索不再裂成「HK」+「Hong Kong」两行）',
+  s.regs.filter((r) => r.text === 'Hong Kong').length === 1 && s.regs.find((r) => r.text === 'Hong Kong')?.count === 5 && !s.regs.some((r) => r.text === 'HK'),
+  JSON.stringify(s.regs.map((r) => [r.text, r.count])))
+check('★ 兜底的国家不出裸码行（HK/TW/SG/JP/KR 都有城名；US/DE 这类照旧退国家码）',
+  !s.regs.slice(1).some((r) => ['HK', 'TW', 'SG', 'JP', 'KR'].includes(r.text)) && s.regs.some((r) => r.text === 'US'),
+  JSON.stringify(s.regs.map((r) => r.text)))
 check('控制台无异常', errors.length === 0, errors.join(' | '))
 await shot('03-synth-desktop.png')
 
@@ -478,6 +493,7 @@ check('深色下 land/ocean 用的是深色那一套（与亮色不同）', dark
 check('深色下针是深色那档的琥珀', dark.pinStroke === dark.warn, `${dark.pinStroke} vs ${dark.warn}`)
 check('深色下控制台无异常', errors.length === 0, errors.join(' | '))
 await shot('04a-synth-dark.png')
+await shotSide('04c-synth-dark-region.png')
 const light = await themed('light')
 check('亮色下照常渲染', light.panel === true && light.landPts > 200, JSON.stringify(light.landPts))
 check('★ 亮色下陆地是另一套染色（不是深色那套）', light.landFill !== dark.landFill, `${dark.landFill} → ${light.landFill}`)

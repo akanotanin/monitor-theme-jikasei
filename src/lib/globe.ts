@@ -17,7 +17,7 @@
  * 不变量（改这里之前先读）：**极角超过 120° 的点不画**（`LIMB_K`，上游那行 `cosc <= 0.02`），
  * 落在背面的点直接丢、跨过边缘的线段裁到边缘上，否则地球背面的大陆会翻到正面来。
  */
-import { CITY_HINTS, COUNTRY_LL, type Ring } from "./world.ts"
+import { CITY_HINTS, COUNTRY_CITY_FALLBACK, COUNTRY_LL, type Ring } from "./world.ts"
 import type { Node } from "@/lib/api"
 
 /** 画布与圆盘。上游 SVG 的 `viewBox="0 0 460 240"` 就是这几个数，改它们等于换一套构图。 */
@@ -621,7 +621,7 @@ export type Region = {
   key: string
   /** ISO 3166-1 alpha-2；空串 = 认不出国家。 */
   code: string
-  /** 城市英文名（线索没命中就是空串）。 */
+  /** 城市英文名（线索没命中时按国家兜底，见 `COUNTRY_CITY_FALLBACK`；两者都没有才是空串）。 */
   city: string
   /** 地区列表里显示的文字：有城名用城名，否则用国家码。 */
   label: string
@@ -637,6 +637,11 @@ export type Region = {
  *      hub 给的就是 ISO 码，卡片上那面旗子也是按它取的，地球不该是另一套说法。
  *   ② 上游给认不出国家的节点一个 [80,30] 的兜底落点（它在图上是一枚假针），
  *      这里直接 `null` —— 认不出就不上地球，也不占地区列表的一行；下面的列表照旧有它。
+ *
+ * ★ 城名的来源有**两层**（与上游 `fallbackCity` 同一顺序）：名字/分组里的城市线索优先，
+ * 认不出时按 `COUNTRY_CITY_FALLBACK` 兜一个国家级的城名（HK → Hong Kong 那几条）。
+ * 兜底这一层移植时漏过一次：HK 于是裂成「HK」与「HK · Hong Kong」两行，同一面旗并排
+ * 出现两次（站长截图里那条就是它）；上游因为无条件兜底，一个 HK 永远只有一行。
  */
 export function regionOf(node: Node): Region | null {
   const code = (node.country || "").trim().toUpperCase()
@@ -644,7 +649,7 @@ export function regionOf(node: Node): Region | null {
   const hint = cityHint(node)
   const base = hint?.ll ?? COUNTRY_LL[code]
   if (!base) return null
-  const city = hint?.name ?? ""
+  const city = hint?.name ?? COUNTRY_CITY_FALLBACK[code] ?? ""
   return { key: city ? `${code} · ${city}` : code, code, city, label: city || code, base: [base[0], base[1]] }
 }
 

@@ -158,3 +158,21 @@ export const CITY_HINTS: { match: RegExp; ll: [number, number]; name: string }[]
   { match: /\b(HACIENDA[ _.-]*HEIGHTS)\b/i, ll: [-117.9687, 33.9931], name: 'Hacienda Heights' },
   { match: /\b(NYC|NEW[ _.-]*YORK)\b|CHICAGO[^A-Z0-9]*VPS[^A-Z0-9]*NY/i, ll: [-74.006, 40.7128], name: 'New York' },
 ]
+
+/**
+ * 国家级兜底城名：名字里认不出城市时，这几个国家**照样有个城名**（上游 `fallbackCity`
+ * 的那几条 if：HK/SG 无条件兜、JP/KR 是「上游没给地区信息就兜」、TW 常有 Taiwan/Taipei/
+ * Taichung 三选一；本站的 hub 没有地区字段，一律按「没给」处理）。
+ *
+ * ★ 别把它当装饰：少了它，一个 HK 会裂成「HK」与「HK · Hong Kong」两行 —— 名字里写着
+ * 香港的那几台落城市级、没写的那几台落国家级，同一面旗并排出现两次（站长截图里就是它）。
+ * 上游永远不会出现裸的 HK/SG 行，靠的就是这里。其余国家（US/DE/…）上游**不兜**：
+ * 它们照旧显示国家码，城名只认名字里的线索。
+ */
+export const COUNTRY_CITY_FALLBACK: Record<string, string> = {
+  HK: "Hong Kong",
+  TW: "Taiwan",
+  SG: "Singapore",
+  JP: "Japan",
+  KR: "Korea",
+}
