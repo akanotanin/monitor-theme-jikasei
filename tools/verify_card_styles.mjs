@@ -253,15 +253,35 @@ const PLAIN_PROBE = `JSON.stringify((() => {
   const foot = box ? box.children[2] : null
   const name = card.querySelector('h3')
   const cs = (el) => el ? getComputedStyle(el) : null
+  // 进度条那根条：填色的**有效颜色**（alpha 合成到卡片底之后）与 alpha 本身。
+  // 用 canvas 读回 sRGB（oklch 手算容易错，见技能第 13 条）：先铺卡片底、再叠填色 = 实际观感。
+  const paint = (under, top) => {
+    const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d')
+    if (under) { x.fillStyle = under; x.fillRect(0, 0, 1, 1) }
+    if (top) { x.fillStyle = top; x.fillRect(0, 0, 1, 1) }
+    const d = x.getImageData(0, 0, 1, 1).data
+    return { rgb: 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')', alpha: +(d[3] / 255).toFixed(3) }
+  }
+  const fillRaw = bar && bar.firstElementChild ? cs(bar.firstElementChild).backgroundColor : null
+  // ★ 颜色一律**用 canvas 合成成 sRGB 之后再比**：本站的 token 是 oklch()，拿正则去抠数字会得到
+  //   垃圾（oklch(0.18 0 0) 抠出的是 rgb(0,18,0)）；卡片本身的 background 还常常是透明的，
+  //   得先合成到页面底上才是访客看到的那一层。
+  const bodyBg = getComputedStyle(document.body).backgroundColor
+  const cardEff = paint(bodyBg, cs(card).backgroundColor).rgb
+  const pctColor = box ? cs(box.children[0].lastElementChild).color : null
   return {
     radius: cs(card).borderRadius,
     shadow: cs(card).boxShadow,
     cardBorder: cs(card).borderColor,
-    bodyBg: getComputedStyle(document.body).backgroundColor,
-    fillColor: bar && bar.firstElementChild ? cs(bar.firstElementChild).backgroundColor : null,
+    bodyBg,
+    cardBg: cardEff,
+    fillColor: fillRaw,
+    fillAlpha: fillRaw ? paint(null, fillRaw).alpha : null,
+    fillComposite: fillRaw ? paint(cardEff, fillRaw).rgb : null,
+    pctComposite: pctColor ? paint(cardEff, pctColor).rgb : null,
     nameWeight: name ? cs(name).fontWeight : null,
     labelColor: label ? cs(label).color : null,
-    pctColor: box ? cs(box.children[0].lastElementChild).color : null,
+    pctColor,
     footColor: foot ? cs(foot).color : null,
     barH: bar ? cs(bar).height : null,
     barTop: bar ? cs(bar).marginTop : null,
@@ -271,6 +291,16 @@ const PLAIN_PROBE = `JSON.stringify((() => {
     text: card.innerText.replace(/\\n/g, ' | '),
   }
 })())`
+
+/** 两枚颜色字符串（rgb() 形式）之间的 WCAG 对比度。 */
+function contrast(a, b) {
+  const lum = (s) => {
+    const [r, g, bl] = s.match(/\d+/g).slice(0, 3).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+  }
+  const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m)
+  return +((x + 0.05) / (y + 0.05)).toFixed(2)
+}
 
 async function render(cfg, tag = '') {
   config = cfg
@@ -375,6 +405,18 @@ let classicStyle = null
   check('经典：条 6px、底注 12px、名字 500、格行距 16px',
     classicStyle.barH === '6px' && classicStyle.footSize === '12px' && classicStyle.nameWeight === '500' && classicStyle.rowGap === '16px',
     JSON.stringify({ barH: classicStyle.barH, footSize: classicStyle.footSize, nameWeight: classicStyle.nameWeight, rowGap: classicStyle.rowGap }))
+  // ★ 2026-10-08：站长反馈「进度条有些突兀，尤其服务器多的时候」—— 根因是填色用的**正文本色**
+  //   （亮 18.7:1 / 暗 12.6:1，卡片上最重的一笔），一页 4×N 根条时压过读数与标签。
+  //   下面两条把「填色不许是正文本色」与「有效对比落在 3.5–8:1」钉住：下限 3.5 是图形可读的
+  //   底线（WCAG 非文本 3:1），上限 8 表示必须明显轻于正文。判据量的是**有效颜色**
+  //   （alpha 合成到卡片底之后），不是 fillStyle 里的那个值。改坏任一条都会红。
+  check('★ 经典：进度条填色不再是正文本色（纯前景色＝卡片上最重的一笔）',
+    classicStyle.fillAlpha !== null && classicStyle.fillAlpha < 1, `alpha=${classicStyle.fillAlpha}｜${classicStyle.fillColor}`)
+  check('★ 经典：进度条的有效对比度落在「轻于正文、又清楚看得见」的 3.5–8:1',
+    contrast(classicStyle.fillComposite, classicStyle.cardBg) >= 3.5 &&
+    contrast(classicStyle.fillComposite, classicStyle.cardBg) <= 8 &&
+    contrast(classicStyle.fillComposite, classicStyle.cardBg) < contrast(classicStyle.pctComposite, classicStyle.cardBg),
+    `填色 ${contrast(classicStyle.fillComposite, classicStyle.cardBg)}:1（${classicStyle.fillComposite}）｜ 正文 ${contrast(classicStyle.pctComposite, classicStyle.cardBg)}:1（${classicStyle.pctComposite}）｜ 卡底 ${classicStyle.cardBg}`)
 }
 
 /* 1b) 简约：与经典**同结构、同内容**，只换一套视觉处理（标签提亮 / 条压细 / 底注变小 / 名字加粗 / 行距收紧） */
@@ -401,6 +443,14 @@ let classicStyle = null
   check('简约：底注降到 11px', s.footSize === '11px', s.footSize)
   check('简约：名字加粗一档（600，经典是 500）', s.nameWeight === '600', s.nameWeight)
   check('简约：读数格行距收紧到 12px（经典 16px）', s.rowGap === '12px', s.rowGap)
+  // 同一条判据在**这一档**也要成立：简约那一套只是把条压细，填色口径与经典一致（同一族零件）。
+  check('★ 简约：进度条填色不再是正文本色（两档同一口径）',
+    s.fillAlpha !== null && s.fillAlpha < 1, `alpha=${s.fillAlpha}｜${s.fillColor}`)
+  check('★ 简约：进度条的有效对比度落在 3.5–8:1 且轻于正文',
+    contrast(s.fillComposite, s.cardBg) >= 3.5 &&
+    contrast(s.fillComposite, s.cardBg) <= 8 &&
+    contrast(s.fillComposite, s.cardBg) < contrast(s.pctComposite, s.cardBg),
+    `填色 ${contrast(s.fillComposite, s.cardBg)}:1（${s.fillComposite}）｜ 正文 ${contrast(s.pctComposite, s.cardBg)}:1（${s.pctComposite}）｜ 卡底 ${s.cardBg}`)
 }
 
 /* 2) 延迟（新名字） */

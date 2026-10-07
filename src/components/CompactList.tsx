@@ -49,14 +49,14 @@ import { FOREVER, CYCLES, bytes, daysUntil, money, osName, pair, percent, rate }
 const NodeDetail = lazy(() => import("@/components/NodeDetail").then((m) => ({ default: m.NodeDetail })))
 
 /**
- * 单元格内的一条细进度条。高度、圆角、色值都照 Meter 来（h-1.5、填色 bg-foreground 纯前景色），
+ * 单元格内的一条细进度条。高度、圆角、色值都照 Meter 来（h-1.5、填色 bg-foreground/65），
  * 第四种形态才不像另一套零件拼的；没有上限（流量不限）就留空，与 Meter 对 null 一致。
  */
 function Bar({ pct }: { pct: number | null }) {
   const filled = pct === null ? 0 : Math.min(100, Math.max(0, pct))
   return (
     <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      <div className="h-full rounded-full bg-foreground transition-[width] duration-500" style={{ width: `${filled}%` }} />
+      <div className="h-full rounded-full bg-foreground/65 transition-[width] duration-500" style={{ width: `${filled}%` }} />
     </div>
   )
 }

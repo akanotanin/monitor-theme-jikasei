@@ -98,6 +98,32 @@ async function load({ config, systemDark = false, visitor = null, globePref = un
     ls: (() => { const o = {}; try { for (let i = 0; i < localStorage.length; i += 1) { const k = localStorage.key(i); o[k] = localStorage.getItem(k) } } catch {} return o })(),
     // theme-color（手机浏览器那一圈）：App 起来之后应当只剩一份没有 media 的，值等于页面实际底色。
     themeColors: [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => ({ content: m.content, media: m.getAttribute('media') })),
+    // 进度条填色的**有效颜色**：token 是 oklch()，正则抠数字会得到垃圾，颜色一律经 canvas 合成。
+    // 卡片底还常常是透明的，先合成到页面底上，才是访客看到的那一层。
+    meter: (() => {
+      const card = [...document.querySelectorAll('[data-slot=card]')].find((c) => c.querySelector('div.overflow-hidden.rounded-full'))
+      if (!card) return null
+      const bar = card.querySelector('div.overflow-hidden.rounded-full')
+      const fill = bar.firstElementChild
+      if (!fill) return null
+      const paint = (under, top) => {
+        const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d')
+        if (under) { x.fillStyle = under; x.fillRect(0, 0, 1, 1) }
+        if (top) { x.fillStyle = top; x.fillRect(0, 0, 1, 1) }
+        const d = x.getImageData(0, 0, 1, 1).data
+        return { rgb: 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')', alpha: +(d[3] / 255).toFixed(3) }
+      }
+      const body = getComputedStyle(document.body).backgroundColor
+      const cardEff = paint(body, getComputedStyle(card).backgroundColor).rgb
+      const text = card.querySelector('h3')
+      const fillRaw = getComputedStyle(fill).backgroundColor
+      return {
+        alpha: paint(null, fillRaw).alpha,
+        fill: paint(cardEff, fillRaw).rgb,
+        text: text ? paint(cardEff, getComputedStyle(text).color).rgb : null,
+        card: cardEff,
+      }
+    })(),
     bodyBg: (() => {
       const c = document.createElement('canvas'); c.width = c.height = 1
       const x = c.getContext('2d'); if (!x) return null
@@ -143,6 +169,29 @@ check('theme-color：站点设暗色 → 取暗底色', tc.live[0]?.content === 
 s = await load({ config: { themeMode: 'auto', globeOn: true }, systemDark: false, freeze: '2026-10-07T14:00:00Z' })
 tc = tcOf(s)
 check('theme-color：自动档夜里（与系统相反）→ 跟着页面的暗色走', tc.live[0]?.content === tc.bg && tc.bg !== LIGHT_BG, `meta=${tc.live[0]?.content} 底色=${tc.bg}`)
+
+console.log('\n=== 进度条填色（两套主题各断一遍）===')
+/**
+ * 2026-10-08 站长反馈「进度条有些突兀，尤其服务器多的时候」：根因是填色＝正文本色
+ * （亮 18.7:1 / 暗 12.6:1，卡片上最重的一笔），一页 4×N 根条会把读数压住。
+ * 判据落在**合成后的有效对比度**上：3.5:1 起步（图形判读底线），8:1 封顶（必须明显轻于站名）。
+ * 暗色单独断一遍——同一个 token 在暗底上的有效对比度与亮色不是一回事。
+ */
+const lumOf = (s) => {
+  const [r, g, b] = s.match(/\d+/g).slice(0, 3).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+const contrast = (a, b) => { const [x, y] = [lumOf(a), lumOf(b)].sort((m, n) => n - m); return +((x + 0.05) / (y + 0.05)).toFixed(2) }
+s = await load({ config: { themeMode: 'light', globeOn: true } })
+check('亮色：进度条填色不是正文本色（有效对比 3.5–8:1 且轻于站名）',
+  s.meter && s.meter.alpha < 1 && contrast(s.meter.fill, s.meter.card) >= 3.5 && contrast(s.meter.fill, s.meter.card) <= 8 &&
+  contrast(s.meter.fill, s.meter.card) < contrast(s.meter.text, s.meter.card),
+  JSON.stringify(s.meter) + ` 填色 ${s.meter && contrast(s.meter.fill, s.meter.card)}:1 / 站名 ${s.meter && contrast(s.meter.text, s.meter.card)}:1`)
+s = await load({ config: { themeMode: 'dark', globeOn: true } })
+check('暗色：同上（暗底上的有效对比度与亮色不是一回事，单独断）',
+  s.meter && s.meter.alpha < 1 && contrast(s.meter.fill, s.meter.card) >= 3.5 && contrast(s.meter.fill, s.meter.card) <= 8 &&
+  contrast(s.meter.fill, s.meter.card) < contrast(s.meter.text, s.meter.card),
+  JSON.stringify(s.meter) + ` 填色 ${s.meter && contrast(s.meter.fill, s.meter.card)}:1 / 站名 ${s.meter && contrast(s.meter.text, s.meter.card)}:1`)
 
 console.log('\n=== 节点地球开关 ===')
 s = await load({ config: { themeMode: 'light', globeOn: true } })
