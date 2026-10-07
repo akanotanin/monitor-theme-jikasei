@@ -123,8 +123,13 @@ const MEASURE = `(() => {
   const mb = main && main.getBoundingClientRect()
   const mcs = main && getComputedStyle(main)
   const fb = footer && footer.getBoundingClientRect()
+  const fcs = footer && getComputedStyle(footer)
   // 署名是「整行宽 + text-align:right」，块的盒宽跟容器一样 —— 判「在右边」必须量**文字**的盒
   // （Range 取内容盒），拿块盒会得出「左沿在 97px」这种自相矛盾的数。
+  const cards = [...document.querySelectorAll('main .cursor-pointer')]
+    .filter((e) => { const r = e.getBoundingClientRect(); return r.height > 100 && r.width > 300 })
+  const lastCard = cards.length ? cards[cards.length - 1].getBoundingClientRect() : null
+  const bodyBottom = lastCard ? Math.round(lastCard.bottom) : (mb ? Math.round(mb.bottom) : null)
   let creditText = null
   if (credit) {
     const range = document.createRange(); range.selectNodeContents(credit)
@@ -143,7 +148,9 @@ const MEASURE = `(() => {
     creditText,
     siteName: of(siteName),
     main: mb ? { left: Math.round(mb.left), right: Math.round(mb.right), bottom: Math.round(mb.bottom), contentRight: Math.round(mb.right - parseFloat(mcs.paddingRight)) } : null,
-    footer: fb ? { top: Math.round(fb.top), bottom: Math.round(fb.bottom), right: Math.round(fb.right) } : null,
+    footer: fb ? { top: Math.round(fb.top), bottom: Math.round(fb.bottom), right: Math.round(fb.right),
+      borderTop: Math.round(parseFloat(fcs.borderTopWidth) || 0) } : null,
+    docH: document.documentElement.scrollHeight, scrollY: Math.round(window.scrollY), bodyBottom,
     viewport: { w: innerWidth, h: innerHeight },
     overflow: document.documentElement.scrollWidth - innerWidth,
     fontReady: document.fonts.status,
@@ -218,11 +225,25 @@ const common = (m, where) => {
         && m.creditText.x > m.main.left + (m.main.right - m.main.left) / 2
         && m.creditText.w > 0 && m.creditText.w <= 300,
     `文字 ${m.creditText?.x}→${m.creditText?.right}（中线 ${mid?.toFixed(1)}，离内容右沿 ${inset}px）｜主内容 ${m.main?.left}→${m.main?.right}（中线 ${mainMid?.toFixed(1)}）｜内容右沿 ${m.main?.contentRight}`)
-  // 窄屏还要**贴着正文**（同日要求「往上挪、更贴近卡片底部」）：文字上沿离主内容下沿不远
-  // —— 列表自己的下边距加一行行高约 17px，留到 26 以内；改回 pt-4 那会儿是 33px。
-  if (narrow) check(`${where}：署名贴着正文（上沿离主内容下沿 ≤26px）`,
-    !!m.creditText && !!m.main && (m.creditText.y - m.main.bottom) >= 0 && (m.creditText.y - m.main.bottom) <= 26,
-    `署名 y=${m.creditText?.y} 主内容 bottom=${m.main?.bottom} → 间距 ${m.creditText && m.main ? m.creditText.y - m.main.bottom : '?'}px`)
+  // 窄屏的**页脚带**（2026-10-07 站长第二轮：「还是得改个位置、要和谐美观不突兀」）：一行灰字
+  // 悬在卡片下面没有任何结构，既不像页脚也不像卡片的一部分。加一条 1px 上分割线把它圈成页脚区，
+  // 判据按「带」量三段留白 —— 正文→线、线→字、字→页底。给区间不钉死数值，拦住「又漂回去」即可。
+  if (narrow) {
+    check(`${where}：页脚带有 1px 上分割线（窄屏专属）`, !!m.footer && m.footer.borderTop >= 1,
+      `border-top=${m.footer?.borderTop}px`)
+    check(`${where}：正文下沿 → 分割线 20~32px`, m.bodyBottom != null && !!m.footer
+      && (m.footer.top - m.bodyBottom) >= 20 && (m.footer.top - m.bodyBottom) <= 32,
+      `卡片底 ${m.bodyBottom} → 线 ${m.footer?.top} = ${m.bodyBottom != null && m.footer ? m.footer.top - m.bodyBottom : '?'}px（main 自己还垫了 pb-4）`)
+    check(`${where}：分割线 → 署名上沿 10~22px`, !!m.creditText && !!m.footer
+      && (m.creditText.y - m.footer.top) >= 10 && (m.creditText.y - m.footer.top) <= 22,
+      `${m.footer?.top} → ${m.creditText?.y} = ${m.creditText && m.footer ? m.creditText.y - m.footer.top : '?'}px`)
+    check(`${where}：署名下沿 → 页底 16~28px`, !!m.creditText
+      && (m.docH - (m.creditText.bottom + m.scrollY)) >= 16 && (m.docH - (m.creditText.bottom + m.scrollY)) <= 28,
+      `页高 ${m.docH} − 署名底 ${m.creditText?.bottom}（滚动 ${m.scrollY}）= ${m.creditText ? m.docH - m.creditText.bottom - m.scrollY : '?'}px`)
+  } else {
+    check(`${where}：桌面不加分割线（为手机加的东西不落到电脑端）`, !!m.footer && m.footer.borderTop === 0,
+      `border-top=${m.footer?.borderTop}px`)
+  }
   check(`${where}：排在正文之后（不是压在列表上）`, !!m.footer && !!m.main && m.footer.top >= m.main.bottom - 1,
     `footer.top=${m.footer?.top} main.bottom=${m.main?.bottom}`)
   check(`${where}：比顶栏站名浅（对比度更低），但仍看得见（≥1.6）`,
