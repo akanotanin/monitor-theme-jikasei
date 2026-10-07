@@ -195,8 +195,8 @@ eq(regionOf(node(27, "幽灵机五", "US"))?.key, "US", "没有兜底的国家�
 
 // ★ 2026-10 数据扩展：国家表 12 → 80+、城市线索 24 → ~100（第三方的大机群以前大半
 //   认不出城市、全堆在国家码下；表外国家的机器干脆整个地区功能里看不见）。
-eq(cityHint(node(28, "RackNerd Ashburn", "US"))?.name, "Ashburn", "新补的美国城市线索（阿什本）认得出")
-eq(regionOf(node(28, "RackNerd Ashburn", "US"))?.key, "US · Ashburn", "新线索进地区键（不再落裸的 US）")
+eq(cityHint(node(28, "示例 Ashburn", "US"))?.name, "Ashburn", "新补的美国城市线索（阿什本）认得出")
+eq(regionOf(node(28, "示例 Ashburn", "US"))?.key, "US · Ashburn", "新线索进地区键（不再落裸的 US）")
 eq(regionOf(node(29, "某台机器", "RU"))?.key, "RU", "表外国家扩进来了（RU 现在上地球、进地区列表）")
 eq(regionOf(node(30, "某台机器二", "ZA"))?.key, "ZA", "同上（ZA）")
 ok(Object.keys(COUNTRY_LL).length >= 80, `国家表已覆盖常见 IDC 国家（${Object.keys(COUNTRY_LL).length} 国）`)
