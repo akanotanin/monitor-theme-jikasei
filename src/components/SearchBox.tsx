@@ -41,7 +41,7 @@ export function SearchBox({ value, onChange, onActivate, onClose, hits }: {
       onActivate={onActivate}
       onClose={onClose}
       /* 长开只在 ≥640px 生效：`sm:focus-within:` 那个变体就是这道闸。 */
-      className="search-field-wide w-9 sm:focus-within:w-60"
+      className="search-field-wide w-9 shrink-0 sm:focus-within:w-60"
       title={value === "" ? "搜索（名称 / 地区 / 系统）" : `搜索：${value}（${hits} 台）`}
     />
   )

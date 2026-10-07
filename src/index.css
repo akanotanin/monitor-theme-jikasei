@@ -321,6 +321,12 @@
 
 /* 页脚署名（右下角那行）：比正文的弱化色再淡一档，只作署名，不跟页面里的读数抢注意力；
    「jikasei」那截是本主题的源码仓库链接（地址见 App.tsx 的 REPO_URL），悬停才出下划线。 */
+/* 顶栏那条图标带（.header-tools）：装不下时横向滑动，与分组标签同一套做法。
+   滑动条藏起来 —— 它长在 sticky 顶栏里、又只在窄窗口才出现，露出来就是一条横杠；
+   「还能滑」的提示由露一半的那枚图标给（与分组标签行一致）。 */
+.header-tools { scrollbar-width: none; }
+.header-tools::-webkit-scrollbar { display: none; }
+
 .theme-credit {
   color: var(--muted-foreground);
   font-size: 12px;

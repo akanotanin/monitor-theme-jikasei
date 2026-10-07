@@ -376,17 +376,16 @@ export default function App() {
     // 署名也落在屏幕的右下角，而不是紧贴在列表底下浮在半空中。
     <div className="flex min-h-svh flex-col">
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
-        {/* ★ 这一行在窄屏上横向余量很紧：390 宽的手机上原本要 407px（站名 101 + 搜索 22 +
-            五枚 36px 图标 + 六个 gap-3 = 72 + 左右内边距 32），于是整页能横向拖动 ——
-            桌面量不出来（窗口够宽），手机上一眼就能看出页面被推歪了。两处收口：
-            间距窄屏收到 gap-2（省 24px）；站名那格 min-w-0 + truncate（省下站长起长名字的余量，
-            名字太长时是自己那行变省略号，不会把整页撑宽）。 */}
+        {/* ★ 窄屏的横向余量很紧（390 宽上这一行原本要 407px，整页因此能横向拖动）。现在按
+            「**站名优先展开、图标自己滑**」分：站名那格 max-w-[55%]（正常名字完整显示，
+            只有长到离谱才轮到 truncate），搜索钉在它右边，剩下几枚图标装进一条能横向滑动的
+            条带里 —— 与下面那行分组标签同一套做法：装不下就滑，不裁字、也不把整页撑宽。 */}
         <div className="mx-auto flex max-w-[1280px] items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6">
           {/* The site name is the way back to the list, so a node page needs
               no back button of its own. A 32px disc of the site's icon leads
               it — `/favicon.svg` is the one address that answers with the
               panel's site icon (or the theme's own when none is set). */}
-          <button className="tap tap-8 flex min-w-0 items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
+          <button className="tap tap-8 flex max-w-[55%] shrink-0 items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
             <SiteIcon />
             <span className="truncate">{me.site_name || "Monitor"}</span>
           </button>
@@ -403,6 +402,14 @@ export default function App() {
               hits={found.hit}
             />
           )}
+          {/* ★ 图标条带：装不下就**横向滑动**（与下面那行分组标签同一套做法）。
+              py/px 是给 .tap 那圈 ±6px 的命中区留地方 —— 被 overflow 裁掉的话命中区只剩 36
+              （护栏会当场报出来）；横向**不加**负 margin：那会让条带的盒子压到搜索那一格上，
+              把搜索的命中区吃掉一半（实测 44 → 33）。条带里的间距固定 12px（与桌面同）：两枚
+              图标的命中区各向外 6px，正好在缝里相接，不多不少（8px 会重叠、护栏也会报）。
+              滑动条藏起来（见 index.css 的 .header-tools）：它长在 sticky 顶栏里，露出来
+              就是一条横杠；「还能滑」的提示由露一半的那枚图标给，与分组标签行一致。 */}
+          <div className="header-tools -my-1.5 flex min-w-0 items-center gap-3 overflow-x-auto px-1.5 py-1.5">
           {/* The panel is a separate app built into the hub, not part of this
               theme, so this is a navigation rather than a route. Icon only, with
               the wording in the tooltip: this row is a strip of icons, and a
@@ -453,6 +460,7 @@ export default function App() {
           <Button variant="ghost" size="icon" onClick={toggleTheme} title="切换主题" aria-label="切换主题">
             {dark ? <Sun /> : <Moon />}
           </Button>
+          </div>
         </div>
         {/* 窄屏点开搜索后在顶栏下面多出来的那一行：摆成 header 的直接子节点，
             于是它跟着这个 sticky 块一起吸顶（滚动时不会留在列表里被滚走）。 */}

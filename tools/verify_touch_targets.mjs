@@ -50,7 +50,7 @@ const serveFile = (res, path) => {
 const server = createServer((req, res) => {
   const path = new URL(req.url, `http://127.0.0.1:${PORT}`).pathname
   if (path.startsWith('/api/')) {
-    const body = path === '/api/me' ? { authed: false, github: false, public_page: true, site: BASE, site_name: '命中区' }
+    const body = path === '/api/me' ? { authed: false, github: false, public_page: true, site: BASE, site_name: '示例站 · 一台名字特别长的探针服务器 Tokyo' }   // ★ 故意长：让顶栏图标带装不下、走横向滑动那条路
       : path === '/api/nodes' ? NODES
         : path.endsWith('/config') ? CONFIG
           : path.includes('/metrics') ? { metrics: [], probes: [], loss: {} } : {}
@@ -112,11 +112,48 @@ const PROBE = `(() => {
     const cs = getComputedStyle(el)
     return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && el.offsetParent !== null
   })
-  const describe = (el) => ({ label: label(el), tag: el.tagName.toLowerCase(), cls: (el.className || '').toString().slice(0, 40), box: box(el.getBoundingClientRect()), hit: reach(el) })
+  /**
+   * ★ reach() 会 scrollIntoView（把控件滚到视口中间再量命中区）—— 顶栏那条图标带是
+   * 横向滚动容器，这一滚就把条带的 scrollLeft 带跑了：后一枚图标的 box 于是量在错位的位置上，
+   * 两枚的盒子会「重叠」，③ 那条断言当场误报（实测 卡片形态 327 与 隐藏节点地球 354 差 27px、
+   * 而它们实际相隔 48px）。量完把条带的横向位置放回去，box 与 hit 就都对着同一个位置。
+   */
+  const describe = (el) => {
+    const strip = el.closest('.header-tools')
+    const saved = strip ? strip.scrollLeft : null
+    const d = { label: label(el), tag: el.tagName.toLowerCase(), cls: (el.className || '').toString().slice(0, 40), box: box(el.getBoundingClientRect()), hit: reach(el) }
+    if (strip) {
+      strip.scrollLeft = saved
+      // reach() 里的 scrollIntoView({inline:'center'}) 会把这一枚滚到条带正中 ——
+      // 于是两枚图标的 hit 中心点会**一模一样**（都等于条带中心），③ 那条断言因此误报。
+      // 放回原处之后按真实位置重算中心点；w/h 是走出来的范围，不受影响。
+      const back = el.getBoundingClientRect()
+      d.hit.cx = Math.round(back.x + back.width / 2)
+      d.hit.cy = Math.round(back.y + back.height / 2)
+    }
+    return d
+  }
   return JSON.stringify({
     header: pick(document.querySelector('header') || document.body).map(describe),
     main: pick(document.querySelector('main') || document.body).slice(0, 24).map(describe),
     vp: { w: innerWidth, h: innerHeight },
+    // ★ 顶栏那条图标带（.header-tools）：装不下时应当能横向滑动（站长定的「图标自己滑」）。
+    // 这里现滑一下再滑回去 —— 注意它排在 header 之后取，命中区那几项量的是滑动前的位置。
+    tools: (() => {
+      const strip = document.querySelector('.header-tools')
+      if (!strip) return null
+      const btns = [...strip.querySelectorAll('button, a')]
+      const last = btns[btns.length - 1]
+      const box = strip.getBoundingClientRect()
+      const scrollW = strip.scrollWidth, clientW = strip.clientWidth
+      strip.scrollLeft = scrollW
+      const lr = last ? last.getBoundingClientRect() : null
+      const lastVisible = !!lr && lr.left >= box.left - 1 && lr.right <= box.right + 1
+      const label = last ? (last.getAttribute('title') || last.textContent || '').trim().slice(0, 8) : null
+      strip.scrollLeft = 0
+      return { scrollW, clientW, count: btns.length, lastVisible, label,
+        pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth }
+    })(),
     // ★ 窄屏的横向溢出：内容比视口宽时整页能横向拖动（手机上看着就是「页面被推歪了」）。
     // 这个数必须拿 clientWidth 比（visualViewport 在移动模拟下会是放大后的值）。
     overflow: { scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth },
@@ -139,6 +176,7 @@ const MIN = 44
 console.log(`\n一、手机 390×844（亮色，四台夹具）${REAL ? ' —— 真站' : ''}:`)
 let m = await open('/', 390, 844)
 console.log(`   视口 ${m.vp.w}×${m.vp.h}；顶栏控件 ${m.header.length} 个`)
+if (process.env.DEBUG_TOOLS) for (const c of m.header) console.log(`     · ${c.label}  ${c.tag}.${c.cls.slice(0, 30)}  box ${c.box.x.toFixed(0)},${c.box.y.toFixed(0)} ${c.box.w.toFixed(0)}×${c.box.h.toFixed(0)}  hit ${c.hit.w}×${c.hit.h}@${c.hit.cx.toFixed(0)},${c.hit.cy.toFixed(0)}`)
 
 // ① 顶栏那几枚 36×36 的图标按钮：外观必须还是 36×36，命中区必须 ≥44。
 const icons = m.header.filter((c) => c.box.w === 36 && c.box.h === 36 && (c.tag === 'button' || c.tag === 'a'))
@@ -172,6 +210,18 @@ const regs = m.regions || []
 check('地区行的命中高度 ≥32（原来 20px，手机上点不准）',
   regs.length >= 3 && regs.every((c) => c.hit >= 32), JSON.stringify(regs.map((c) => `${c.label} 盒子${c.box} 命中${c.hit}`)))
 
+// ②d 站名长的时候（夹具就是这么长的）：图标带装不下就横向滑动 —— 站长 2026-10-07 定的
+//     「站名优先展开、图标自己滑」，与下面那行分组标签同一套做法。判据两头都要：能滑（说明
+//     确实装不下）+ 滑到底最后一枚看得见（说明滑得动、不是被裁了）+ 整页仍不横向溢出。
+const strip = m.tools
+check('站名长时：顶栏图标带确实装不下、能横向滑动',
+  !!strip && strip.scrollW > strip.clientW + 1,
+  strip ? `内容宽 ${strip.scrollW} vs 可见 ${strip.clientW}（${strip.count} 枚）` : '没找到 .header-tools')
+check('站名长时：图标带滑到底，最后一枚图标完整可见（滑得动，不是被裁）',
+  !!strip && strip.lastVisible === true, strip ? `最后一枚=${strip.label}` : '没找到')
+check('站名长时：整页仍没有横向溢出（只让图标带自己滑，不许把页面撑宽）',
+  !!strip && strip.pageOverflow <= 0, strip ? `scrollWidth − clientWidth = ${strip.pageOverflow}` : '没找到')
+
 // ③ 相邻控件的命中区不许重叠：拿每个控件的中心点去问别人的命中区。
 const overlap = []
 // 只比「互相独立」的控件：搜索那格同时量了外层 span 与里面的 input（同一件事的两层），
@@ -180,7 +230,7 @@ const nested = (a, b) => a.box.x <= b.box.x && a.box.y <= b.box.y && a.box.right
 for (const a of m.header) for (const b of m.header) {
   if (a === b || nested(a, b) || nested(b, a)) continue
   const inside = Math.abs(b.hit.cx - a.hit.cx) <= (a.hit.w - 1) / 2 && Math.abs(b.hit.cy - a.hit.cy) <= (a.hit.h - 1) / 2
-  if (inside) overlap.push(`${b.label} 的中心落在 ${a.label} 的命中区里`)
+  if (inside) overlap.push(`${b.label} 的中心（${b.hit.cx.toFixed(0)},${b.hit.cy.toFixed(0)}）落在 ${a.label} 的命中区里（${a.hit.w}×${a.hit.h} @${a.hit.cx.toFixed(0)},${a.hit.cy.toFixed(0)}）`)
 }
 check('相邻控件的命中区不重叠（撑过头会点错邻居）', overlap.length === 0, overlap.join('；') || '没有重叠')
 
