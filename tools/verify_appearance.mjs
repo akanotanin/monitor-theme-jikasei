@@ -88,6 +88,16 @@ async function load({ config, systemDark = false, visitor = null, freeze = null 
     globe: !!document.querySelector('.globe-atlas svg'),
     globePanel: !!document.querySelector('.globe-panel'),
     ls: (() => { const o = {}; try { for (let i = 0; i < localStorage.length; i += 1) { const k = localStorage.key(i); o[k] = localStorage.getItem(k) } } catch {} return o })(),
+    // theme-color（手机浏览器那一圈）：App 起来之后应当只剩一份没有 media 的，值等于页面实际底色。
+    themeColors: [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => ({ content: m.content, media: m.getAttribute('media') })),
+    bodyBg: (() => {
+      const c = document.createElement('canvas'); c.width = c.height = 1
+      const x = c.getContext('2d'); if (!x) return null
+      x.fillStyle = getComputedStyle(document.body).backgroundColor
+      x.fillRect(0, 0, 1, 1)
+      const d = x.getImageData(0, 0, 1, 1).data
+      return 'rgb(' + d[0] + ', ' + d[1] + ', ' + d[2] + ')'
+    })(),
   })`))
 }
 
@@ -107,6 +117,24 @@ s = await load({ config: { themeMode: 'auto', globeOn: true }, systemDark: true,
 check('auto：北京时间 14:00（白天）→ 亮色', s.dark === false, `dark=${s.dark}`)
 s = await load({ config: { themeMode: 'auto', globeOn: true }, systemDark: false, freeze: '2026-10-07T23:30:00Z' })
 check('auto：北京时间 07:30（刚过夜界）→ 亮色', s.dark === false, `dark=${s.dark}`)
+
+
+console.log('\n=== theme-color（手机浏览器那一圈）===')
+// 判据：跟着**页面实际用的**档走（不是系统的）—— 站长的「随北京时间自动」在夜里与系统
+// 相反时，只有这一步才对得上；index.html 那两份带 media 的静态兜底应当被摘掉。
+const LIGHT_BG = 'rgb(250, 250, 250)'
+const tcOf = (x) => ({ live: (x.themeColors || []).filter((m) => !m.media), all: x.themeColors, bg: x.bodyBg })
+s = await load({ config: { themeMode: 'light', globeOn: true }, systemDark: true })
+let tc = tcOf(s)
+check('theme-color：只剩一份（App 起来后把 index.html 那两份静态兜底摘掉了）', tc.live.length === 1, JSON.stringify(tc.all))
+check('theme-color：站点设亮色、访客系统是暗色 → 仍取页面的亮底色（不是系统的暗色）',
+  tc.live[0]?.content === tc.bg && tc.bg === LIGHT_BG, `meta=${tc.live[0]?.content} 底色=${tc.bg}`)
+s = await load({ config: { themeMode: 'dark', globeOn: true }, systemDark: false })
+tc = tcOf(s)
+check('theme-color：站点设暗色 → 取暗底色', tc.live[0]?.content === tc.bg && tc.bg !== LIGHT_BG, `meta=${tc.live[0]?.content} 底色=${tc.bg}`)
+s = await load({ config: { themeMode: 'auto', globeOn: true }, systemDark: false, freeze: '2026-10-07T14:00:00Z' })
+tc = tcOf(s)
+check('theme-color：自动档夜里（与系统相反）→ 跟着页面的暗色走', tc.live[0]?.content === tc.bg && tc.bg !== LIGHT_BG, `meta=${tc.live[0]?.content} 底色=${tc.bg}`)
 
 console.log('\n=== 节点地球开关 ===')
 s = await load({ config: { themeMode: 'light', globeOn: true } })

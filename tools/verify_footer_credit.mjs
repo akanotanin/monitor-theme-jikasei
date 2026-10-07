@@ -204,11 +204,19 @@ const common = (m, where) => {
   check(`${where}：链接指向源码仓库、新标签页、锚文本是「jikasei」`,
     m.href === REPO_URL && m.target === '_blank' && (m.rel || '').includes('noreferrer') && m.linkText === 'jikasei' && m.linkInside,
     `href=${m.href} target=${m.target} rel=${m.rel} 锚文本=${JSON.stringify(m.linkText)}`)
-  check(`${where}：右沿与主内容右沿对齐（右对齐，不是居中/靠左）`,
-    !!m.creditText && !!m.main && Math.abs(m.creditText.right - m.main.contentRight) <= 1
-    && m.creditText.x > m.main.left + (m.main.right - m.main.left) / 2
-    && m.creditText.w > 0 && m.creditText.w <= 300,
-    `文字右沿=${m.creditText?.right} 内容右沿=${m.main?.contentRight} 文字左沿=${m.creditText?.x} 文字宽=${m.creditText?.w}`)
+  // 对齐：桌面（≥640px）右对齐到主内容右沿；窄屏**居中** —— 2026-10-07 站长说手机上看
+  // 右下角那行「位置不好看」（一行孤零零的灰字、左边整片空着，像水印），改成居中之后才像页脚。
+  // 判据仍是「形状」：居中断左右留白对称（文字中线 ≈ 主内容中线），不判具体坐标。
+  const narrow = m.viewport.w < 640
+  const mid = m.creditText ? (m.creditText.x + m.creditText.right) / 2 : NaN
+  const mainMid = m.main ? (m.main.left + m.main.right) / 2 : NaN
+  check(narrow ? `${where}：窄屏下署名居中（文字中线 ≈ 主内容中线）` : `${where}：右沿与主内容右沿对齐（右对齐，不是居中/靠左）`,
+    narrow
+      ? !!m.creditText && !!m.main && Math.abs(mid - mainMid) <= 1.5 && m.creditText.w > 0 && m.creditText.w <= 300
+      : !!m.creditText && !!m.main && Math.abs(m.creditText.right - m.main.contentRight) <= 1
+        && m.creditText.x > m.main.left + (m.main.right - m.main.left) / 2
+        && m.creditText.w > 0 && m.creditText.w <= 300,
+    `文字 ${m.creditText?.x}→${m.creditText?.right}（中线 ${mid?.toFixed(1)}）｜主内容 ${m.main?.left}→${m.main?.right}（中线 ${mainMid?.toFixed(1)}）｜内容右沿 ${m.main?.contentRight}`)
   check(`${where}：排在正文之后（不是压在列表上）`, !!m.footer && !!m.main && m.footer.top >= m.main.bottom - 1,
     `footer.top=${m.footer?.top} main.bottom=${m.main?.bottom}`)
   check(`${where}：比顶栏站名浅（对比度更低），但仍看得见（≥1.6）`,

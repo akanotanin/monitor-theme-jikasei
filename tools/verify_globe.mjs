@@ -489,9 +489,13 @@ await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` })
 await sleep(1600)
 const mobile = JSON.parse(await js(READ))
 check('窄屏照常画地球（不是像上游那样整块不画）', mobile.panel === true && mobile.landPts > 50, `${mobile.landPts} 个点`)
-check('★ 窄屏自动降到 LOW 档（粗岸线 + 无扫掠 + 无连线）',
-  (mobile.caption || '').indexOf('· LOW') > 0 && mobile.sweeps === 0 && mobile.links === 0 && mobile.wires < s.wires,
-  `${mobile.caption} / ${mobile.wires} 条网线 / ${mobile.sweeps} 扫掠 / ${mobile.links} 连线`)
+// ★ 2026-10-07 站长看过手机上的 LOW 档后说「地球太简陋了」→ 窄屏不再降档，跟桌面同档：
+//   detailed 岸线（不是 104 点的粗草图）、30° 经纬网、1 条扫掠、引线。
+//   回退开关是 Globe.tsx 里的 NARROW_LOW_TIER（改回 true 即一行回退）；那条路径由这几条断言守着，
+//   真要回退就得连着这里一起改 —— 免得"悄悄降档"没人发现。
+check('★ 窄屏不再降档：与桌面同档（detailed 岸线 + 30° 网 + 1 扫掠 + 引线）',
+  (mobile.caption || '').indexOf('· MEDIUM') > 0 && mobile.sweeps === 1 && mobile.links > 0 && mobile.landPts > 250,
+  `${mobile.caption} / 岸线点 ${mobile.landPts}（LOW 档约 120）/ ${mobile.wires} 条网线 / ${mobile.sweeps} 扫掠 / ${mobile.links} 连线`)
 check('★ 窄屏把竖向手势让给页面滚动（touch-action: pan-y）', mobile.atlas?.touch === 'pan-y', String(mobile.atlas?.touch))
 check('窄屏面板是上下两段（单列）', String(mobile.cols).split(' ').length === 1, mobile.cols)
 check('窄屏圆盘压到 210（省掉上下各 38px 的空档）', mobile.atlas?.h === 210, `${mobile.atlas?.h}`)

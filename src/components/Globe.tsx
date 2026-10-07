@@ -65,9 +65,15 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
   onWarm: () => void
 }) {
   const narrow = useNarrow()
-  // 窄屏走 low 档：粗岸线 + 一格 60° 的经纬网、不画扫掠、不画连线，一帧要算的点数
-  // 从 ~500 掉到 ~120。手机上省的是发热与电，不是"看着更快"。
-  const quality: Quality = narrow ? "low" : "medium"
+  /**
+   * ★ 窄屏（≤720px）**不再降档**。2026-10-07 站长看过手机上的 low 档之后说「地球太简陋了」——
+   * 那一档只有 104 个点的粗岸线（一格 60° 的网、不画扫掠、不画引线），确实就是一张草图。
+   * 现在跟桌面同档：detailed 岸线（79 环 / 1483 点，但每帧只投影**正面那一半**，约 500 点）、
+   * 30° 经纬网、1 条扫掠、引线。代价是手机上每帧多做约 4 倍的点与路径字符串 ——
+   * **真机若发烫或掉帧，回退就是下面那个开关改回 `true`（一行）**，别犹豫。
+   */
+  const NARROW_LOW_TIER = false
+  const quality: Quality = narrow && NARROW_LOW_TIER ? "low" : "medium"
   const profile = useMemo(() => globeProfile(quality), [quality])
   const prep = useMemo(
     () => prepareRings(profile.land === "coarse" ? COARSE_WORLD_OUTLINES : WORLD_OUTLINES),

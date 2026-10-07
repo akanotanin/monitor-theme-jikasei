@@ -167,6 +167,31 @@ function useTheme(siteMode: ThemeMode) {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark)
+    /**
+     * 手机浏览器那一圈（地址栏 / 状态栏）的配色（`theme-color`）跟着**页面实际用的**明暗走。
+     *
+     * index.html 里那两份是静态值、按**系统**明暗挑的；而本站的「随北京时间自动」在夜里
+     * 与系统相反时两边会打架 —— 所以这里先把那两份摘掉，再挂一份没有 media 的。
+     * 颜色取 `--background` 的**实际值**（oklch 交给 canvas 读回 sRGB），不手抄 hex，免得跟 token 漂移。
+     */
+    const head = document.head
+    for (const old of head.querySelectorAll('meta[name="theme-color"]')) old.remove()
+    const meta = document.createElement("meta")
+    meta.name = "theme-color"
+    let color = dark ? "#0d0c0a" : "#fafafa"
+    const probe = document.createElement("canvas")
+    probe.width = probe.height = 1
+    const ctx = probe.getContext("2d")
+    if (ctx) {
+      // 先铺兜底色：老浏览器不认 oklch 时这次赋值会被忽略，留下的就是它。
+      ctx.fillStyle = color
+      ctx.fillStyle = getComputedStyle(document.body).backgroundColor
+      ctx.fillRect(0, 0, 1, 1)
+      const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+      color = `rgb(${r}, ${g}, ${b})`
+    }
+    meta.content = color
+    head.append(meta)
   }, [dark])
 
   return [
@@ -499,11 +524,13 @@ export default function App() {
         )}
       </main>
 
-      {/* 页脚署名：右下角一行浅色小字（样式见 index.css 的 .theme-credit），
+      {/* 页脚署名：一行浅色小字，桌面在右下角、手机上**居中**（2026-10-07 站长说手机上看它
+          「位置不好看」—— 右下角一行孤零零的灰字、左边整片空着，读起来像水印；窄屏居中之后
+          它才像页脚）。窄屏也把上间距拉开（pt-4）、底边留够（pb-6），别贴着最后一张卡。
           「jikasei」那截点开去本主题的源码仓库 —— 新标签页打开，别把访客从状态页带走
-          （链接地址与 theme.json 的 url 是同一个，见上面的 REPO_URL）。 */}
-      <footer className="mx-auto w-full max-w-[1280px] px-4 pb-5 pt-1 sm:px-6">
-        <p className="theme-credit text-right">
+          （链接地址与 theme.json 的 url 是同一个，见上面的 REPO_URL）。样式见 index.css 的 .theme-credit。 */}
+      <footer className="mx-auto w-full max-w-[1280px] px-4 pb-6 pt-4 sm:px-6 sm:pb-5 sm:pt-1">
+        <p className="theme-credit text-center sm:text-right">
           Theme by{" "}
           <a href={REPO_URL} target="_blank" rel="noreferrer">
             jikasei
