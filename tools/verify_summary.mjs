@@ -272,8 +272,13 @@ const PROBE = `JSON.stringify((() => {
       const r = document.querySelector('[role=group][aria-label=分组]')
       if (!r) return null
       const b = r.getBoundingClientRect()
+      // ★ 与上下邻居的**视觉**间距（2026-10-07 站长说这一行夹在面板/概览与卡片之间空得太开）：
+      //   上 = 前一个兄弟（面板或概览）的底，下 = 后一个兄弟（卡片列表）的顶。
+      const prev = r.previousElementSibling, next = r.nextElementSibling
       return {
         top: Math.round(b.top), bottom: Math.round(b.bottom), h: Math.round(b.height),
+        gapAbove: prev ? Math.round(b.top - prev.getBoundingClientRect().bottom) : null,
+        gapBelow: next ? Math.round(next.getBoundingClientRect().top - b.bottom) : null,
         tabs: [...r.querySelectorAll('button')].map((x) => ({ text: x.textContent.trim(), pressed: x.getAttribute('aria-pressed') === 'true' })),
       }
     })(),
@@ -667,6 +672,12 @@ let classicNet = null
   check('分组跟随：标签行仍在概览卡片下面（这一版没顺手改位置）',
     !!ui.groupRow && ui.tiles.length > 0 && ui.groupRow.top >= tilesBottom - 1,
     `标签行 top ${ui.groupRow?.top} ／ 概览底 ${tilesBottom}`)
+  // ★ 标签行上下的留白要收住（同日要求）：原来两边各 20px（space-y-5），一行细条夹在中间像浮着；
+  //   现在上 12 / 下 12。判据给到 16 的余量，既拦住"又漂回去"，也不逼死具体数值。
+  check('分组标签行上下留白收紧了（各 ≤16px，原来 20）',
+    !!ui.groupRow && ui.groupRow.gapAbove !== null && ui.groupRow.gapBelow !== null
+    && ui.groupRow.gapAbove <= 16 && ui.groupRow.gapBelow <= 16,
+    `上 ${ui.groupRow?.gapAbove}px ／ 下 ${ui.groupRow?.gapBelow}px`)
   check('分组跟随：标签是 全部4 / 美国1 / 欧洲2 / 未分组1，默认选中「全部」',
     JSON.stringify(labels(ui)) === JSON.stringify(['全部4', '美国1', '欧洲2', '未分组1']) &&
     (ui.groupRow?.tabs ?? []).every((t, i) => t.pressed === (i === 0)),

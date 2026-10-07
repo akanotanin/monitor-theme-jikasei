@@ -636,8 +636,12 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
   }, [current, group, onGroup])
   return (
     <>
+      {/* ★ 分组标签行的上下间距收紧（2026-10-07 站长说这一行夹在面板与卡片之间显得空）：
+          主容器是 space-y-5（20px），一行 36px 高的细条被它夹着就像浮着。下面那行用
+          -mt-2（上 20→12）+ mb-3（下 12）—— 它是**下面那张列表的筛选条**，贴着卡片更顺。
+          Tailwind 的 space-y 用的是 :where()（零特异性），所以这里随手覆盖得动。 */}
       {showTabs && groups.length > 0 && (
-        <div role="group" aria-label="分组" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+        <div role="group" aria-label="分组" className="-mx-1 -mt-2 mb-3 flex gap-1 overflow-x-auto px-1 pb-1">
           {tabs.map(([value, label, count]) => (
             <Button
               // Group names are free text, so they carry a prefix no key of
