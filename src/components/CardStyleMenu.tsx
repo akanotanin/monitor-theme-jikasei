@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { Activity, AlignJustify, Check, Grid2x2, LayoutGrid, Rows3, Table } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -34,13 +35,42 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
 }) {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLSpanElement>(null)
+  const menu = useRef<HTMLSpanElement>(null)
+  // 浮层的落点（宿主 + 坐标），开着的时候才非空；见下面 useLayoutEffect 那段注释。
+  const [spot, setSpot] = useState<{ host: HTMLElement; top: number; right: number } | null>(null)
+
+  // ★ 浮层**不能**长在按钮里：按钮住在顶栏那条 `overflow-x-auto` 的图标带里，而条带会把
+  //   越界的子元素裁掉 —— 实测这枚菜单 144×170，点开后只有 2px 高的一条边露在条带下沿，
+  //   看着就是「点了没反应」（站长报的「按钮打不开」，桌面与手机都中招）。所以浮层经
+  //   portal 挂到 header 上：header 是 sticky（本身就是绝对定位的锚点），这条路径不经过
+  //   任何裁剪。坐标照按钮的实时矩形算，条带横向滑动 / 窗口缩放时要重新摆（滑动会让按钮动）。
+  useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const b = box.current?.getBoundingClientRect()
+      const host = box.current?.closest<HTMLElement>("header")
+      const h = host?.getBoundingClientRect()
+      if (b && host && h) setSpot({ host, top: b.bottom - h.top + 4, right: h.right - b.right })
+    }
+    place()
+    const strip = box.current?.closest<HTMLElement>(".header-tools")
+    window.addEventListener("resize", place)
+    strip?.addEventListener("scroll", place)
+    return () => {
+      window.removeEventListener("resize", place)
+      strip?.removeEventListener("scroll", place)
+    }
+  }, [open])
+
   // 点别处、按 Esc 都要收起（与卡片右上角那枚浮层同一套做法：只在浮层外按下时收）。
+  // 浮层现在挂在 header 上（不在 box 里）—— 判「浮层外」要多看它自己一眼，否则按下选项
+  // 那一下会先把浮层卸掉、click 就丢了。
   // 别写 `e.target as Node` —— 本仓库的 `Node` 是节点类型（@/lib/api），会跟 DOM 的撞名。
   useEffect(() => {
     if (!open) return
     const onDown = (e: PointerEvent) => {
       const el = e.target
-      if (!(el instanceof HTMLElement) || !box.current?.contains(el)) setOpen(false)
+      if (!(el instanceof HTMLElement) || !(box.current?.contains(el) || menu.current?.contains(el))) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false)
@@ -67,13 +97,16 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
       >
         <LayoutGrid />
       </Button>
-      {open && (
+      {open && spot && createPortal(
         <span
+          ref={menu}
           role="menu"
           aria-label="卡片形态"
           data-style-menu=""
-          // 顶栏是 sticky 的，菜单从它下面探出来（right-0 贴住按钮右缘，窄屏也不会出界）。
-          className="absolute right-0 top-10 z-20 block w-36 overflow-hidden rounded-md border bg-popover py-1 text-sm shadow-md"
+          // 绝对定位挂在 header 上（见 place() 那段注释）；right 贴住按钮右缘（窄屏也不会
+          // 出界），top 落在按钮下沿 4px —— 与原本 top-10 的落点一致。
+          style={{ top: spot.top, right: spot.right }}
+          className="absolute z-20 block w-36 overflow-hidden rounded-md border bg-popover py-1 text-sm shadow-md"
         >
           {STYLES.map(({ value: v, label, hint, Icon }) => (
             <button
@@ -95,7 +128,8 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
               {v === value && <Check className="size-3.5 shrink-0" />}
             </button>
           ))}
-        </span>
+        </span>,
+        spot.host,
       )}
     </span>
   )

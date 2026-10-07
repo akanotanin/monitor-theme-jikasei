@@ -4,7 +4,7 @@
 // 用法：node tools/verify_card_style_menu.mjs [截图目录=shots/card-style]
 //   先 `npm run build` —— 验的是 dist/，不是源码。
 //
-// 四条最要紧的断言：
+// 五条最要紧的断言：
 //   · **点了哪一档，卡片真的换成了那一档**（不是只把菜单打个勾）。判据用**结构**：
 //     经典 = 2×2 四格（`[data-net=grid]`）、简约/延迟 = 一行两段（`[data-net=row]`）、
 //     延迟与详细才摊三网延迟（`[data-latency]`）、详细才多那一行元信息（`[data-meta]`）、
@@ -15,6 +15,10 @@
 //     这位访客也会跟着变 —— 只把那一档记下来会让"跟着站长"再也回不去。
 //   · **认不出来的存值不能顶掉站长的默认**（读坏了 → 视为没选过），这是 `cardStyleOrNull`
 //     与 `cardStyleOf` 唯一的差别，也是这条最容易写错的地方。
+//   · **菜单点开后必须整块可见**（桌面与窄屏各一条）：它一度挂在顶栏那条 `overflow-x-auto`
+//     的图标带里、被裁到只剩 2px 高的一条边（站长报的「按钮打不开」的根因）—— 判据写成
+//     「与沿途每个 overflow 祖先求交后，尺寸仍是原尺寸，且菜单最上层就是它自己」。
+//     反向自测：打回改动前那版 dist，这两条必红。
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -148,6 +152,11 @@ const READ = `(() => {
     toggle: btn ? { title: btn.getAttribute('title'), expanded: btn.getAttribute('aria-expanded'), box: box(btn), cls: btn.className } : null,
     menu: !!menu,
     menuBox: menu ? box(menu) : null,
+    // ★ 菜单「与沿途每个 overflow 祖先求交后」还剩多大：与 menuBox 等大 = 没被裁。
+    //   裁它的元凶曾经是顶栏那条 .header-tools（overflow-x:auto → overflow-y 跟着变 auto）。
+    menuKept: menu ? (() => { const mr = menu.getBoundingClientRect(); let r = { x: mr.x, y: mr.y, right: mr.right, bottom: mr.bottom }; const cut = []; let el = menu.parentElement; while (el && el !== document.documentElement) { const s = getComputedStyle(el); if (s.overflowX !== 'visible' || s.overflowY !== 'visible') { const b = el.getBoundingClientRect(); cut.push((typeof el.className === 'string' ? String(el.className).split(' ')[0] : el.tagName) + ':' + s.overflowX + '/' + s.overflowY); r = { x: Math.max(r.x, b.x), y: Math.max(r.y, b.y), right: Math.min(r.right, b.right), bottom: Math.min(r.bottom, b.bottom) } } el = el.parentElement } return { w: Math.round(Math.max(0, r.right - r.x)), h: Math.round(Math.max(0, r.bottom - r.y)), cut }; })() : null,
+    // 菜单顶上那块地方的最上层元素：是菜单自己（或它的子节点）= 没被别的东西盖住。
+    menuHit: menu ? (() => { const r = menu.getBoundingClientRect(); const el = document.elementFromPoint(r.x + r.width / 2, r.y + Math.min(12, r.height / 2)); return el ? (el === menu || menu.contains(el)) : false; })() : null,
     options: opts.map((b) => ({
       value: b.getAttribute('data-style-option'),
       label: b.textContent.replace('默认', '').trim(),
@@ -221,6 +230,11 @@ await js(`document.querySelector('.card-style-toggle').click()`)
 await sleep(250)
 s = JSON.parse(await js(READ))
 check('点一下打开', s.toggle?.expanded === 'true' && s.menu === true)
+// ★ 这一条就是站长那次「按钮打不开」的护栏：菜单挂在条带里时被裁到只剩 2px 高的一条边，
+//   点开看着像没反应（DOM 里有、眼睛看不见）。判据不写死尺寸，写成「没被任何祖先裁掉」。
+check('★ 菜单整块可见（没有被任何 overflow 祖先裁掉，也没有被盖住）',
+  !!s.menu && !!s.menuKept && s.menuKept.w === s.menuBox.w && s.menuKept.h === s.menuBox.h && s.menuHit === true,
+  `露出 ${s.menuKept?.w}×${s.menuKept?.h} / 应为 ${s.menuBox?.w}×${s.menuBox?.h}；最上层是菜单自己=${s.menuHit}${s.menuKept?.cut?.length ? '；裁剪者 ' + s.menuKept.cut.join(', ') : ''}`)
 check('五种形态一个不多一个不少，顺序与 CARD_STYLES 一致',
   JSON.stringify(s.options.map((o) => o.value)) === JSON.stringify(['classic', 'plain', 'latency', 'detailed', 'compact']),
   JSON.stringify(s.options.map((o) => o.value)))
@@ -337,6 +351,7 @@ await js(`(() => { if (!document.querySelector('[data-style-menu]')) document.qu
 await sleep(300)
 s = JSON.parse(await js(READ))
 check('窄屏菜单不出界（左右都在视口内）', s.menuBox.x >= 0 && s.menuBox.right <= s.width, `${JSON.stringify(s.menuBox)} / 宽 ${s.width}`)
+check('窄屏菜单也整块可见（同样没被裁）', !!s.menuKept && s.menuKept.w === s.menuBox.w && s.menuKept.h === s.menuBox.h, `露出 ${s.menuKept?.w}×${s.menuKept?.h} / 应为 ${s.menuBox?.w}×${s.menuBox?.h}`)
 check('窄屏顶栏没有横向溢出', await js('document.documentElement.scrollWidth <= 390'), await js('String(document.documentElement.scrollWidth)'))
 await shot('05-mobile-menu.png')
 await pick('detailed')
