@@ -472,6 +472,11 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
         </div>
       </div>
 
+      {/* 读 `metricRows.length` 而不是 `data.metrics.length`：真 hub 五个键每次都带齐
+          （没要的那半是空数组），但响应一旦少 `metrics` 这个键（老 hub / 形状漂移 / 桩），
+          **切回本页签的那一帧** —— effect 把 data 清空之前 —— 就会抛 TypeError、整棵树被
+          React 卸载，整页空白。2026-10-09 在演示站实测到；metricRows 已经兜过底
+          （`data?.metrics ?? []`），长度口径一致。回归哨兵见 tools/verify_detail_charts.mjs 的「三」。 */}
       {!data ? (
         <Skeleton className="h-40 w-full" />
       ) : failed ? (
@@ -591,7 +596,7 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
             )}
           </div>
         )
-      ) : data.metrics.length === 0 ? (
+      ) : metricRows.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">这段时间没有历史数据</p>
       ) : (
         <div className="space-y-5">

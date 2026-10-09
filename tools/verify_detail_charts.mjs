@@ -46,6 +46,11 @@ const node = (id, name, group, country, os) => ({
 })
 const NODES = { nodes: [node(1, '东京一号', '东京', 'JP', 'Debian GNU/Linux 12 (bookworm)')] }
 const START = 1790300000
+// 响应形状：真 hub（komari.im，2026-10-09 实测）**五个键每次都带齐** —— 不管 `series` 要哪一半，
+// 没要的那半是**空数组**（`series=ping` 回 `{metrics: [], ping: […], probes, loss}`）。
+// 老桩只回一半的键（ping 响应没有 metrics），把「延迟 → 资源」切回的那一帧炸成整页卸载
+// （见下面三；`partialShape` 就是用来复现那个形状的回归哨兵）。
+let partialShape = false
 const METRICS = {
   metrics: Array.from({ length: 40 }, (_, i) => {
     const gap = i >= 12 && i <= 15            // 这一段「agent 没上报」
@@ -98,7 +103,11 @@ const server = createServer((req, res) => {
     const body = path === '/api/me' ? { authed: false, github: false, public_page: true, site: BASE, site_name: '图表' }
       : path === '/api/nodes' ? NODES
         : path.endsWith('/config') ? { listTop: 'both', cardStyle: 'detailed', remarkPlacement: 'both', pingLines: '' }
-          : path.includes('/metrics') ? (full.includes('series=metrics') ? METRICS : full.includes('series=ping') ? PING : { metrics: [], ping: [], probes: {}, loss: {} })
+          : path.includes('/metrics') ? (full.includes('series=metrics')
+              ? (partialShape ? METRICS : { ...METRICS, ping: [], probes: {}, loss: {} })
+              : full.includes('series=ping')
+                ? (partialShape ? PING : { ...PING, metrics: [] })
+                : { metrics: [], ping: [], probes: {}, loss: {} })
             : {}
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
     return res.end(JSON.stringify(body))
@@ -354,6 +363,41 @@ if (!REAL) {
   } else {
     check('拿到延迟图的绘图区（拖选的前提）', false, '没找到 rect')
   }
+}
+
+// ── 三、页签往返：从「网络延迟」切回「资源」 ──
+// 2026-10-09 演示站实测：ping 响应少了 `metrics` 键时，切回资源页签的那一帧会读到
+// `data.metrics.length` 抛 TypeError、整棵树被 React 卸载（页面直接空白）。真 hub 五个键都带齐
+// （所以线上没炸过），但「形状漂移就整页白」这个脆弱点必须钉住 —— 缺键时也要优雅降级。
+if (!REAL) {
+  console.log('\n三、页签往返（网络延迟 → 资源）:')
+  const clickTab = (label) => js(`(() => { const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === ${JSON.stringify(label)}); b && b.click(); return !!b })()`)
+  const waitLatency = async () => { for (let i = 0; i < 40; i++) { await sleep(300); if (await js(`document.querySelector('svg[aria-label="节点延迟走势"]') !== null`)) return true } return false }
+  // a) 正常形状（五个键都带齐）：切过去再切回来，四张图必须回来
+  await clickTab('网络延迟')
+  check('切到延迟页签（图出来）', await waitLatency(), '')
+  await clickTab('资源')
+  let backN = 0
+  for (let i = 0; i < 50; i++) { await sleep(300); backN = await js(`document.querySelectorAll('[data-chart] svg').length`); if (backN >= 4) break }
+  check('★ 切回资源：四张图回来（不停在空提示/空白）', backN >= 4, `现在 ${backN} 张`)
+  // b) 缺键形状（形状漂移的哨兵）：响应里没有 metrics 键，整页也不许炸
+  errors.length = 0
+  partialShape = true
+  await send('Page.navigate', { url: `${BASE}/node/1` })
+  await sleep(1500)
+  await clickTab('网络延迟')
+  await waitLatency()
+  await clickTab('资源')
+  let st = { alive: false, charts: 0 }
+  for (let i = 0; i < 50; i++) {
+    await sleep(300)
+    st = JSON.parse(await js(`JSON.stringify({ alive: document.querySelector('header') !== null, charts: document.querySelectorAll('[data-chart] svg').length })`))
+    if (st.charts >= 4) break
+  }
+  check('★ 缺 metrics 键：整页不炸（header 还在、没卸载整棵树）', st.alive === true, JSON.stringify(st))
+  check('★ 缺 metrics 键：随后四张图照样画出来', st.charts >= 4, JSON.stringify(st))
+  check('缺键切换期间没有未捕获异常', errors.length === 0, errors.slice(0, 2).join(' | '))
+  partialShape = false
 }
 
 console.log(`\n结果: PASS ${passed} / FAIL ${failed}`)
