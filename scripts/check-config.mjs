@@ -58,8 +58,13 @@ for (const cache of CACHES) {
   }
 }
 const html = readFileSync('index.html', 'utf8')
-for (const probe of ['/title-probe.js']) {
-  if (!html.includes(`<script src="${probe}">`)) bad.push(`index.html 里没有引入 ${probe}（标签页的占位值就没法早点换掉）`)
+// ★ 2026-10-09：探针改 async 后，写死的精确串 `<script src="/title-probe.js">` 就失配了——
+//   这里匹配的是「整条标签、允许带属性」，并额外钉住 async 本身：普通脚本会阻塞解析、
+//   defer 也会被文档序拖住（实测 300ms 的探针延迟 = 首绘 396 vs 132ms），它是承重的。
+{
+  const probeTag = html.match(/<script src="\/title-probe\.js"[^>]*>/)
+  if (!probeTag) bad.push(`index.html 里没有引入 /title-probe.js（标签页的占位值就没法早点换掉）`)
+  else if (!/\basync\b/.test(probeTag[0])) bad.push(`/title-probe.js 的引入没有 async：普通脚本/defer 会拖住入口与首绘（见 index.html 注释里的实测数）`)
 }
 // 站点图标的两条静态引用：hub 1.4.0 认的就是这两个路径，写成别的名字等于把兜底丢了。
 for (const icon of ['/favicon.svg', '/apple-touch-icon.png']) {
