@@ -543,13 +543,13 @@ export default function App() {
           border-b 呼应，页面上下就都框住了），留白按「卡→线 24px、线→字 16px、字→底 20px」
           拉开，它才读成一个明确的页脚区。分割线只出现在窄屏（<640px，与署名居中的断点同一档）
           —— 为手机改的东西不落到电脑端，桌面维持原样。
-          「jikasei」那截点开去本主题的源码仓库 —— 新标签页打开，别把访客从状态页带走
+          「Jikasei」那截点开去本主题的源码仓库 —— 新标签页打开，别把访客从状态页带走
           （链接地址与 theme.json 的 url 是同一个，见上面的 REPO_URL）。样式见 index.css 的 .theme-credit。 */}
       <footer className="mx-auto mt-2 w-full max-w-[1280px] border-t px-4 pb-5 pt-4 sm:mt-0 sm:border-t-0 sm:px-6 sm:pb-5 sm:pt-1">
         <p className="theme-credit text-center sm:pr-3 sm:text-right">
-          Theme by{" "}
+          Theme:{" "}
           <a href={REPO_URL} target="_blank" rel="noreferrer">
-            jikasei
+            Jikasei
           </a>
         </p>
       </footer>

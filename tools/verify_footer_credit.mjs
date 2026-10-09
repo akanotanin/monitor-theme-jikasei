@@ -1,4 +1,4 @@
-// 页脚署名的验收：右下角那行「Theme by jikasei」在不在、点不点得动、够不够「浅」。
+// 页脚署名的验收：右下角那行「Theme: Jikasei」在不在、点不点得动、够不够「浅」。
 //
 // 用法：node tools/verify_footer_credit.mjs [baseUrl]
 //   不给 baseUrl：本机起静态服务器伺服 dist/ + 桩 /api/*（不经隧道，判据只由代码决定）。
@@ -9,7 +9,7 @@
 //   FOOTER_WAIT_MS    每一步等页面安静的时长（默认 2500，经隧道打真站时给大些）。
 //
 // 判据都是「形状」而不是具体色值：
-//   ① 署名在、文案逐字、链接指向源码仓库、新标签页打开、锚文本就是「jikasei」；
+//   ① 署名在、文案逐字、链接指向源码仓库、新标签页打开、锚文本就是「Jikasei」；
 //   ② 位置：贴着主内容的右沿、排在正文之后 —— 内容比一屏短时整个署名落在视口右下角；
 //   ③ 「浅」用对比度说话：把颜色按 opacity 合成到页面底色上量 WCAG 对比度，
 //      必须低于顶栏站名（= 比正文浅），但仍 ≥ 1.6（看得见，不是隐形字）；
@@ -173,13 +173,14 @@ if (SHOT_DIR) mkdirSync(SHOT_DIR, { recursive: true })
 // 署名那一小块（右下角）：机位**不依赖署名在不在** —— 锚点取主内容右沿 + 页底，
 // 所以改前（没有署名）与改后拍的是同一块，能直接并排看。
 // ★CDP 的 clip 是**文档坐标**（不是视口坐标，实测过：ScrollY=606 时给的视口坐标裁出来的是
-//   文档 y=834 处的一张卡片）——所以量完一律加上 scrollX/scrollY；同时先滚到页底，
-//   保证这一块落在视口内（captureBeyondViewport:false 时视口外的像素拍不到）。
+//   文档 y=834 处的一张卡片）——所以量完一律加上 scrollX/scrollY，用
+//   captureBeyondViewport:true 直接拍，**不滚动**。
+//   ★2026-10-09 实测踩坑：旧写法「先滚到页底、再按视口坐标量、captureBeyondViewport:false」
+//   在**长页**（真站 7 台机）上拍到一整块纯白 —— 滚动与量测之间页面高度还在变（懒加载/数据
+//   刷新），clip 落到文档底之外；改成「不滚动 + 文档坐标 + beyond」后短页长页都稳。
 const shot = async (name, m) => {
   if (!SHOT_DIR) return
   const vp = m.viewport
-  await js('scrollTo(0, document.documentElement.scrollHeight)')
-  await sleep(250)
   const box = JSON.parse(await js(`(() => {
     const el = document.querySelector('.theme-credit')
     const main = document.querySelector('main')
@@ -189,10 +190,10 @@ const shot = async (name, m) => {
     return JSON.stringify({ right: Math.round(right + scrollX), bottom: Math.round(bottom + scrollY) })
   })()`))
   const clip = { x: Math.max(0, box.right - 280), y: Math.max(0, box.bottom - 46), width: 300, height: 66 }
-  const r = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, clip: { ...clip, scale: 3 } })
+  const r = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { ...clip, scale: 3 } })
   if (r.result?.data) { writeFileSync(join(SHOT_DIR, `${name}.png`), Buffer.from(r.result.data, 'base64')); console.log(`    已拍 ${join(SHOT_DIR, `${name}.png`)}  clip=${JSON.stringify(clip)}`) }
-  // 再拍一张整屏（滚到页底之后的当前视口）：署名在页面里的位置、与内容的关系一眼看得全。
-  const full = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false, clip: { x: 0, y: Math.round(box.bottom + 20 - vp.h), width: vp.w, height: vp.h, scale: 1 } })
+  // 再拍一张「页底那一屏」（按文档坐标裁的视口大小窗口）：署名与内容的关系一眼看得全。
+  const full = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: 0, y: Math.max(0, Math.round(box.bottom + 20 - vp.h)), width: vp.w, height: vp.h, scale: 1 } })
   if (full.result?.data) { writeFileSync(join(SHOT_DIR, `${name}-fullpage.png`), Buffer.from(full.result.data, 'base64')); console.log(`    已拍 ${join(SHOT_DIR, `${name}-fullpage.png`)}`) }
 }
 
@@ -207,9 +208,9 @@ const goto = async (path, { w, h, dark, mobile = false }) => {
 const common = (m, where) => {
   check(`${where}：右下角那行署名在`, m.exists && !!m.credit && m.credit.display !== 'none' && m.credit.visibility === 'visible' && m.credit.rect.h > 0,
     m.credit ? `${m.credit.rect.w}×${m.credit.rect.h} @ ${m.credit.rect.x},${m.credit.rect.y}` : '找不到 .theme-credit')
-  check(`${where}：文案逐字是「Theme by jikasei」`, m.text === 'Theme by jikasei', `实际=${JSON.stringify(m.text)}`)
-  check(`${where}：链接指向源码仓库、新标签页、锚文本是「jikasei」`,
-    m.href === REPO_URL && m.target === '_blank' && (m.rel || '').includes('noreferrer') && m.linkText === 'jikasei' && m.linkInside,
+  check(`${where}：文案逐字是「Theme: Jikasei」`, m.text === 'Theme: Jikasei', `实际=${JSON.stringify(m.text)}`)
+  check(`${where}：链接指向源码仓库、新标签页、锚文本是「Jikasei」`,
+    m.href === REPO_URL && m.target === '_blank' && (m.rel || '').includes('noreferrer') && m.linkText === 'Jikasei' && m.linkInside,
     `href=${m.href} target=${m.target} rel=${m.rel} 锚文本=${JSON.stringify(m.linkText)}`)
   // 对齐：桌面（≥640px）右对齐到主内容右沿；窄屏**居中** —— 2026-10-07 站长说手机上看
   // 右下角那行「位置不好看」（一行孤零零的灰字、左边整片空着，像水印），改成居中之后才像页脚。
