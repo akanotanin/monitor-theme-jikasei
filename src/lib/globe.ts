@@ -796,6 +796,21 @@ export function regionView(nodes: Node[], current: string | null) {
 
 /* ------------------------------------------------------------------ 标签排布 */
 
+/**
+ * 两摞标签各自的**行数上限**（大机群档）。
+ *
+ * 100 台实测：可见针 ~36~40 枚时每侧堆到 19~21 行、底端冲到 y≈210~235，越过 12~204
+ * 的设计带、贴到画布下沿 —— 观感是一堵「文字墙」（站长 2026-10-10 的要求是「画面
+ * 和谐美观不突兀」）。超过上限就按优先级留 14 行，其余的行**只留针**（标签与引线都不
+ * 画，针边上的台数角标保留）：
+ *   ① 离线的先留（主题口径：出事的那台不许被盖过去）
+ *   ② 多台地区先留（一枚针代表 N 台）
+ *   ③ 其余按原有顺序
+ * 14 行 × 13 间距 = 182，正好落在设计带里；七台与 27 台那两套验收夹具（每侧 ≤ 10 行）
+ * 不受影响 —— 这个上限只在「排不下」时才动手。
+ */
+export const MAX_LABEL_ROWS = 14
+
 export type Placed = GlobeNode & {
   px: number
   py: number
@@ -808,6 +823,8 @@ export type Placed = GlobeNode & {
   left: string
   right: string
   width: number
+  /** 被行数上限省掉的那一行：只画针，不画引线与标签（见 MAX_LABEL_ROWS）。 */
+  hidden: boolean
 }
 
 /**
@@ -834,7 +851,7 @@ export function layoutLabels(cam: Camera, points: GlobeNode[], sides: Map<string
     const left = trimLabel(`${point.name} · ${point.code}`, maxWidth, measure)
     const right = trimLabel(`${point.code} · ${point.name}`, maxWidth, measure)
     items.push({
-      ...point, px: p.x, py: p.y, lx: 0, ly: 0, end: false, label: right,
+      ...point, px: p.x, py: p.y, lx: 0, ly: 0, end: false, label: right, hidden: false,
       // 两个方向都排得下才算这一行长；宽度也按截断之后的算，左右两摞才配得平。
       width: Math.max(inkWidthWith(measure, left), inkWidthWith(measure, right)),
       left, right,
@@ -861,7 +878,16 @@ export function layoutLabels(cam: Camera, points: GlobeNode[], sides: Map<string
   }
   rebalance(right, left)
   rebalance(left, right)
-  const stack = (list: Placed[], x: number, end: boolean) => {
+  // 行数上限：超了就按优先级留 MAX_LABEL_ROWS 行，其余只留针（见常量注释）。
+  const keepPriority = (a: Placed, b: Placed) =>
+    (a.online ? 1 : 0) - (b.online ? 1 : 0) || b.count - a.count || a.index - b.index
+  for (const list of [left, right]) {
+    if (list.length <= MAX_LABEL_ROWS) continue
+    const kept = new Set(list.slice().sort(keepPriority).slice(0, MAX_LABEL_ROWS))
+    for (const item of list) if (!kept.has(item)) item.hidden = true
+  }
+  const stack = (all: Placed[], x: number, end: boolean) => {
+    const list = all.filter((item) => !item.hidden)
     if (!list.length) return
     list.sort((a, b) => a.py - b.py || a.index - b.index)
     const gap = list.length > 14 ? 11 : 13
@@ -889,12 +915,21 @@ export function layoutLabels(cam: Camera, points: GlobeNode[], sides: Map<string
 /**
  * 在线节点之间的连线：跨地区才算一对，再按 `(a·7 + b·3) % divisor === 1` 抽稀 ——
  * 26 台两两相连是 325 条，画出来是一团毛线。`linkMode` 越大越密（上游 1 → 8 抽一、2 → 4 抽一）。
+ *
+ * ★ 大机群：除数跟着可见在线针数涨（见 `linkDivisor`）—— 100 台实测可见 ~36 枚时
+ * 按 8 抽一画了 61 条，欧亚之间连成一张网；收口后同规模 ~42 条。
  */
+export function linkDivisor(mode: 0 | 1 | 2, onlineCount: number): number {
+  const base = mode > 1 ? 4 : 8
+  const pairs = (onlineCount * (onlineCount - 1)) / 2
+  return Math.max(base, Math.round(pairs / (mode > 1 ? 80 : 42)))
+}
+
 export function links(placed: Placed[], mode: 0 | 1 | 2, center = VIEW): { d: string }[] {
   if (!mode) return []
   const online = placed.filter((item) => item.online)
   const out: { d: string }[] = []
-  const divisor = mode > 1 ? 4 : 8
+  const divisor = linkDivisor(mode, online.length)
   for (let i = 0; i < online.length; i += 1) {
     for (let j = i + 1; j < online.length; j += 1) {
       const a = online[i]

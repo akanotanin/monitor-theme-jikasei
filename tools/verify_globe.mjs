@@ -20,6 +20,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { extname, join, normalize } from 'node:path'
+import { linkDivisor } from '../src/lib/globe.ts'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const OUT = process.argv[2] || 'shots/globe'
@@ -236,14 +237,16 @@ const open = async (opts = {}) => {
   return state
 }
 
-/** 与 @/lib/globe 的 links() 同一套抽样公式：跨地区、且 (a·7 + b·3) % 8 === 1。 */
+/** 与 @/lib/globe 的 links() 同一套抽样公式：跨地区、且 (a·7 + b·3) % divisor === 1。
+ *  除数走 linkDivisor（小机群 8 抽一；针一多除数跟着涨、大机群收口）—— 别再写死 8。 */
 const expectLinks = (hits) => {
   const online = hits.filter((h) => h.online)
+  const divisor = linkDivisor(1, online.length)
   let n = 0
   for (let a = 0; a < online.length; a++) {
     for (let b = a + 1; b < online.length; b++) {
       if (online[a].region === online[b].region) continue
-      if ((online[a].index * 7 + online[b].index * 3) % 8 !== 1) continue
+      if ((online[a].index * 7 + online[b].index * 3) % divisor !== 1) continue
       n++
     }
   }

@@ -343,25 +343,27 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
           <span>全部</span>
           <b>{nodes.length}</b>
         </button>
-        {rows.map((row) => (
-          <button
-            key={row.region.key}
-            type="button"
-            className="globe-reg"
-            aria-pressed={region === row.region.key}
-            onClick={() => pick(row.region.key, row.aim)}
-            title={row.offline > 0 ? `${row.count} 台 · ${row.offline} 台离线` : undefined}
-          >
-            <span>
-              <RegionFlag code={row.region.code} />
-              {row.region.label}
-            </span>
-            <b>
-              {row.count}
-              {row.offline > 0 && <i className="globe-reg-dot" aria-hidden="true" />}
-            </b>
-          </button>
-        ))}
+        <div className="globe-rows">
+          {rows.map((row) => (
+            <button
+              key={row.region.key}
+              type="button"
+              className="globe-reg"
+              aria-pressed={region === row.region.key}
+              onClick={() => pick(row.region.key, row.aim)}
+              title={row.offline > 0 ? `${row.count} 台 · ${row.offline} 台离线` : undefined}
+            >
+              <span>
+                <RegionFlag code={row.region.code} />
+                {row.region.label}
+              </span>
+              <b>
+                {row.count}
+                {row.offline > 0 && <i className="globe-reg-dot" aria-hidden="true" />}
+              </b>
+            </button>
+          ))}
+        </div>
       </aside>
     </section>
   )
@@ -371,13 +373,18 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
  * 一枚针：引线 + 空心圆 + 标签，外加一枚透明的命中圆（半径 9，比 2.1 的针大多了，
  * 手指点得中）。标签的文字外侧对齐（左侧那一摞往左收 3px，右侧往右推 3px），
  * 所以它永远不会压到引线。
+ *
+ * 大机群时被行数上限省掉的行（见 globe.ts 的 MAX_LABEL_ROWS）只画针 —— 引线与标签
+ * 都不画，针边上的台数角标照留：那一行字没了，但这枚针是哪里、有几台仍然读得出来。
  */
 function Pin({ p }: { p: Placed }) {
   const cx = p.px.toFixed(1)
   const cy = p.py.toFixed(1)
   return (
     <g>
-      <path className="globe-stem" d={`M ${cx} ${cy} L ${p.lx.toFixed(1)} ${p.ly.toFixed(1)}`} />
+      {!p.hidden && (
+        <path className="globe-stem" d={`M ${cx} ${cy} L ${p.lx.toFixed(1)} ${p.ly.toFixed(1)}`} />
+      )}
       <circle className="globe-pin" cx={cx} cy={cy} r={2.1} />
       {/* 多台地区：针边上挂一个小小的台数（标签里也写着「地区 ×N」，两处都在，
           因为标签可能被挤掉、针本身也常常落在标签的另一头）。 */}
@@ -386,9 +393,11 @@ function Pin({ p }: { p: Placed }) {
           {p.count}
         </text>
       )}
-      <text className="globe-label" x={p.lx + (p.end ? -3 : 3)} y={p.ly + 3} textAnchor={p.end ? "end" : "start"}>
-        {p.label}
-      </text>
+      {!p.hidden && (
+        <text className="globe-label" x={p.lx + (p.end ? -3 : 3)} y={p.ly + 3} textAnchor={p.end ? "end" : "start"}>
+          {p.label}
+        </text>
+      )}
       <circle className="hit" cx={cx} cy={cy} r={9} fill="transparent" data-node={p.id} data-index={p.index} data-region={p.region.key} data-online={p.online ? "1" : "0"} data-count={p.count}>
         <title>{p.count > 1 ? `${p.region.label}：${p.count} 台（打开其中第一台）` : `打开 ${p.name}`}</title>
       </circle>

@@ -294,6 +294,27 @@
   .globe-reg { min-height: 32px; }
 }
 .globe-reg-all { grid-column: 1 / -1; }
+/* 大机群时地区列表可能几十行：单独收进一个滚动区，别把整块面板撑成一堵墙
+   （100 台实测 57 行 → 面板 845px 高）。上限对齐地球那一格：桌面 200、窄屏 232
+   （约 5 行半，露半行给「还能滚」的提示）。列表本来就短的小机群看不出区别。 */
+.globe-rows {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 8px 18px;
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  /* 底部渐隐 + 14px 垫片：滚到底时渐隐盖的是垫片、最后一行完整；没滚到底时
+     半截行是渐隐的（读起来像「下面还有」而不是「被切掉了」）。 */
+  padding-bottom: 14px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
+}
+@media (max-width: 899px) {
+  .globe-rows { max-height: 232px; }
+}
 .globe-reg span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .globe-reg b { color: var(--foreground); font-weight: 500; font-variant-numeric: tabular-nums; }
 /* 地区行上的「有机器离线」小点：这台地区里有离线时挂在台数后面（全在线不出现），

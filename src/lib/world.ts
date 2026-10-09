@@ -220,6 +220,10 @@ export const CITY_HINTS: { match: RegExp; ll: [number, number]; name: string }[]
   { match: /\b(JAKARTA|CGK)\b|雅加达|雅加達/i, ll: [106.8456, -6.2088], name: 'Jakarta' },
   { match: /\b(MANILA|MNL)\b|马尼拉|馬尼拉/i, ll: [120.9842, 14.5995], name: 'Manila' },
   { match: /\b(MUMBAI|BOMBAY|BOM)\b|孟买|孟買/i, ll: [72.8777, 19.076], name: 'Mumbai' },
+  // ★ 顺序敏感：「马德里」含「德里」子串 —— Madrid 必须排在 Delhi 之前，否则整座
+  //   马德里会被 Delhi 的 /…|德里/ 抢走、落到印度（2026-10-10 在 100 台演示站上看到
+  //   「ES · Delhi ×2」才发现）。globe.test.ts 的「城市线索」一组盯着这条顺序。
+  { match: /\b(MADRID|MAD)\b|马德里|馬德里/i, ll: [-3.7038, 40.4168], name: 'Madrid' },
   { match: /\b(NEW DELHI|DELHI|DEL)\b|新德里|德里/i, ll: [77.1025, 28.7041], name: 'Delhi' },
   { match: /\b(BANGALORE|BENGALURU|BLR)\b|班加罗尔|班加羅爾/i, ll: [77.5946, 12.9716], name: 'Bangalore' },
   { match: /\b(CHENNAI|MAA)\b/i, ll: [80.2707, 13.0827], name: 'Chennai' },
@@ -250,7 +254,7 @@ export const CITY_HINTS: { match: RegExp; ll: [number, number]; name: string }[]
   { match: /\b(ZURICH|ZÜRICH|ZRH)\b|苏黎世|蘇黎世/i, ll: [8.5417, 47.3769], name: 'Zurich' },
   { match: /\b(VIENNA|VIE)\b|维也纳|維也納/i, ll: [16.3738, 48.2082], name: 'Vienna' },
   { match: /\b(BRUSSELS|BRU)\b|布鲁塞尔|布魯塞爾/i, ll: [4.3517, 50.8503], name: 'Brussels' },
-  { match: /\b(MADRID|MAD)\b|马德里|馬德里/i, ll: [-3.7038, 40.4168], name: 'Madrid' },
+  // （Madrid 挪去了 Delhi 前面：顺序敏感，见「马德里」那行上的注释。）
   { match: /\b(LISBON|LIS)\b|里斯本/i, ll: [-9.1393, 38.7223], name: 'Lisbon' },
   { match: /\b(MILAN|MILANO|MXP)\b|米兰|米蘭/i, ll: [9.19, 45.4642], name: 'Milan' },
   { match: /\b(ATHENS|ATH)\b|雅典/i, ll: [23.7275, 37.9838], name: 'Athens' },

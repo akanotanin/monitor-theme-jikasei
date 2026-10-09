@@ -6,9 +6,10 @@
 // 所以测试里把上游那两行公式**原样**再写一遍，逐点比对。
 import {
   camera, cityHint, clampLat, curvePath, globeCaption, globeNodes, globeProfile, graticule, inkWidth, landPaths, mergeRegion,
-  layoutLabels, links, prepareRings, regionOf, regionRows, regionView, sweepLonAt, sweepOpacity, trimLabel, VIEW, wrapLon,
+  layoutLabels, links, linkDivisor, MAX_LABEL_ROWS, prepareRings, regionOf, regionRows, regionView, sweepLonAt, sweepOpacity, trimLabel, VIEW, wrapLon,
+  type Placed,
 } from "./globe.ts"
-import { COARSE_WORLD_OUTLINES, COUNTRY_LL, WORLD_OUTLINES } from "./world.ts"
+import { CITY_HINTS, COARSE_WORLD_OUTLINES, COUNTRY_LL, WORLD_OUTLINES } from "./world.ts"
 import type { Node } from "./api.ts"
 
 let failed = 0
@@ -340,6 +341,55 @@ eq(["HK", "JP", "DE", "NL", "US", "TW", "AU", "SG", "KR", "GB", "FR", "CN"].map(
   ["US", [-98.6, 39.8]], ["TW", [121.0, 23.7]], ["AU", [134.5, -25.7]], ["SG", [103.82, 1.35]],
   ["KR", [127.8, 36.3]], ["GB", [-2.5, 54.5]], ["FR", [2.2, 46.2]], ["CN", [104.2, 35.8]],
 ], "原站那 12 国的坐标一字未动（扩表只加不改）")
+
+/* ---------------------------------------------------------------- 城市线索（顺序敏感） */
+// ★「马德里」含「德里」子串：Delhi 排在 Madrid 前面时，整座马德里会落到印度 ——
+//   2026-10-10 在 100 台演示站上看到「ES · Delhi ×2」才发现（站长正好有一台马德里的
+//   机器）。修法是把 Madrid 挪到 Delhi 之前；下面这组盯着它别被挪回去。
+eq(cityHint(node(1, "马德里 01", "ES"))?.name, "Madrid", "「马德里」归 Madrid（不被「德里」抢走）")
+eq(cityHint(node(2, "馬德里 01", "ES"))?.name, "Madrid", "繁体「馬德里」同样归 Madrid")
+eq(cityHint(node(3, "新德里 01", "IN"))?.name, "Delhi", "「新德里」归 Delhi")
+eq(cityHint(node(4, "德里 01", "IN"))?.name, "Delhi", "光写「德里」也归 Delhi")
+// 系统性：每条线索里写到的每个中文写法，喂进整张表都应落回它自己 —— 以后新加城市
+// 再撞上子串（比如再来一个「某某德里」）这里会直接报出来。
+for (const hint of CITY_HINTS) {
+  for (const alias of hint.match.source.match(/[\u4e00-\u9fff]+/g) ?? []) {
+    eq(cityHint(node(9, `${alias} 01`, "CN"))?.name, hint.name, `「${alias} 01」应落在 ${hint.name}`)
+  }
+}
+
+/* ---------------------------------------------------------------- 大机群的两条收口 */
+// 连线除数：小机群保持上游的 8 抽一（mode 2 是 4 抽一）；针一多除数跟着涨，把线数
+// 收在 42 / 80 上下（100 台实测按 8 抽一画了 61~87 条，欧亚之间连成一张网）。
+eq(linkDivisor(1, 8), 8, "8 枚在线针：还是 8 抽一")
+eq(linkDivisor(1, 26), 8, "26 枚：仍是 8 抽一（27 台合成机群不受影响）")
+eq(linkDivisor(2, 8), 4, "high 档小机群：4 抽一")
+ok(linkDivisor(1, 40) > 8, "40 枚：除数涨上去")
+{
+  const fake = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ online: true, region: { key: `R${i}` }, index: i, px: 100 + i, py: 100 } as unknown as Placed))
+  const got = links(fake(40), 1).length
+  ok(got > 0 && got <= 60, `40 枚在线针的线数收口到 ≤ 60（实测 ${got}）`)
+}
+// 行数上限：40 座城市全在默认视角里 → 每侧都超 MAX_LABEL_ROWS，超出的行只留针
+// （hidden），而且**离线的先留**、留下的行全落在 12~204 的设计带里。
+{
+  const seen = new Set<string>()
+  const picked = CITY_HINTS
+    .filter((h) => h.ll[0] >= -10 && h.ll[0] <= 170 && h.ll[1] > -60 && !seen.has(h.name) && (seen.add(h.name), true))
+    .slice(0, 40)
+  ok(picked.length === 40, `可见半球里凑得出 40 座城市（实际 ${picked.length}）`)
+  const fleet = picked.map((h, i) => node(i + 1, `${h.name} 01`, "CN", { online: i % 10 !== 3 }))
+  const placed = layoutLabels(camera(80, 30), globeNodes(fleet), new Map())
+  const L = placed.filter((p) => !p.hidden && p.end)
+  const R = placed.filter((p) => !p.hidden && !p.end)
+  ok(placed.length >= 36, `40 座城市里可见 ≥ 36 枚针（实际 ${placed.length}）`)
+  ok(L.length <= MAX_LABEL_ROWS && R.length <= MAX_LABEL_ROWS, `每侧 ≤ ${MAX_LABEL_ROWS} 行（左 ${L.length} / 右 ${R.length}）`)
+  const hidden = placed.filter((p) => p.hidden)
+  ok(hidden.length > 0, `超出的行被省成只留针（省了 ${hidden.length} 行）`)
+  ok(placed.filter((p) => !p.online).every((p) => !p.hidden), "离线的行不会被省掉")
+  ok(placed.every((p) => p.hidden || (p.ly >= 12 && p.ly <= 204)), "留下的行都落在 12~204 设计带里")
+}
 
 if (failed) {
   console.error(`\n✗ globe: ${failed} 条断言没过`)
