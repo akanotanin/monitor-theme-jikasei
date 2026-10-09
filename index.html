@@ -40,8 +40,13 @@
       })()
     </script>
     <!-- 标题的头一步（冷启动时早问一次 /api/me，兼内联被 CSP 挡掉时的兜底）：public/title-probe.js，
-         与 src/App.tsx 里的 TITLE_CACHE_KEY 共用一个键。 -->
-    <script src="/title-probe.js"></script>
+         与 src/App.tsx 里的 TITLE_CACHE_KEY 共用一个键。
+         ★ 必须 async（2026-10-09 实测后从普通脚本改过来）。普通脚本会**阻塞解析**：入口模块要等它
+         下载并执行完才能开始，探针文件被人为拖到 300ms 时，首绘从 ~130ms 推迟到 ~396ms。defer
+         也好不了——defer 队列按文档序执行，排在前面的它一样把后面的模块拖住（实测 404ms）。
+         async 完全不挡路：文件到得晚，只是标题晚一点补上；「App 已经接管就别再动标题」这个判定
+         探针自己带着（window.__titleOwned，见 title-probe.js 里缓存分支的守卫）。 -->
+    <script src="/title-probe.js" async></script>
   </head>
   <body>
     <div id="root"></div>

@@ -29,8 +29,10 @@ const LIMB_K = 0.02
 export type Quality = "low" | "medium" | "high"
 
 /**
- * 一个精度档的取法。三档都实现了，`high` 目前没人用（上游把它开在站点设置里，
- * jikasei 的设置项已经满 6 项，加不进第 7 项）；窄屏自动走 `low`，其余走 `medium`。
+ * 一个精度档的取法。三档都实现了：`high` 目前没人用（上游把它开在站点设置里，
+ * jikasei 的设置项已经满 6 项，加不进第 7 项）；窄屏走哪一档由 `Globe.tsx` 里的
+ * `NARROW_LOW_TIER` 开关决定 —— 2026-10-07 站长看过手机上 `low` 的效果之后
+ * 把它改成了 `false`（窄屏与桌面同走 `medium`），真机若发烫就改回 `true`。
  *
  *  `gridLon/gridLat` 经纬网间距（度）
  *  `curveStep` 经纬线每隔几度取一个点（越小越圆滑、越费）

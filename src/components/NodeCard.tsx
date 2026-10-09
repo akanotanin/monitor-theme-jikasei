@@ -38,6 +38,18 @@ export function deployed(node: Node) {
   return node.cpu_cores > 0 || node.mem_total > 0
 }
 
+/**
+ * 离线了多久（秒）。优先用 hub 算好的 `last_seen_ago`——它按 **hub 的时钟**算，而拿
+ * `last_seen` 减访客浏览器的时钟会在访客时钟偏了时报出错误的时长（快 8 小时就显示成
+ * 「离线 8 小时」，hub 1.4.0 起专门下发这个字段就是为了替掉那种算法）。老 hub（1.4.0
+ * 之前）没有这个 key，退回按 `last_seen` 自己算；从未上报（last_seen 为 0）得 0，
+ * 调用方按「不足一分钟」处理。
+ */
+export function offlineSeconds(node: Node): number {
+  if (typeof node.last_seen_ago === "number") return Math.max(0, node.last_seen_ago)
+  return node.last_seen ? Math.max(0, Date.now() / 1000 - node.last_seen) : 0
+}
+
 // 上游那枚「圆点 + 在线时长」徽章（Status）已随本主题删除：卡片与详情页都不再挂它，
 // 详情页把同一个时长写进了信息项里的「在线时间」（见 NodeDetail 的 onlineFor）。
 // 要恢复，去上游 monitor-theme-default 的 v1.1.0 取回该组件，并把 index.css 里
@@ -91,7 +103,7 @@ export function Country({ node }: { node: Node }) {
 function onlineText(node: Node): string | null {
   if (node.online) return node.metrics ? `在线 ${uptime(node.metrics.uptime)}` : "在线"
   if (!deployed(node)) return null
-  const down = node.last_seen ? Date.now() / 1000 - node.last_seen : 0
+  const down = offlineSeconds(node)
   return down >= 60 ? `离线 ${uptime(down)}` : "离线"
 }
 

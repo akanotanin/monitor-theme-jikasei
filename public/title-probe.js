@@ -12,10 +12,15 @@
 //
 // 一旦 App 接手（window.__titleOwned，见 src/App.tsx），这里就再也不碰标题：详情页那条
 // 「节点名 · 站名」是 App 写的，迟到的响应不许把它盖回纯站名。
+// ★ 缓存那一步同样要守这道门（2026-10-09 补）：本文件现在是 async 加载（不再阻塞入口解析
+// 与执行，见 index.html 的注释），也就是说它可能**在 App 已经写好标题之后**才执行——
+// 那时若还拿缓存的站名去覆盖，详情页的「节点名 · 站名」会被抹成纯站名（正是上一条要防的形态）。
 //
 // 做成独立文件而不是内联脚本：站点前面若有 CSP，内联脚本会被挡掉；这里的地址也便于各站自己换。
 // 缓存键必须与 src/App.tsx 里的 TITLE_CACHE_KEY 一致。
 ;(function () {
+  // 验收用：这个文件执行到的时刻（tools/verify_title.mjs 拿它断言「拖慢探针文件不再拖住入口」）。
+  window.__probeRanAt = Math.round(performance.now())
   var KEY = "jikasei:site_name"
   // 谁贴上的：inline（index.html 那段）/ cache（本文件用缓存）/ fetch（本文件早问回来的）。
   var mark = function (source) { if (!window.__titleProbeSource) window.__titleProbeSource = source }
@@ -26,8 +31,10 @@
     // 隐私模式 / 存储被禁用：跳过缓存这一步，下面照常早问一次。
   }
   if (cached) {
-    document.title = cached
-    mark("cache")
+    if (!window.__titleOwned) {
+      document.title = cached
+      mark("cache")
+    }
     return
   }
   if (!window.fetch) return

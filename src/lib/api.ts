@@ -38,6 +38,12 @@ export type Node = {
    */
   public_remark?: string | null
   last_seen: number
+  /**
+   * 距上次上报的秒数，按 **hub 的时钟**算（hub 1.4.0 起随公开视图一起下发；从未上报为 `null`，
+   * 老 hub 没有这个 key）。显示「离线 N」要用它——拿 `last_seen` 减访客浏览器的时钟，在
+   * 访客时钟偏了的时候会报出错误的时长（快 8 小时就显示成离线 8 小时）。
+   */
+  last_seen_ago?: number | null
   metrics: Metrics | null
   os: string
   kernel: string
@@ -173,6 +179,11 @@ export function safeNodes(nodes: Node[]): Node[] {
 /**
  * Live node list. Uses the WebSocket the hub pushes every two seconds, falling
  * back to polling if it cannot be established.
+ *
+ * ★ 后台标签页不再养着这条连接（2026-10-09 起，hub 1.4.0 那轮适配清单里的「切回前台」一项）：
+ *   藏起来就关掉 WS、停掉兜底轮询（每 2 秒一帧、每帧一次 React 重渲染，后台里白烧电）；
+ *   回到前台立刻补一次 /api/nodes 再重连。另一头是**连接数**：反代按 IP 限并发 WS，
+ *   同一个访客开着的一堆标签页会互相挤（那台的 limit_conn 就是被自己的浏览器打满过）。
  */
 export function useNodes() {
   const [nodes, setNodes] = useState<Node[] | null>(null)
@@ -188,6 +199,7 @@ export function useNodes() {
     let poll: ReturnType<typeof setInterval> | null = null
     let retry: ReturnType<typeof setTimeout> | null = null
     let closed = false
+    let visible = document.visibilityState !== "hidden"
 
     const receive = (list: Node[]) => {
       const safe = safeNodes(list)
@@ -205,20 +217,22 @@ export function useNodes() {
           if (e instanceof ApiError && e.status === 401) setClosed(true)
         })
 
-    fetchOnce()
-
     const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/ws`
     // A hub restart closes every stream. Without reconnecting, a page that
     // outlives a deploy would remain on the fallback poll for the rest of its
     // life, refreshing at a fifth of the live rate with no indication.
     const connect = () => {
+      let ws: WebSocket
       try {
-        socket = new WebSocket(url)
+        ws = new WebSocket(url)
       } catch {
         poll ??= setInterval(fetchOnce, 5000)
         return
       }
-      socket.onmessage = (event) => {
+      socket = ws
+      ws.onmessage = (event) => {
+        // 重连换代之后，旧连接迟到的帧不算数。
+        if (socket !== ws) return
         receive(JSON.parse(event.data).nodes)
         // The stream has returned; the poll was only covering for it.
         if (poll) {
@@ -226,17 +240,41 @@ export function useNodes() {
           poll = null
         }
       }
-      socket.onerror = () => socket?.close()
-      socket.onclose = () => {
-        if (closed) return
+      ws.onerror = () => ws.close()
+      ws.onclose = () => {
+        // 隐藏时我们自己关的连接（以及它随后报的死）都不该把轮询/重连挂回去 —— 那是回前台的事。
+        if (closed || socket !== ws || !visible) return
         poll ??= setInterval(fetchOnce, 5000)
         retry = setTimeout(connect, 5000)
       }
     }
-    connect()
+
+    const onVisibility = () => {
+      const next = document.visibilityState !== "hidden"
+      if (next === visible) return
+      visible = next
+      if (visible) {
+        // 回前台：先把数据补上（藏起来那段一帧都没收），再把连接接回去。
+        fetchOnce()
+        if (!socket || socket.readyState > WebSocket.OPEN) connect()
+      } else {
+        // 藏起来：连接让出去（它自己那条 onclose 见 visible=false，不会挂上轮询/重连）。
+        socket?.close()
+        if (poll) { clearInterval(poll); poll = null }
+        if (retry) { clearTimeout(retry); retry = null }
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+
+    // 后台打开的标签页（中键/⌘+点击一堆链接）连第一条都不建：等它真的露脸再补。
+    if (visible) {
+      fetchOnce()
+      connect()
+    }
 
     return () => {
       closed = true
+      document.removeEventListener("visibilitychange", onVisibility)
       socket?.close()
       if (poll) clearInterval(poll)
       if (retry) clearTimeout(retry)

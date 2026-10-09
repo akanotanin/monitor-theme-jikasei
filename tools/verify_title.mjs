@@ -1,14 +1,25 @@
-// 标签页标题的验收：把一次加载里 <title> 的每一次变化连时间点录下来，
-// 断言「刷新时一次到位、不再出现中间态」，以及详情页标题是「节点名 · 站名」。
+// 标签页标题的验收：把一次加载里 <title> 的每一次变化连时间点录下来。五个场景：
+//   一、首次访问（无缓存，探针文件慢）：占位值 → 站名最多一跳；且**探针文件不再拖住入口**
+//       （2026-10-09 起它是 async：App 在探针文件执行之前就接手了；旧的普通脚本按文档序压
+//       在模块前面，这条必 FAIL）。探针到得比 App 还晚时它什么都不做（缓存已被 App 写好）。
+//   二、刷新（有缓存）：首帧就是站名、来源是内联那一段（不等那次额外往返）。
+//   三、入口包慢 + 探针快：**早问那一步照旧有效** —— 还没有缓存、App 也还没接管，探针那次
+//       /api/me 抢先把站名贴上（来源 = fetch），占位值不必等入口包执行完。
+//   四、详情页：标题是「节点名 · 站名」，首帧仍是缓存里的站名。
+//   五、详情页 + 那条早问的响应迟到 2.5 秒：迟到的响应不许把节点名抹掉。
 //
 // 用法：node tools/verify_title.mjs ['站名'] [baseUrl]
-//   不给 baseUrl：本机起一个静态+桩接口的服务器（不经隧道），跑三种情况。
+//   不给 baseUrl：本机起一个静态+桩接口的服务器（不经隧道），跑五个场景。
 //   给了 baseUrl：直接打在真 hub 上（只做「刷新一次到位」与「详情页」两项，仍需你告知站名）。
 //
-// 环境变量 TITLE_PROBE_FILE_MS（默认 150）：人为拖慢 /title-probe.js 这个独立文件的响应，
-// 模拟线上「访客要多等一次往返才轮到它改标题」——内联那一段有没有真的顶上，就靠它验。
+// 环境变量：
+//   TITLE_PROBE_FILE_MS（默认 1500）人为拖慢 /title-probe.js 这个独立文件的响应——
+//     模拟线上「访客要多等一次往返才轮到它改标题」。「不再拖住入口」与「迟到」两条机制断言
+//     都靠它：拖得越久（相对冷启动耗时），旧版与新版的先后越分辨得开。
+//   TITLE_ENTRY_MS（默认 0）人为拖慢入口 chunk 的响应——场景三/五用它把「探针快、App 慢」
+//     造出来（探针必须先于 App 写缓存，它才会真的去发那条早问请求）。
 //
-// 为什么能这么录：标题的三次写入发生在三个地方（静态 HTML、App 的 effect、缓存里的旧值），
+// 为什么能这么录：标题的几次写入发生在几个地方（静态 HTML、内联脚本、探针文件、App 的 effect），
 // headless 里靠 Page.addScriptToEvaluateOnNewDocument 在文档刚建好时挂一个 5ms 的轮询，
 // 记下每一次真的变了的时间点——肉眼看到的那几跳，就是这几条记录。
 import { spawn } from 'node:child_process'
@@ -32,15 +43,17 @@ const node = (id, name, group) => ({
 })
 const NODES = { nodes: [node(1, '节点一', '东京'), node(2, '节点二', '')] }
 
-// 内联脚本那条 /api/me 带 ?theme-title=1（hub 不看查询串），可以单独被拖慢：
-// 让 App 先写好「节点名 · 站名」、内联那条随后才回来，就能稳定地造出「迟到的响应」竞态。
+// 探针那条 /api/me?theme-title=1（hub 不看查询串）可以单独被拖慢：让 App 先写好
+// 「节点名 · 站名」、探针那条随后才回来，就能稳定地造出「迟到的响应」竞态（场景五）。
 let titleProbeDelay = 0
-let titleProbeHits = 0            // 内联那条请求真发出去几次（防止这一项空跑）
+let titleProbeHits = 0            // 探针那条请求真发出去几次（防止这一项空跑）
 // /title-probe.js 是**独立文件**，线上实测访客要多等一次往返（164ms）才轮到它改标题，
-// 那段时间标签页上就是占位值。本机是毫秒级、量不出这个差，所以按线上量级人为拖慢它——
-// 「缓存那一段有没有走内联」这件事只有这样才验得出来。
-const PROBE_FILE_DELAY = Number(process.env.TITLE_PROBE_FILE_MS || 150)
+// 那段时间标签页上就是占位值。本机是毫秒级、量不出这个差，所以按线上量级往上人为拖慢它
+// （默认 1500ms：场景一要吃「App 先接手」的余量，旧版/新版两边都要分得开）。
+const PROBE_FILE_DELAY = Number(process.env.TITLE_PROBE_FILE_MS || 1500)
 let probeFileHits = 0
+// 入口 chunk 的人为拖慢（默认 0）：场景三/五把「探针先执行、App 后执行」造出来。
+let entryDelay = Number(process.env.TITLE_ENTRY_MS || 0)
 const serveFile = (res, path) => {
   const file = join('dist', normalize(path === '/' ? '/index.html' : path).replace(/^(\.\.[/\\])+/, ''))
   if (!existsSync(file) || statSync(file).isDirectory()) {
@@ -69,6 +82,10 @@ const server = createServer((req, res) => {
     return res.end(JSON.stringify(body))
   }
   if (path === '/title-probe.js') { probeFileHits++; if (PROBE_FILE_DELAY) return void setTimeout(() => serveFile(res, path), PROBE_FILE_DELAY) }
+  // 入口 chunk（/assets/index-*.js）的人为拖慢：CSS 也是 index-* 但扩展名不同，不会误伤。
+  if (entryDelay && path.startsWith('/assets/index-') && path.endsWith('.js')) {
+    return void setTimeout(() => serveFile(res, path), entryDelay)
+  }
   serveFile(res, path)
 })
 const BASE = process.argv[3] || `http://127.0.0.1:${PORT}`
@@ -125,24 +142,29 @@ const show = (lines) => lines.map(([t, title]) => `    +${String(t).padStart(5)}
 // 而「标题是在 App 接手之前就贴上的吗」与链路无关。
 const ownedAt = async () => Number(await js('window.__ownedAt || 0'))
 
-// 一、首次访问：这个 origin 上还没有缓存（全新 profile），静态 HTML 只能先给占位值，
-//    内联脚本会抢在入口包之前去问一次 /api/me，所以这一跳应当发生得很早。
+// 一、首次访问：这个 origin 上还没有缓存（全新 profile），静态 HTML 只能先给占位值。
+//    探针文件被拖慢（默认 1500ms），到得比 App 还晚——它到的时候缓存已被 App 写好、
+//    标题已被 App 接管，于是它什么都不做；同时这也证明**它不再挡在入口前面**（async）。
 await send('Page.navigate', { url: `${BASE}/` })
 await sleep(SETTLE)
 let lines = await log()
 let owned = await ownedAt()
-console.log(`\n首次访问（无缓存）:\n${show(lines)}` + `\n    App 接手=${owned || '—'}ms`)
+console.log(`\n一、首次访问（无缓存，探针文件慢）:\n${show(lines)}` + `\n    App 接手=${owned || '—'}ms`)
 check('首次访问末值 = 站名', lines.at(-1)?.[1] === SITE, `末值=${lines.at(-1)?.[1]}`)
 check('首次访问里没有主题名那一跳（jikasei）', !lines.some(([, t]) => t.includes('jikasei')))
 check('首次访问最多一跳（占位值 → 站名）', lines.length <= 2, `${lines.length} 条记录`)
 console.log(`    占位值存活 ${lines.length > 1 ? lines[1][0] - lines[0][0] : 0}ms（跳变点 ${lines[1]?.[0] ?? '—'}ms）`)
-// 用机制断言而不是时间断言：时间随机器/链路浮动，而「那条早问的请求发没发」是确定的。
-// （打真 hub 时这条跳过：请求进了 hub，本机桩服务器数不到。）
-check('首次访问的站名是在 App 接手之前贴上的（占位值不必等到入口包执行完）',
-  owned > 0 && (lines.at(-1)?.[0] ?? 0) <= owned, `跳变 ${lines.at(-1)?.[0]}ms vs App 接手 ${owned}ms`)
-if (!REAL_HUB) check('首次访问时早问那条 /api/me 真的发出去了（占位值不必等到入口包执行完）',
-  titleProbeHits >= 1, `${titleProbeHits} 次`)
+check('首次访问里标题不会晚于 App 接手才落定（没有第三只手最后再改一次）',
+  owned > 0 && (lines.at(-1)?.[0] ?? 0) <= owned, `落定 ${lines.at(-1)?.[0]}ms vs App 接手 ${owned}ms`)
 const probesAfterFirstVisit = titleProbeHits
+
+// ★ 2026-10-09 起的机制断言：探针文件改成 async 之后，被拖慢的它**不再挡在入口前面** ——
+//   App 应当在探针文件执行之前就接管了标题。旧版是普通脚本（按文档序压在模块前，模块要等
+//   它下载执行完才能跑），这条必 FAIL；defer 也不行（defer 队列一样按文档序等它）。
+//   前提：桩把文件响应拖到了 100ms 以上（默认 1500），快链路上才分辨得出先后。
+const probeRanAt = Number(await js('window.__probeRanAt || 0'))
+if (!REAL_HUB && PROBE_FILE_DELAY >= 100) check('拖慢的探针文件不再拖住入口：App 先接手、探针文件后执行（async）',
+  owned > 0 && probeRanAt > 0 && owned < probeRanAt, `App 接手 ${owned}ms vs 探针执行 ${probeRanAt || '—'}ms`)
 
 // 二、刷新：这次 localStorage 里已经有站名了，首帧就该是真站名——不该再有可见跳变。
 await send('Page.reload')
@@ -171,26 +193,46 @@ if (REAL_HUB) {
   ws.close(); chrome.kill(); process.exit(fail ? 1 : 0)
 }
 
-// 三、详情页：标题要变成「节点名 · 站名」，首帧仍是站名（缓存），随后补上节点名。
+// 三、入口包慢 + 探针快：早问那一步照旧有效。清掉缓存、把入口 chunk 拖慢，探针先执行：
+//    没有缓存、App 也没接管 —— 它应该发出那条 /api/me 抢占站名（来源 = fetch）。
+//    清缓存必须在**新文档的内联脚本跑之前**：App 会随手把缓存写回，在旧文档里 clear 会被它补上。
+const clearOnce = (await send('Page.addScriptToEvaluateOnNewDocument', { source: 'try { localStorage.clear() } catch (e) {}' })).result?.identifier
+entryDelay = 2500
+const hitsBeforeAsk = titleProbeHits
+await send('Page.navigate', { url: `${BASE}/` })
+await sleep(7000)
+lines = await log()
+owned = await ownedAt()
+console.log(`\n三、入口包慢（2.5s）+ 探针快（1.5s）：早问那一步:\n${show(lines)}` + `\n    App 接手=${owned || '—'}ms`)
+const srcAsk = await js('window.__titleProbeSource || "(未设)"')
+check('早问那条 /api/me 真的发出去了（这一项不是空跑）', titleProbeHits >= hitsBeforeAsk + 1, `${hitsBeforeAsk} → ${titleProbeHits} 次`)
+check('站名由那条早问贴上的（来源 = fetch）', srcAsk === 'fetch', `来源=${srcAsk}`)
+check('入口包还在路上时站名就已经落定（占位值不必等它）',
+  owned > 0 && lines.at(-1)?.[1] === SITE && (lines.at(-1)?.[0] ?? 0) <= owned, `落定 ${lines.at(-1)?.[0]}ms vs App 接手 ${owned}ms`)
+check('这一跳里也没有主题名（jikasei）', !lines.some(([, t]) => t.includes('jikasei')))
+if (clearOnce) await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: clearOnce })
+entryDelay = 0
+
+// 四、详情页：标题要变成「节点名 · 站名」，首帧仍是站名（缓存），随后补上节点名。
 await send('Page.navigate', { url: `${BASE}/node/1` })
 await sleep(SETTLE)
 lines = await log()
-console.log(`\n详情页 /node/1:\n${show(lines)}`)
+console.log(`\n四、详情页 /node/1:\n${show(lines)}`)
 check('详情页末值 = 节点名 · 站名', lines.at(-1)?.[1] === `节点一 · ${SITE}`, `末值=${lines.at(-1)?.[1]}`)
 check('详情页首帧是站名（用的缓存，不是空窗）', lines[0]?.[1] === SITE, `首帧=${lines[0]?.[1]}`)
 
-// 四、详情页 + 把内联那次 /api/me 拖到 1.5s 之后：App 早就写好了「节点名 · 站名」，
-//    迟到的响应若还去改标题，就会把节点名抹掉——这里断言它没有（靠 window.__titleOwned）。
-// 清缓存必须在**新文档的内联脚本跑之前**：App 会随手把缓存写回，在旧文档里 clear 会被它补上。
+// 五、详情页 + 那条早问的响应迟到 2.5 秒：探针仍会发（缓存清空、入口拖慢 → 它先到），
+//    但响应回来时 App 早就写好了「节点名 · 站名」——迟到的它不许把节点名抹掉（window.__titleOwned）。
 await send('Page.addScriptToEvaluateOnNewDocument', { source: 'try { localStorage.clear() } catch (e) {}' })
-titleProbeDelay = 1500
+entryDelay = 2500
+titleProbeDelay = 2500
 titleProbeHits = 0
 await send('Page.navigate', { url: `${BASE}/node/1` })
-await sleep(6000)
+await sleep(6500)
 lines = await log()
-console.log(`\n详情页 + 内联那条 /api/me 迟到 1.5s:\n${show(lines)}`)
-check('内联那条迟到的请求真的发出去了（这一项不是空跑）', titleProbeHits >= 1, `${titleProbeHits} 次`)
-check('迟到的内联响应没把标题盖回纯站名', lines.at(-1)?.[1] === `节点一 · ${SITE}`, `末值=${lines.at(-1)?.[1]}`)
+console.log(`\n五、详情页 + 那条早问的响应迟到 2.5s:\n${show(lines)}`)
+check('那条迟到的请求真的发出去了（这一项不是空跑）', titleProbeHits >= 1, `${titleProbeHits} 次`)
+check('迟到的响应没把标题盖回纯站名', lines.at(-1)?.[1] === `节点一 · ${SITE}`, `末值=${lines.at(-1)?.[1]}`)
 check('迟到的响应没再动标题（记录停在 App 那一次，没有第三条）',
   lines.length === 2 && lines.at(-1)?.[1] === `节点一 · ${SITE}`, `${lines.length} 条记录：${lines.map(([, t]) => t).join(' → ')}`)
 

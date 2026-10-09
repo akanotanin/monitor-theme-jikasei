@@ -77,18 +77,27 @@ const check = (label, ok, detail = '') => {
 }
 
 // 找一台在线节点：优先用命令行给的 id，否则取接口里第一台在线的。
-await send('Page.navigate', { url: BASE + '/' })
+// ★ 先确认 baseUrl 真的打得开：隧道会死（默认那条 28081 就常死），死的时候页面停在
+//   about:blank，后面 `fetch('/api/nodes')` 的失败会被 CDP 折成一句 "[object Object]"、
+//   再让 JSON.parse 崩掉 —— 看着像工具坏了，其实只是 base 打不开（2026-10-09 修）。
+const nav = await send('Page.navigate', { url: BASE + '/' })
+if (nav.result?.errorText) {
+  console.log(`FAIL  baseUrl 打不开：${BASE}（${nav.result.errorText}）——隧道死了就重开一条再跑`)
+  ws.close(); chrome.kill(); process.exit(1)
+}
 await sleep(6000)
 const picked = await evalJS(`(async () => {
-  const r = await fetch('/api/nodes', { cache: 'no-store' })
-  const j = await r.json()
-  const nodes = Array.isArray(j) ? j : (j.nodes || [])
-  const want = ${NODE_ID ? JSON.stringify(String(NODE_ID)) : 'null'}
-  const n = want ? nodes.find((x) => String(x.id) === want) : nodes.find((x) => x.online)
-  return n ? JSON.stringify({ id: n.id, name: n.name, online: !!n.online }) : ''
+  try {
+    const r = await fetch('/api/nodes', { cache: 'no-store' })
+    const j = await r.json()
+    const nodes = Array.isArray(j) ? j : (j.nodes || [])
+    const want = ${NODE_ID ? JSON.stringify(String(NODE_ID)) : 'null'}
+    const n = want ? nodes.find((x) => String(x.id) === want) : nodes.find((x) => x.online)
+    return n ? JSON.stringify({ id: n.id, name: n.name, online: !!n.online }) : ''
+  } catch { return '' }
 })()`)
-check('取到一台节点（/api/nodes 可达）', !!picked, picked || '接口没回节点')
-if (!picked) { ws.close(); chrome.kill(); process.exit(1) }
+check('取到一台节点（/api/nodes 可达）', !!picked && picked.startsWith('{'), picked || '接口没回节点')
+if (!picked || !picked.startsWith('{')) { ws.close(); chrome.kill(); process.exit(1) }
 const node = JSON.parse(picked)
 console.log(`      节点：${node.name}（id ${node.id}，online=${node.online}）`)
 

@@ -5,7 +5,7 @@ import { Info } from "lucide-react"
 import { TimeChart } from "@/components/Chart"
 import { PingTooltip } from "@/components/ChartTooltip"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Country, deployed, RemarkChips } from "@/components/NodeCard"
+import { Country, deployed, offlineSeconds, RemarkChips } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, despike, cpuName, osName, rate, uptime,
@@ -111,7 +111,7 @@ function despikeWindow(points: { ts: number }[]): number {
 function onlineFor(node: Node) {
   if (node.online) return node.metrics ? uptime(node.metrics.uptime) : "—"
   if (!deployed(node)) return "未接入"
-  const down = node.last_seen ? Date.now() / 1000 - node.last_seen : 0
+  const down = offlineSeconds(node)
   return down >= 60 ? `离线 ${uptime(down)}` : "离线"
 }
 

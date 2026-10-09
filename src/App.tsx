@@ -35,10 +35,11 @@ const TITLE_CACHE_KEY = "jikasei:site_name"
 // （面板卡片上的「源码」也指这里）。两处一起改。
 const REPO_URL = "https://github.com/akanotanin/monitor-theme-jikasei"
 
-// Split out because recharts is most of this bundle and the list page draws no
-// chart. The landing page is 242 kB rather than 629 kB (77 kB gzipped against
-// 188 kB). 取它的时机见 App 里的 warmDetail：列表画完之后空闲时取、指针落到卡片上时立刻取、
-// 开页就在详情页时立刻取 —— 不再和首屏的入口包与第一批数据抢带宽。
+// Split out because the list page draws no chart: the detail view (with its own
+// hand-drawn charts) travels as its own chunk — 17.8 kB raw / 6.9 kB gzipped as
+// of 1.26.x (the recharts era's 391 kB is long gone; the split survives because
+// visitors who never open a node still shouldn't pay for it). 取它的时机见 App 里的
+// warmDetail：列表画完之后空闲时取、指针落到卡片上时立刻取、开页就在详情页时立刻取。
 const loadDetail = () => import("@/components/NodeDetail").then((m) => ({ default: m.NodeDetail }))
 const NodeDetail = lazy(loadDetail)
 
@@ -268,17 +269,17 @@ export default function App() {
   }, [loadMe])
 
   /**
-   * 图表 chunk（recharts 那 391KB，见上面 loadDetail）什么时候取：三条路，谁先到听谁的。
+   * 详情页那块 chunk（自绘图表，17.8KB / gzip 6.9KB——recharts 那 391KB 已换掉，
+   * 见上面 loadDetail）什么时候取：三条路，谁先到听谁的。
    *
    *   ① 开页就在详情页（书签、刷新、别人分享的链接）：立刻取 —— 它就是要画的那一块。
-   *   ② 列表画出来之后：交给浏览器挑空闲时机取。放在这里而不是挂载时取，是因为挂载那一刻
-   *      入口包、样式、`/api/me`、`/api/nodes` 都还在路上（实测 391KB 的图表 chunk 在
-   *      157ms 就起跑，和它们抢同一条链路）；列表已经在眼前了，它才没有别的事可挤。
+   *   ② 列表画出来之后：交给浏览器挑空闲时机取。放在这里而不是挂载时取，是不和首屏的
+   *      入口包与第一批数据抢同一条链路；列表已经在眼前了，它才没有别的事可挤。
    *   ③ 指针或键盘落到某张卡片上（悬停、聚焦、触摸）：立刻取。真要打开一台机器的人，
    *      鼠标按下去之前通常已经摸过那张卡片了，所以点开时它多半已经在本地。
    *
    * 代价写在明面上：列表出来不到一秒就点开的那一下，看到的会是骨架屏而不是空白 ——
-   * 换来的是**每个访客（包括从不点开任何一台机器的人）不再为一块用不上的图表代码付首屏带宽**。
+   * 换来的是**每个访客（包括从不点开任何一台机器的人）不再为一块用不上的代码付首屏带宽**。
    */
   const warmed = useRef(false)
   const warmDetail = useCallback(() => {
