@@ -145,7 +145,16 @@ const DARK_MEDIA = matchMedia("(prefers-color-scheme: dark)")
  * listener is otherwise never heard, and the next one is a day away.
  */
 function useTheme(siteMode: ThemeMode) {
-  const [saved, setSaved] = useState(() => localStorage.getItem("theme"))
+  // ★ 必须接住异常：浏览器禁用站点数据时，连 `localStorage` 的**读取**都会抛 SecurityError ——
+  //   在 `useState` 初始化器里抛 = 首次渲染炸掉、整页空白（hub 1.4.1 release note 点名的那条，
+  //   官方两个主题在随附新版里修的就是它）。读不到就当「没存过」，下面照常走站长那一档。
+  const [saved, setSaved] = useState(() => {
+    try {
+      return localStorage.getItem("theme")
+    } catch {
+      return null
+    }
+  })
   const system = useSyncExternalStore(
     (notify) => {
       DARK_MEDIA.addEventListener("change", notify)
