@@ -26,7 +26,7 @@ const OUT = process.argv[2] || 'shots/farm-entry'
 const PORT = 5199
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' }
 
-// 每个场景换一次的桩状态：站长的设置、本站有没有养鸡场、探测被打了几次。
+// 每个场景换一次的桩状态：站长的设置、本站有没有农场、探测被打了几次。
 let CONFIG = {}
 let FARM = false
 let probes = 0
@@ -38,7 +38,7 @@ const sendHtml = (res) => {
 
 const server = createServer((req, res) => {
   const path = new URL(req.url, `http://127.0.0.1:${PORT}`).pathname
-  // 养鸡场那几块 location 里的 /chicken/api/* 反代到 hub：装了就是 JSON，
+  // 农场那几块 location 里的 /chicken/api/* 反代到 hub：装了就是 JSON，
   // 没装时这条路径落到的就是 hub 的未知路径回落（200 + 主题的 index.html）。
   if (path === '/chicken/api/nodes') {
     probes++
@@ -101,7 +101,7 @@ const READ = `(() => {
   if (!header) return JSON.stringify({ ready: false });
   const btns = [...header.querySelectorAll('[data-slot="button"]')];
   const pick = (t) => header.querySelector('[data-slot="button"][title="' + t + '"]');
-  const farm = pick('养鸡场'), moon = pick('切换主题'), admin = header.querySelector('a[href="/admin/"]');
+  const farm = pick('农场入口'), moon = pick('切换主题'), admin = header.querySelector('a[href="/admin/"]');
   // 顶栏在「扳手」与「鸡」之间还有一枚「节点地球」（列表页才出现，见 components/Globe.tsx）：
   // 它现在是鸡的左邻，间距/尺寸这两条要跟它比。
   const globe = pick('隐藏节点地球');
@@ -112,7 +112,7 @@ const READ = `(() => {
   return JSON.stringify({
     ready: btns.length > 0,
     titles: btns.map((b) => b.getAttribute('title')),
-    farmCount: header.querySelectorAll('[data-slot="button"][title="养鸡场"]').length,
+    farmCount: header.querySelectorAll('[data-slot="button"][title="农场入口"]').length,
     farmTag: farm ? farm.tagName : null,
     href: farm ? farm.getAttribute('href') : null,
     resolved: farm ? farm.href : null,
@@ -177,7 +177,7 @@ for (const [n, scenario] of SCENARIOS.entries()) {
     check('href = 自动认出的 /chicken/', state.href === scenario.href, `href=${state.href}`)
     // 现在只有同域这一种：地址不再可配，图标永远是本站 `/chicken/`，就在当前标签页打开。
     check('同域：当前标签页打开（属于站内导航）', state.target === null && state.rel === null, `target=${state.target} rel=${state.rel}`)
-    check('顺序与参考图一致：扳手 → 卡片形态 → 地球 → 鸡 → 月亮', state.titles.join(',') === '登录,卡片形态,隐藏节点地球,养鸡场,切换主题', state.titles.join(','))
+    check('顺序与参考图一致：扳手 → 卡片形态 → 地球 → 鸡 → 月亮', state.titles.join(',') === '登录,卡片形态,隐藏节点地球,农场入口,切换主题', state.titles.join(','))
     check('三枚的 class 逐字符相同（画风靠它保证）', state.cls.farm === state.cls.moon && state.cls.farm === state.cls.admin)
     // box 里只比尺寸——位置天生不同（它是另一枚按钮），比位置等于恒红。
     const sizeOf = (b) => (b ? { w: b.w, h: b.h } : null)

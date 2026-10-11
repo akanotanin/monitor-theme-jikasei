@@ -382,6 +382,10 @@ function Pin({ p }: { p: Placed }) {
   const cy = p.py.toFixed(1)
   return (
     <g>
+      {/* 悬停提示挂在**整组**上：悬到针、引线、标签哪儿都显示（文案只留这一份）。
+          ★ 别挂进 <text> 里面 —— SVG 的 textContent 会把 <title> 的文本也串进来，
+          按文本匹配标签的断言（「截成省略号」那类）会当场假红。 */}
+      <title>{p.count > 1 ? `${p.region.label}：${p.count} 台（打开其中第一台）` : `打开 ${p.name}`}</title>
       {!p.hidden && (
         <path className="globe-stem" d={`M ${cx} ${cy} L ${p.lx.toFixed(1)} ${p.ly.toFixed(1)}`} />
       )}
@@ -394,13 +398,13 @@ function Pin({ p }: { p: Placed }) {
         </text>
       )}
       {!p.hidden && (
-        <text className="globe-label" x={p.lx + (p.end ? -3 : 3)} y={p.ly + 3} textAnchor={p.end ? "end" : "start"}>
+        /* 这行名字本身也能点：点了打开它对应的那台机器（多台地区 = 打开其中第一台）。
+           与命中圆共用一个事件路径 —— pointerdown 那一刻用 closest('[data-node]') 认下它是谁。 */
+        <text className="globe-label" x={p.lx + (p.end ? -3 : 3)} y={p.ly + 3} textAnchor={p.end ? "end" : "start"} data-node={p.id}>
           {p.label}
         </text>
       )}
-      <circle className="hit" cx={cx} cy={cy} r={9} fill="transparent" data-node={p.id} data-index={p.index} data-region={p.region.key} data-online={p.online ? "1" : "0"} data-count={p.count}>
-        <title>{p.count > 1 ? `${p.region.label}：${p.count} 台（打开其中第一台）` : `打开 ${p.name}`}</title>
-      </circle>
+      <circle className="hit" cx={cx} cy={cy} r={9} fill="transparent" data-node={p.id} data-index={p.index} data-region={p.region.key} data-online={p.online ? "1" : "0"} data-count={p.count} />
     </g>
   )
 }

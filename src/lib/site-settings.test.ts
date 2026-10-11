@@ -76,7 +76,7 @@ eq(sorted(normalizeConfig(null)), sorted(DEFAULTS), "什么都没存 → 全默�
 eq(sorted(normalizeConfig({})), sorted(DEFAULTS), "空对象 → 全默认")
 // 站点图标 1.25.0 起由 hub 的面板设置管，主题侧不再有这个键 —— 老配置里留着也不该冒出多余字段。
 eq(Object.keys(normalizeConfig({ siteIcon: "/x.png" })).includes("siteIcon"), false, "老配置里的 siteIcon 不再进主题配置")
-// 顶栏入口（养鸡场）1.25.0 起没有设置项了：主题一律自动探测本站 `/chicken/`。
+// 顶栏入口（农场）1.25.0 起没有设置项了：主题一律自动探测本站 `/chicken/`。
 // 老配置里那几个键（farmUrl / showFarmEntry）**一律不再读**——面板上已经没有那一格，
 // 页面要是还听它的，就成了「看不见的开关」（站长想关也关不掉）。与 siteIcon 同一条口径：
 // 断「老键不再冒出多余字段」，而不是断它读到什么值。
@@ -94,7 +94,7 @@ eq(normalizeConfig({ listTop: "both" }).listTop, "both", "新值优先")
 // （hub 1.4.0 源码：`const large = fields.length > 6`，再 `paged = large && sections.length > 1`）。
 // 两列里每格只有半宽，说明文字容易折成四五行 —— 1.5.0 就是为此把两个顶部开关并成一个四选一的。
 //
-// ★ 2026-10-07 站长先要了「节点地球」与「主题模式」两项（7 个），随后**把「养鸡场入口」删掉**
+// ★ 2026-10-07 站长先要了「节点地球」与「主题模式」两项（7 个），随后**把「农场入口」删掉**
 //   （顶栏入口改成自动探测，不再需要设置项）→ 回到 **6 个**，面板也回到那套一页平铺的单列版式
 //   （最好看的那一档）。**上限仍是 7**：再加第 8 项之前先问清楚，或者先想能不能并进现有的某一格。
 const manifest = JSON.parse(readFileSync(new URL("../../theme.json", import.meta.url), "utf8"))

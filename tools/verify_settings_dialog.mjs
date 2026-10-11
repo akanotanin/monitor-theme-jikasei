@@ -25,7 +25,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const MANIFEST = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const PREFIX = process.argv[3] || 'shots/settings-dialog';
 const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
-// 本站要靠这几项指养鸡场入口、切卡片形态、开关列表页顶部那两行、按名字挑延迟线路
+// 本站要靠这几项指农场入口、切卡片形态、开关列表页顶部那两行、按名字挑延迟线路
 // ——名字与 theme.json 的 label 逐字对应。
 // ★站点图标（`siteIcon`）1.25.0 起**不在主题设置里了**：hub 1.4.0 的面板「设置 → 站点图标」管它，
 // 主题只留两份同名的兜底文件。下面有一条专门断言它确实没再出现（拿旧 manifest 跑必须 FAIL）。
@@ -34,7 +34,7 @@ const BASE = (process.argv[4] || 'http://127.0.0.1:28081').replace(/\/$/, '');
 // 1.19.0 给「备注」那一节配了一个**真实设置项「备注显示位置」**（卡片与详情页 / 只在卡片 / 只在详情页），
 // 那段详细的用法说明就挂在它上面（hub 只画「后面跟着字段」的标题，没有字段的标题会被静默丢掉）。
 // **字段数 6**：2026-10-07 站长先要了「节点地球」与「主题模式」两项（7 个 → 面板换成左导航 +
-// 两列），随后把「养鸡场入口」删掉（顶栏入口改成自动探测本站 `/chicken/`）→ 回到 6 个，
+// 两列），随后把「农场入口」删掉（顶栏入口改成自动探测本站 `/chicken/`）→ 回到 6 个，
 // 面板也回到一页平铺的**单列**版式（`large = fields.length > 6` 为假，没有导航）。
 // 下面那批排版断言因此走**没有导航**的那一支：一次挂载全部字段。
 const WANTED = ['卡片形态', '列表页顶部', '备注显示位置', '显示的延迟线路', '节点地球', '主题模式'];
@@ -188,12 +188,12 @@ check('对话框里也没有「站点图标」这一格', !everyText.includes('�
 
 // 设置项的**说明文案**与**开关初值**也要断：它们是站长唯一看得见的地方，
 // 改了 theme.json 的 help / default 却在面板上没生效（或残留旧句子）就等于没改。
-// 「养鸡场入口」1.25.0 起**连设置项一起删了**（顶栏那枚入口图标改成自动探测本站 `/chicken/`，
+// 「农场入口」1.25.0 起**连设置项一起删了**（顶栏那枚入口图标改成自动探测本站 `/chicken/`，
 // 站长不必配）——与 siteIcon 同一条口径，两个方向都断：manifest 不许声明、对话框不许画出来。
-check('「养鸡场入口」不再由主题设置管（manifest 里没有这一项）',
-  !entries.some((e) => e.key === 'farmUrl') && !entries.some((e) => e.label === '养鸡场入口'),
+check('「农场入口」不再由主题设置管（manifest 里没有这一项）',
+  !entries.some((e) => e.key === 'farmUrl') && !entries.some((e) => e.label === '农场入口'),
   entries.map((e) => e.key ?? e.label).join('、'));
-check('对话框里也没有「养鸡场入口」这一格', !everyText.includes('养鸡场入口') && !everyText.includes('farmUrl'));
+check('对话框里也没有「农场入口」这一格', !everyText.includes('农场入口') && !everyText.includes('farmUrl'));
 
 // 「服务器备注」那一格（serverNotes）：1.15.x 起、1.16.0 删过、1.17.0 请回来、1.18.0 删掉、
 // 1.19.0 试过又删掉——备注只读 hub 后台按节点填的两个字段。两个方向都断（manifest 声明了没、

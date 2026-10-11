@@ -220,6 +220,10 @@
 .globe-atlas svg line,
 .globe-atlas svg circle { pointer-events: none; }
 .globe-atlas svg .hit { pointer-events: auto; cursor: pointer; }
+/* 标签那行名字也能点：点了打开它对应的机器（见 Globe.tsx 的 Pin）。命中区给足 ——
+   Chrome 里 text 的命中本来就近乎整行盒，`bounding-box` 让内容框整个可点；
+   `visiblePainted` 写在前面，给不认前者的浏览器兜底（回落到字形 + 描边）。 */
+.globe-atlas svg .globe-label { pointer-events: visiblePainted; pointer-events: bounding-box; cursor: pointer; }
 
 .globe-ocean { fill: var(--globe-ocean); }
 .globe-land { fill: var(--globe-land); stroke: none; stroke-linejoin: round; stroke-linecap: round; }

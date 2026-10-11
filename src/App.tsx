@@ -442,7 +442,7 @@ export default function App() {
           {/* 地球开关：只长在列表页 —— 地球就在那一页的顶上，站在某台机器页里按它没有落点。
               ★ 站长在「主题设置 → 节点地球」里关掉时**整枚按钮都不挂**（不是藏起来／不是禁用）：
               那一块功能是关着的，留着按钮就成了一件点了什么也不开的摆设（访客会以为「点不动」）。
-              与养鸡场入口、主题开关同规格（图标 + 悬停提示，不带文字，见 memory 里的顶栏惯例）。 */}
+              与农场入口、主题开关同规格（图标 + 悬停提示，不带文字，与顶栏其他图标一致）。 */}
           {open === null && config.globeOn && (
             <Button
               variant="ghost"
@@ -466,7 +466,7 @@ export default function App() {
               同域，就在当前标签页里打开。 */}
           {farmUrl && (
             <Button variant="ghost" size="icon" asChild>
-              <a href={farmUrl} title="养鸡场" aria-label="养鸡场">
+              <a href={farmUrl} title="农场入口" aria-label="农场入口">
                 <FarmIcon />
               </a>
             </Button>
