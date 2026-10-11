@@ -99,8 +99,11 @@ check('桩真的生效了（配置那一项是桩回答的，判据才可信）'
 check('★ 桩成 globeOn=true 后：那枚地球开关回来了', s.toggle === true, `toggle=${s.toggle}`)
 check('桩成 globeOn=true 后：地球面板也渲染了', s.panel === true, `panel=${s.panel}`)
 const other = s.titles.filter((t) => t !== '隐藏节点地球' && t !== '显示节点地球')
+// ★ 真站那侧也要剥掉同一枚：这台站的站长档是「开」时，真站列表里本来就有它 ——
+//   只剥桩那一侧的话，在 globeOn=true 的站上这条必假红（2026-10-11 在演示站实测到）。
+const realOther = realTitles.filter((t) => t !== '隐藏节点地球' && t !== '显示节点地球')
 check('★ 除了那一枚，顶栏其余图标的顺序与真站完全一致（没连带影响别的图标）',
-  JSON.stringify(other) === JSON.stringify(realTitles), `桩 ${JSON.stringify(other)} ｜ 真站 ${JSON.stringify(realTitles)}`)
+  JSON.stringify(other) === JSON.stringify(realOther), `桩 ${JSON.stringify(other)} ｜ 真站 ${JSON.stringify(realOther)}`)
 await shotHeader(`${OUT}/hdr-on.png`)
 
 console.log(`\n结果: PASS ${pass} / FAIL ${fail}`)
