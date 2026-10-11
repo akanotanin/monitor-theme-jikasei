@@ -155,6 +155,49 @@ export const COUNTRY_LL: Record<string, [number, number]> = {
 }
 
 /**
+ * 国家英文名：认不出城市时，地区名（右侧列表与地球标签）写的就是它。
+ *
+ * ★ 这是「地区识别」的第三层，2026-10-11 加的：城市线索 → 城市国家兜底
+ * （见 `COUNTRY_CITY_FALLBACK`）→ 国家名。在此之前第三层直接写两字国家码，
+ * 于是第三方站点的地区列表里「US」（码）、「Japan」（旧兜底名）、「Phoenix」（城名）
+ * 三种口径并排出现 —— 站长拿反馈截图来问「这个地区识别是按国别还是地区？」。
+ * 现在每一行都是「能认到的最准的地名」：城市优先，认不出城市就写国家名。
+ *
+ * 与 `COUNTRY_LL` 同一张清单（凡能上地球的国家都有名字，单测盯着这条全覆盖）；
+ * 写法取英文常用短名，与城市名（CITY_HINTS 的第三项）同一套语言。
+ */
+export const COUNTRY_NAME: Record<string, string> = {
+  HK: "Hong Kong", JP: "Japan", DE: "Germany", NL: "Netherlands",
+  US: "United States", TW: "Taiwan", AU: "Australia", SG: "Singapore",
+  KR: "Korea", GB: "United Kingdom", FR: "France", CN: "China",
+  // —— 欧洲
+  IE: "Ireland", SE: "Sweden", CH: "Switzerland", FI: "Finland",
+  NO: "Norway", DK: "Denmark", BE: "Belgium", AT: "Austria",
+  CZ: "Czech Republic", PL: "Poland", UA: "Ukraine", RO: "Romania",
+  BG: "Bulgaria", HU: "Hungary", SK: "Slovakia", SI: "Slovenia",
+  HR: "Croatia", RS: "Serbia", GR: "Greece", PT: "Portugal",
+  IT: "Italy", ES: "Spain", EE: "Estonia", LV: "Latvia",
+  LT: "Lithuania", IS: "Iceland", LU: "Luxembourg", MD: "Moldova",
+  CY: "Cyprus", MT: "Malta", BY: "Belarus", RU: "Russia",
+  TR: "Turkey",
+  // —— 北美与拉美
+  CA: "Canada", MX: "Mexico", BR: "Brazil", AR: "Argentina",
+  CL: "Chile", CO: "Colombia", PE: "Peru", EC: "Ecuador",
+  PA: "Panama", PR: "Puerto Rico",
+  // —— 亚洲（中东并入）
+  IN: "India", PK: "Pakistan", BD: "Bangladesh", LK: "Sri Lanka",
+  NP: "Nepal", MY: "Malaysia", TH: "Thailand", VN: "Vietnam",
+  ID: "Indonesia", PH: "Philippines", KH: "Cambodia", MO: "Macau",
+  AE: "United Arab Emirates", SA: "Saudi Arabia", QA: "Qatar", KW: "Kuwait",
+  BH: "Bahrain", OM: "Oman", IL: "Israel", JO: "Jordan",
+  GE: "Georgia", AM: "Armenia", AZ: "Azerbaijan", KZ: "Kazakhstan",
+  UZ: "Uzbekistan", MN: "Mongolia",
+  // —— 非洲与大洋洲
+  ZA: "South Africa", EG: "Egypt", MA: "Morocco", NG: "Nigeria",
+  KE: "Kenya", NZ: "New Zealand",
+}
+
+/**
  * 城市线索：节点名（jikasei 的 hub 只有 name 与 group 两个字段可用，原站还多两个
  * 地区字段）里出现这些词，就按这座城市落点 —— 比按国家落点准得多，地区列表也才
  * 分得出「东京 4 台」与「香港 5 台」。
@@ -281,19 +324,20 @@ export const CITY_HINTS: { match: RegExp; ll: [number, number]; name: string }[]
 ]
 
 /**
- * 国家级兜底城名：名字里认不出城市时，这几个国家**照样有个城名**（上游 `fallbackCity`
- * 的那几条 if：HK/SG 无条件兜、JP/KR 是「上游没给地区信息就兜」、TW 常有 Taiwan/Taipei/
- * Taichung 三选一；本站的 hub 没有地区字段，一律按「没给」处理）。
+ * 城市国家的兜底城名：认不出城市时，这几个**本身就是一座城市的地方**照样给城名
+ * （它们的国家名与城名同一，给了才不会裂行 —— 上游 `fallbackCity` 对 HK/SG
+ * 无条件兜城名，这个坑 2026-10-07 被站长截图报回来过）。
  *
  * ★ 别把它当装饰：少了它，一个 HK 会裂成「HK」与「HK · Hong Kong」两行 —— 名字里写着
  * 香港的那几台落城市级、没写的那几台落国家级，同一面旗并排出现两次（站长截图里就是它）。
- * 上游永远不会出现裸的 HK/SG 行，靠的就是这里。其余国家（US/DE/…）上游**不兜**：
- * 它们照旧显示国家码，城名只认名字里的线索。
+ *
+ * ★ 2026-10-11 收窄：JP/KR/TW 移出去、改走 `COUNTRY_NAME`（国家级）。它们不是城市国家
+ * —— 旧兜底把「Japan」「Korea」这类**国名**放进了城市名的位置（`JP · Japan`），
+ * 第三方站点的地区列表因此「有的是国家有的是城市」。现在它们与 US/DE 一样按国家名
+ * 显示，只是不再裸写国家码。MO 补进来（澳门与香港同类：一座城市就是一个地区）。
  */
 export const COUNTRY_CITY_FALLBACK: Record<string, string> = {
   HK: "Hong Kong",
-  TW: "Taiwan",
   SG: "Singapore",
-  JP: "Japan",
-  KR: "Korea",
+  MO: "Macau",
 }

@@ -9,7 +9,7 @@ import {
   layoutLabels, links, linkDivisor, MAX_LABEL_ROWS, prepareRings, regionOf, regionRows, regionView, sweepLonAt, sweepOpacity, trimLabel, VIEW, wrapLon,
   type Placed,
 } from "./globe.ts"
-import { CITY_HINTS, COARSE_WORLD_OUTLINES, COUNTRY_LL, WORLD_OUTLINES } from "./world.ts"
+import { CITY_HINTS, COARSE_WORLD_OUTLINES, COUNTRY_LL, COUNTRY_NAME, WORLD_OUTLINES } from "./world.ts"
 import type { Node } from "./api.ts"
 
 let failed = 0
@@ -172,8 +172,8 @@ eq(cityHint(node(3, "华纳云 JP", "JP")), null, "认不出城市就返回 null
 eq(cityHint(node(4, "魏武王", "CN", { group: "香港" }))?.name, "Hong Kong", "分组名也参与匹配（站点常用的地方）")
 
 eq(regionOf(node(1, "阿里 广州", "CN")), { key: "CN · Guangzhou", code: "CN", city: "Guangzhou", label: "Guangzhou", base: [113.2644, 23.1291] }, "国家码 + 城名 = 地区键（城名线索优先于国家落点）")
-eq(regionOf(node(2, "Nobrand Traffic Bug", "jp"))?.key, "JP · Japan", "认不出城市 → 国家级兜底城名（日本 → Japan），国家码大小写归一")
-eq(regionOf(node(2, "Nobrand Traffic Bug", "de"))?.key, "DE", "没有兜底城名的国家，认不出城市就是国家码（也验大小写归一）")
+eq(regionOf(node(2, "Nobrand Traffic Bug", "jp")), { key: "JP", code: "JP", city: "", label: "Japan", base: [139.7, 35.7] }, "认不出城市 → 国家级写国家名（Japan，不再裸写 JP），国家码大小写归一")
+eq(regionOf(node(2, "Nobrand Traffic Bug", "de")), { key: "DE", code: "DE", city: "", label: "Germany", base: [8.7, 50.1] }, "同上（Germany）——与 JP 同一套写法")
 eq(regionOf(node(3, "无名", "")), null, "没有国家码的节点不上地球")
 eq(regionOf(node(4, "某地", "XA")), null, "国家码不在表里、又认不出城市 → 不上地球")
 ok(regionOf(node(5, "纳泰-DE9929", "DE")) !== null, "表里有 DE")
@@ -183,16 +183,26 @@ eq(regionOf(node(6, "野草云", "HK"))?.code, "HK", "HK 保持 HK（上游会�
 eq(regionOf(node(6, "白猫", "TW"))?.code, "TW", "TW 保持 TW（上游会写成 CN）")
 eq(COUNTRY_LL.HK[0], 114.2, "国家落点表原样（HK）")
 
-// ★ 上游 `fallbackCity` 的国家级兜底城名（移植时漏过的那层，站长截图里 HK 裂成两行的根因）：
-//   名字里认不出城市时，这几个国家照样有城名；其余国家退到国家码。
-eq(regionOf(node(20, "野草云", "HK"))?.key, "HK · Hong Kong", "HK 认不出城市也落 Hong Kong（上游无条件兜底）")
+// ★ 城市国家的兜底城名（上游 `fallbackCity` 那层，移植时漏过、站长截图里 HK 裂成两行的根因）：
+//   HK/SG/MO 认不出城市也落城名；其余国家（含 JP/KR/TW）走第三层 —— 写国家名。
+eq(regionOf(node(20, "野草云", "HK"))?.key, "HK · Hong Kong", "HK 认不出城市也落 Hong Kong（城市国家无条件兜底）")
 eq(regionOf(node(21, "华纳云 HK", "HK"))?.key, "HK · Hong Kong", "HK 名字里写着 HK → 同一个地区键（不再分成两行）")
 eq(regionOf(node(22, "幽灵机", "SG"))?.key, "SG · Singapore", "SG 认不出城市也落 Singapore")
-eq(regionOf(node(23, "幽灵机二", "TW"))?.key, "TW · Taiwan", "TW 认不出城市落 Taiwan（名字里认得出 Taipei/Taichung 时仍按城名）")
-eq(regionOf(node(24, "幽灵机三", "JP"))?.key, "JP · Japan", "JP 认不出城市落 Japan")
-eq(regionOf(node(25, "幽灵机四", "KR"))?.key, "KR · Korea", "KR 认不出城市落 Korea")
-eq(regionOf(node(26, "阿里 西雅图", "US"))?.key, "US · Seattle", "兜底不影响城市线索（US 照旧认西雅图）")
-eq(regionOf(node(27, "幽灵机五", "US"))?.key, "US", "没有兜底的国家照旧退国家码（US）")
+eq(regionOf(node(33, "幽灵机六", "MO"))?.key, "MO · Macau", "MO 与 HK 同类（城市国家），2026-10-11 补进兜底")
+eq(regionOf(node(23, "幽灵机二", "TW"))?.key, "TW", "TW 认不出城市 → 国家级（名字里认得出 Taipei/Taichung 时仍按城名）")
+eq(regionOf(node(24, "幽灵机三", "JP"))?.key, "JP", "JP 认不出城市 → 国家级（不再把 Japan 放进城名的位置）")
+eq(regionOf(node(25, "幽灵机四", "KR"))?.key, "KR", "KR 认不出城市 → 国家级")
+eq(regionOf(node(26, "阿里 西雅图", "US"))?.key, "US · Seattle", "第三层不影响城市线索（US 照旧认西雅图）")
+eq(regionOf(node(27, "幽灵机五", "US"))?.key, "US", "认不出城市照旧是国家键（US），但显示的是国家名")
+// ★ 第三层：认不出城市时**地区名写国家名**（2026-10-11，站长拿反馈截图报的
+//   「US（码）/ Japan（旧兜底名）/ Phoenix（城名）三种口径并排」）。
+eq(regionOf(node(27, "幽灵机五", "US"))?.label, "United States", "第三层：US 认不出城市写 United States（不再裸写 US）")
+eq(regionOf(node(24, "幽灵机三", "JP"))?.label, "Japan", "第三层：JP 写 Japan")
+eq(regionOf(node(23, "幽灵机二", "TW"))?.label, "Taiwan", "第三层：TW 写 Taiwan")
+eq(regionOf(node(25, "幽灵机四", "KR"))?.label, "Korea", "第三层：KR 写 Korea")
+// ★ 国家名表必须覆盖落点表：凡能上地球的国家，认不出城市时都有名字可写。
+ok(Object.keys(COUNTRY_LL).every((cc) => typeof COUNTRY_NAME[cc] === "string" && COUNTRY_NAME[cc].length > 0), "COUNTRY_NAME 覆盖 COUNTRY_LL 的每一个国家")
+ok(Object.entries(COUNTRY_NAME).every(([cc, name]) => name !== cc && /^[A-Za-z ]+$/.test(name)), "国家名是名字、不是码的复读")
 
 // ★ 2026-10 数据扩展：国家表 12 → 80+、城市线索 24 → ~100（第三方的大机群以前大半
 //   认不出城市、全堆在国家码下；表外国家的机器干脆整个地区功能里看不见）。
@@ -226,44 +236,71 @@ eq(placed.length, 9, "不合并：9 台有落点的机器各一枚针")
 eq(placed.map((p) => p.key), ["1", "2", "3", "4", "5", "6", "7", "8", "9"], "顺序与节点列表一致（连线抽样要靠 index）")
 eq(placed.every((p) => p.count === 1), true, "不合并时针上没有台数")
 // JP 那 4 台必须岔开：坐标两两不同，且都在落点附近（不是随便乱扔）。
-const jp = placed.filter((p) => p.region.key === "JP · Japan")
+const jp = placed.filter((p) => p.region.key === "JP")
 eq(new Set(jp.map((p) => p.ll.join(","))).size, 4, "同地区 4 台岔开（一枚不盖住另一枚）")
 ok(jp.every((p) => Math.abs(p.ll[0] - p.region.base[0]) < 6 && Math.abs(p.ll[1] - p.region.base[1]) < 6), "岔开的点都在落点附近")
 eq(globeNodes(fleet).map((p) => p.ll), placed.map((p) => p.ll), "同一份节点算两次，落点完全一样（不会每帧抖）")
 
 // 同地区到 5 台 → 聚成一枚针：台数 5、标签「Japan ×5」、落在地区中心。
 const five = globeNodes([...fleet, node(11, "第五台 JP", "JP")])
-const jpMerged = five.filter((p) => p.region.key === "JP · Japan")
+const jpMerged = five.filter((p) => p.region.key === "JP")
 eq(jpMerged.length, 1, "同地区到 5 台 → 只出一枚针")
 eq(jpMerged.map((p) => p.count), [5], "那枚针上写着 5 台")
 eq(jpMerged.map((p) => p.name), ["Japan ×5"], "多台的针标签是「地区 × 台数」")
-eq(jpMerged[0].ll, regionRows(fleet).find((r) => r.region.key === "JP · Japan")?.aim, "合并的针落在地区中心")
+eq(jpMerged[0].ll, regionRows(fleet).find((r) => r.region.key === "JP")?.aim, "合并的针落在地区中心")
 eq(five.filter((p) => p.region.key === "CN").map((p) => p.count), [1], "没到门槛的地区照旧一台一枚")
 // 有一台离线，那枚针就按离线画（不能被「多数在线」盖过去）。
 const jpOffline = globeNodes([...fleet, node(11, "第五台 JP", "JP")].map((n) => (n.id === 7 ? { ...n, online: false } : n)))
-eq(jpOffline.find((p) => p.region.key === "JP · Japan")?.online, false, "合并的那枚针：地区里有一台离线就按离线画")
+eq(jpOffline.find((p) => p.region.key === "JP")?.online, false, "合并的那枚针：地区里有一台离线就按离线画")
 eq(jpOffline.find((p) => p.region.key === "CN")?.online, true, "别的地区不受影响")
 
 const rows = regionRows(fleet)
 // ★ 一个 HK 只有一行：名字里写着 HK 的（`华纳云 HK`）与没写的（`野草云`）都落 `HK · Hong Kong`
-//   —— 上游 `fallbackCity` 的兜底城名。漏掉它就会并排出现「HK」与「HK · Hong Kong」两行
+//   —— 城市国家兜底城名。漏掉它就会并排出现「HK」与「HK · Hong Kong」两行
 //   （同一面旗、同一个地方两行，站长截图里就是它）。四个 JP 名字里都没有城市线索，
-//   也一起落 `JP · Japan`（旧版这里会显示裸的「JP」）。
-eq(rows.map((r) => [r.region.key, r.count]), [["JP · Japan", 4], ["HK · Hong Kong", 2], ["CN", 1], ["CN · Guangzhou", 1], ["KR · Seoul", 1]], "地区分桶与台数（按台数从多到少）")
+//   一起落国家级 `JP`（显示名 Japan，不再把 Japan 放进城名的位置）。
+eq(rows.map((r) => [r.region.key, r.count]), [["JP", 4], ["HK · Hong Kong", 2], ["CN", 1], ["CN · Guangzhou", 1], ["KR · Seoul", 1]], "地区分桶与台数（按台数从多到少）")
 eq(rows.reduce((sum, r) => sum + r.count, 0), 9, "各地区台数合计 = 有落点的机器数")
 // ★ 地区行也把离线台数带出来：列表里才看得见哪个地区有机器离线（行上那枚小点用它）。
-eq(rows.find((r) => r.region.key === "JP · Japan")?.offline, 0, "全在线的地区离线台数为 0")
+eq(rows.find((r) => r.region.key === "JP")?.offline, 0, "全在线的地区离线台数为 0")
 const offlineRows = regionRows(fleet.map((n) => (n.id === 7 ? { ...n, online: false } : n)))
-eq(offlineRows.find((r) => r.region.key === "JP · Japan")?.offline, 1, "有离线的地区统计得出来（JP 那行 1 台）")
+eq(offlineRows.find((r) => r.region.key === "JP")?.offline, 1, "有离线的地区统计得出来（JP 那行 1 台）")
 eq(offlineRows.find((r) => r.region.key === "HK · Hong Kong")?.offline, 0, "别的地区不受影响")
 
-const rv = regionView(fleet, "JP · Japan")
+const rv = regionView(fleet, "JP")
 eq(rv.shown.map((n) => n.id), [5, 6, 7, 8], "按地区筛选只留下该地区的机器")
-eq(rv.current, "JP · Japan", "选中的地区是有效的")
+eq(rv.current, "JP", "选中的地区是有效的")
 eq(regionView(fleet, "不存在的地区").current, null, "悬空的选中态回落「全部」")
 eq(regionView(fleet, "不存在的地区").shown.length, 10, "回落时列表仍然是全部（含没落点的机器）")
 eq(regionView(fleet, null).shown.length, 10, "没选地区 = 全部")
 eq(regionView([], "JP").current, null, "没有节点时不存在悬空选中")
+
+/* ---------------------------------------------------------------- 大机群档的标签口径（2026-10-11） */
+// 小队（< MERGE_TOTAL）：单台地区写机器名（站长起的名字在小队里最有信息量）；
+// 大机群档（≥ MERGE_TOTAL）：一律写地区名 —— 100 台演示站上「都柏林 01」（机器名）与
+// 「London ×3」（地区名）并排是两种口径，看着像坏了。国家级条目（bare）不挂国家码前缀。
+{
+  const small = globeNodes([node(1, "都柏林 01", "IE"), node(2, "US-01", "US")])
+  eq(small.map((p) => p.display), ["都柏林 01", "US-01"], "小队（2 台）：单台照旧写机器名")
+  eq(small.map((p) => p.bare), [false, false], "小队单台照旧挂国家码前缀")
+  const bigFleet = [
+    ...Array.from({ length: 28 }, (_, i) => node(i + 1, `东京 ${String(i + 1).padStart(2, "0")}`, "JP")),
+    node(29, "都柏林 01", "IE"),
+    node(30, "US-01", "US"),
+  ]
+  const big = globeNodes(bigFleet)
+  eq(big.find((p) => p.region.key === "IE · Dublin")?.display, "Dublin", "大机群单台：写地区名（不再写机器名「都柏林 01」）")
+  eq(big.find((p) => p.region.key === "IE · Dublin")?.bare, false, "城市级照旧挂码（IE · Dublin）")
+  eq(big.find((p) => p.region.key === "US")?.display, "United States", "大机群单台（国家级）：写国家名")
+  eq(big.find((p) => p.region.key === "US")?.bare, true, "国家级不挂前缀（不然就是 US · United States）")
+  eq(big.find((p) => p.region.key === "JP · Tokyo")?.display, "Tokyo ×28", "合并的照旧「地区 ×N」")
+  eq(big.find((p) => p.region.key === "JP · Tokyo")?.bare, false, "城市级合并挂码")
+  const bigLaid = layoutLabels(camera(-20, 45), big, new Map())
+  const dublin = bigLaid.find((p) => p.region.key === "IE · Dublin")
+  ok(dublin?.left === "Dublin · IE" && dublin?.right === "IE · Dublin", `城市级标签带码（${dublin?.left} / ${dublin?.right}）`)
+  const usPin = bigLaid.find((p) => p.region.key === "US")
+  ok(usPin?.left === "United States" && usPin?.right === "United States", `国家级标签就是国家名（${usPin?.left}）`)
+}
 
 /* ---------------------------------------------------------------- 标签排布 */
 

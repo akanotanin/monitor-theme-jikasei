@@ -188,7 +188,7 @@ for (const [w, h, tag] of SIZES) {
   //   又超 16 单位就报错（旧收口在 200°E/65°N 实测 99.9 单位）。逐像素对账（globe-diff-image.mjs）
   //   是另一道网，两处都要绿。
   //   这里另外守的是：任何视角下都不该出现「一步跨过半个圆盘」的直线、点线越界、标签重叠或被裁。
-  const passes = [['默认视角', null], ['赤道视角（点 EC 地区行）', 'EC']]
+  const passes = [['默认视角', null], ['赤道视角（点 Ecuador 地区行）', 'Ecuador']]
   for (const [label, region] of passes) {
     if (region) {
       // ★ 这条必须断言「那一行找得到」：夹具里那台厄瓜多尔机器早先在 COUNTRY_LL 之外、

@@ -17,7 +17,7 @@
  * 不变量（改这里之前先读）：**极角超过 120° 的点不画**（`LIMB_K`，上游那行 `cosc <= 0.02`），
  * 落在背面的点直接丢、跨过边缘的线段裁到边缘上，否则地球背面的大陆会翻到正面来。
  */
-import { CITY_HINTS, COUNTRY_CITY_FALLBACK, COUNTRY_LL, type Ring } from "./world.ts"
+import { CITY_HINTS, COUNTRY_CITY_FALLBACK, COUNTRY_LL, COUNTRY_NAME, type Ring } from "./world.ts"
 import type { Node } from "@/lib/api"
 
 /** 画布与圆盘。上游 SVG 的 `viewBox="0 0 460 240"` 就是这几个数，改它们等于换一套构图。 */
@@ -623,9 +623,9 @@ export type Region = {
   key: string
   /** ISO 3166-1 alpha-2；空串 = 认不出国家。 */
   code: string
-  /** 城市英文名（线索没命中时按国家兜底，见 `COUNTRY_CITY_FALLBACK`；两者都没有才是空串）。 */
+  /** 城市英文名（线索没命中时按 `COUNTRY_CITY_FALLBACK` 兜城市国家；空串 = 国家级）。 */
   city: string
-  /** 地区列表里显示的文字：有城名用城名，否则用国家码。 */
+  /** 地区列表里显示的文字：有城名用城名，否则用**国家名**（认不出城市时的第三层，见 COUNTRY_NAME）。 */
   label: string
   /** 这一地区的落点（经度, 纬度）：点它时地球飞过去看这里。 */
   base: [number, number]
@@ -640,10 +640,13 @@ export type Region = {
  *   ② 上游给认不出国家的节点一个 [80,30] 的兜底落点（它在图上是一枚假针），
  *      这里直接 `null` —— 认不出就不上地球，也不占地区列表的一行；下面的列表照旧有它。
  *
- * ★ 城名的来源有**两层**（与上游 `fallbackCity` 同一顺序）：名字/分组里的城市线索优先，
- * 认不出时按 `COUNTRY_CITY_FALLBACK` 兜一个国家级的城名（HK → Hong Kong 那几条）。
- * 兜底这一层移植时漏过一次：HK 于是裂成「HK」与「HK · Hong Kong」两行，同一面旗并排
- * 出现两次（站长截图里那条就是它）；上游因为无条件兜底，一个 HK 永远只有一行。
+ * ★ 地区名有**三层**（2026-10-11 起）：① 名字/分组里的城市线索 → 城市名；
+ *   ② 城市国家（HK/SG/MO）认不出城市也兜城名（见 `COUNTRY_CITY_FALLBACK`）；
+ *   ③ 其余认不出城市的 → **国家名**（`COUNTRY_NAME`，如 US → United States）。
+ *   第三层以前直接写两字国家码，于是地区列表里「US」（码）、「Japan」（旧兜底名）、
+ *   「Phoenix」（城名）并排出现 —— 站长拿反馈截图来问「按国别还是地区？」（见 world.ts）。
+ *   兜底那层移植时漏过一次：HK 于是裂成「HK」与「HK · Hong Kong」两行，同一面旗并排
+ *   出现两次（站长截图里那条就是它）；上游因为无条件兜底，一个 HK 永远只有一行。
  */
 export function regionOf(node: Node): Region | null {
   const code = (node.country || "").trim().toUpperCase()
@@ -652,7 +655,9 @@ export function regionOf(node: Node): Region | null {
   const base = hint?.ll ?? COUNTRY_LL[code]
   if (!base) return null
   const city = hint?.name ?? COUNTRY_CITY_FALLBACK[code] ?? ""
-  return { key: city ? `${code} · ${city}` : code, code, city, label: city || code, base: [base[0], base[1]] }
+  // 第三层：认不出城市写国家名（不再裸写两字码）；表外才退回码本身。
+  const label = city || COUNTRY_NAME[code] || code
+  return { key: city ? `${code} · ${city}` : code, code, city, label, base: [base[0], base[1]] }
 }
 
 export type GlobeNode = {
@@ -660,7 +665,12 @@ export type GlobeNode = {
   key: string
   /** 这个地区里的第一台机器（点针开的就是它）。 */
   id: number
+  /** 机器名（单台地区的悬停提示「打开 X」用它）。 */
   name: string
+  /** 标签上写的那行名字：小队单台 = 机器名；大机群单台 = 地区名；合并 = 「地区 ×N」。 */
+  display: string
+  /** 国家级条目：标签不挂国家码前缀（`United States ×16`，不是 `US · United States ×16`）。 */
+  bare: boolean
   code: string
   /** 这个地区里**每一台**都在线才是 true（有一台离线，针就按离线画）。 */
   online: boolean
@@ -694,9 +704,15 @@ export function mergeRegion(total: number, count: number): boolean {
  * 合并时：**一个地区一枚针**，针上带台数（标签「地区 ×N」、针边挂数字）。原来是一台一枚、
  * 同城的多台用 `scatter` 岔开，机器一多就糊成一团（100 台、20 个城市时看得见的那半边有
  * 65 枚针挤在一起）。不合并时：回到一台一枚针 + 岔开。
+ *
+ * ★ 标签写什么（`display`）分两档：**小队（< MERGE_TOTAL）单台写机器名** —— 站长起的
+ *   名字在小队里最有信息量；**大机群档（≥ MERGE_TOTAL）一律写地区名** —— 100 台演示站
+ *   上「都柏林 01」（机器名）与「London ×3」（地区名）并排是两种口径，看着像坏了。
+ *   国家级条目（`bare`）不挂国家码前缀：`United States ×16` 而不是 `US · United States ×16`。
  */
 export function globeNodes(nodes: Node[]): GlobeNode[] {
   const placed: GlobeNode[] = []
+  const aggregate = nodes.length >= MERGE_TOTAL
   const byRegion = new Map<string, { node: Node; index: number; region: Region }[]>()
   nodes.forEach((node, index) => {
     const region = regionOf(node)
@@ -712,10 +728,13 @@ export function globeNodes(nodes: Node[]): GlobeNode[] {
       let online = true
       for (const { node } of bucket) online = online && node.online
       const head = bucket[0]
+      const name = `${head.region.label} ×${bucket.length}`
       placed.push({
         key: head.region.key,
         id: head.node.id,
-        name: `${head.region.label} ×${bucket.length}`,
+        name,
+        display: name,
+        bare: !head.region.city,
         code: head.region.code,
         // 有一台离线，这枚针就按离线画：地区里出事的那一台不该被「多数在线」盖过去。
         online,
@@ -731,6 +750,8 @@ export function globeNodes(nodes: Node[]): GlobeNode[] {
         key: String(node.id),
         id: node.id,
         name: node.name,
+        display: aggregate ? region.label : node.name,
+        bare: aggregate && !region.city,
         code: region.code,
         online: node.online,
         index,
@@ -819,7 +840,7 @@ export type Placed = GlobeNode & {
   end: boolean
   /** 最终显示的那一行（按落到的左右侧从下面两个里取）。 */
   label: string
-  /** 两个方向各自的那一行（左侧写「名字 · 国家」、右侧写「国家 · 名字」）。 */
+  /** 两个方向各自的那一行（左侧写「名字 · 国家」、右侧写「国家 · 名字」；国家级条目两个方向都是国家名）。 */
   left: string
   right: string
   width: number
@@ -848,8 +869,9 @@ export function layoutLabels(cam: Camera, points: GlobeNode[], sides: Map<string
   for (const point of points) {
     const p = cam.at(point.ll[0], point.ll[1])
     if (!p) continue
-    const left = trimLabel(`${point.name} · ${point.code}`, maxWidth, measure)
-    const right = trimLabel(`${point.code} · ${point.name}`, maxWidth, measure)
+    // 左侧写「名字 · 国家」、右侧写「国家 · 名字」；国家级条目（`bare`）就是国家名本身，不挂码。
+    const left = trimLabel(point.bare ? point.display : `${point.display} · ${point.code}`, maxWidth, measure)
+    const right = trimLabel(point.bare ? point.display : `${point.code} · ${point.display}`, maxWidth, measure)
     items.push({
       ...point, px: p.x, py: p.y, lx: 0, ly: 0, end: false, label: right, hidden: false,
       // 两个方向都排得下才算这一行长；宽度也按截断之后的算，左右两摞才配得平。

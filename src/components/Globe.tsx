@@ -8,8 +8,9 @@ import { COARSE_WORLD_OUTLINES, WORLD_OUTLINES } from "@/lib/world"
 import type { Node } from "@/lib/api"
 
 /**
- * 列表页顶部的「节点地球」：正射投影的一颗地球，每台机器一枚针、一条引线连到左右两摞
- * 标签上，旁边一条一条列着地区。整套是从上游复刻过来的，几何与排布在 `@/lib/globe` 里（那里的注释写了逐点比对的办法）。
+ * 列表页顶部的「节点地球」：正射投影的一颗地球，小队每台一枚针、大机群一个地区一枚针，
+ * 一条引线连到左右两摞标签上，旁边一条一条列着地区。整套是从上游复刻过来的，
+ * 几何与排布在 `@/lib/globe` 里（那里的注释写了逐点比对的办法）。
  *
  * 这一层只管四件事：**什么时候重画**、**指针怎么转它**、**点哪里开哪台机器**、
  * **地区侧栏怎么筛**。数据（节点 → 针的落点）只在节点列表变了时算一次。
@@ -229,10 +230,9 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
   const canvas = useMemo(() => {
     const plain = { pad: 0, room: Number.POSITIVE_INFINITY, viewBox: `0 0 ${VIEW.w} ${VIEW.h}` }
     if (!box || !points.length) return plain
-    const ink = Math.max(0, ...points.map((p) => Math.max(
-      inkWidthWith(measured, `${p.name} · ${p.code}`),
-      inkWidthWith(measured, `${p.code} · ${p.name}`),
-    )))
+    const ink = Math.max(0, ...points.map((p) => (p.bare
+      ? inkWidthWith(measured, p.display)
+      : Math.max(inkWidthWith(measured, `${p.display} · ${p.code}`), inkWidthWith(measured, `${p.code} · ${p.display}`)))))
     const scale = Math.min(box.w / VIEW.w, box.h / VIEW.h)
     // 一侧还剩多少余量（用户单位）：宽屏是"容器比画布宽"留下的空白，窄屏约等于 0。
     const room = (box.w / scale - VIEW.w) / 2
