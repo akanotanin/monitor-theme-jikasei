@@ -715,7 +715,10 @@ function CopyName({ name }: { name: string }) {
     <button
       type="button"
       data-copy-name=""
-      className="tap tap-8 grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      /* 命中区用**纵向型**（`tap-y-6`：上下各扩 10px → 24×44），不用四向的 tap-8：
+         详情页标题行这批控件（资源/网络延迟/量程段）的口径就是「横向不动」（四向外扩
+         会互相盖住，护栏量着「横向撑开 ±2px」），复制按钮跟着同一档才不会成为例外。 */
+      className="tap tap-y-6 grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       onClick={copy}
       title={state === "ok" ? "已复制" : state === "fail" ? "复制失败" : "复制机器名"}
       aria-label="复制机器名"

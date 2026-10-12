@@ -94,9 +94,12 @@ const waitFor = async (expr, ms = 8000) => {
 }
 
 // 卡片 / 详情页里按名字取那台机器的文本（表达式直接返回字符串，别再套 JSON.stringify——
-// 那会把引号带进比较值）
+// 那会把引号带进比较值）。
+// ★2026-10-12：选择器限定到**卡片**（[data-slot=card][role=button]）—— 地球的针（SVG .hit）
+//   与概览的「月度预算」块这轮也成了 role=button；宽口径的 [role=button] 会把 SVG 捞进来，
+//   而 SVG 元素没有 innerText，链式 .includes 当场 TypeError、探针返回空串、断言全红。
 const cardText = (name) => `(() => {
-  const card = [...document.querySelectorAll('[role=button]')].find((c) => c.innerText.includes(${JSON.stringify(name)}))
+  const card = [...document.querySelectorAll('[data-slot="card"][role="button"]')].find((c) => c.innerText.includes(${JSON.stringify(name)}))
   return card ? card.innerText.replace(/\\n/g, ' | ') : null
 })()`
 const factText = (label) => `(() => {

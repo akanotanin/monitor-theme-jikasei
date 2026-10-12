@@ -9,8 +9,10 @@ import { highlightRanges } from "@/lib/search"
  * 因此不受影响：mark 不改变 `textContent`）。
  *
  * `<mark>` 的浏览器默认样式（黑底黄字）由 Tailwind 的 preflight 折掉了大半，但留着的背景
- * 仍显眼，所以这里显式给一套：前景色的 10% 浅底 + 前景色文字 —— 深浅两套主题都跟着同一个
+ * 仍显眼，所以这里显式给一套：前景色的 20% 浅底 + 前景色文字 —— 深浅两套主题都跟着同一个
  * token 走，与「命中处提一下、但别把卡片变成荧光笔」的观感一致。
+ * ★深浅实测（2026-10-12 视觉 QA）：10% 的底在浅色主题上只有约 8% 的明度差，截图上几乎
+ *   看不出来（「做了等于没做」）；20% 是「一眼看得见、又不抢眼」的那一档。
  */
 export function TextHighlight({ text, terms }: { text: string; terms?: string[] }) {
   if (!terms?.length || !text) return <>{text}</>
@@ -21,7 +23,7 @@ export function TextHighlight({ text, terms }: { text: string; terms?: string[] 
   ranges.forEach(([from, to], i) => {
     if (from > pos) out.push(text.slice(pos, from))
     out.push(
-      <mark key={i} className="rounded-[3px] bg-foreground/10 px-px text-foreground">
+      <mark key={i} className="rounded-[3px] bg-foreground/20 px-px text-foreground">
         {text.slice(from, to)}
       </mark>,
     )

@@ -89,10 +89,12 @@ for (const shot of SHOTS.filter((s) => !ONLY || s.name.includes(ONLY))) {
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: shot.dark ? 'dark' : 'light' }] })
   await send('Page.navigate', { url: BASE + '/' })
   // 等卡片与数字滚动动画落定：数字还在变的时候截图会拍到乱码。
-  for (let i = 0; i < 60; i++) { await sleep(400); if (await evalJS(`document.querySelectorAll('[role=button]').length > 0`)) break }
+  // ★2026-10-12：选择器限定到卡片 —— 宽口径的 [role=button] 现在还会捞到地球的针（SVG）
+  //   与概览的「月度预算」块，点 [0] 会点到它们身上、进不了详情。
+  for (let i = 0; i < 60; i++) { await sleep(400); if (await evalJS(`document.querySelectorAll('[data-card-style] [data-slot="card"][role="button"]').length > 0`)) break }
   await sleep(2500)
   if (shot.open) {
-    await evalJS(`document.querySelectorAll('[role=button]')[0]?.click()`)
+    await evalJS(`document.querySelectorAll('[data-card-style] [data-slot="card"][role="button"]')[0]?.click()`)
     await sleep(1200)
     if (shot.open === 'latency') {
       await evalJS(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '网络延迟')?.click()`)
