@@ -24,7 +24,7 @@ import { useRef } from "react"
  * 词不进 localStorage、也不进 hub：它是「这一眼要看哪几台」，不是偏好；刷新就回到全量，
  * 与卡片形态那种「访客自己的偏好」是两回事。
  */
-export function SearchBox({ value, onChange, onActivate, onClose, hits }: {
+export function SearchBox({ value, onChange, onActivate, onClose, hits, onMove, onEnter }: {
   value: string
   onChange: (next: string) => void
   /** 焦点落到框里（＝点了那枚方形图标）：桌面上什么都不用做（CSS 自己长开）；窄屏＝把那一行开/关。 */
@@ -33,6 +33,10 @@ export function SearchBox({ value, onChange, onActivate, onClose, hits }: {
   onClose: () => void
   /** 命中台数：只用在收起态的悬停说明里（`搜索：东京（2 台）`）。 */
   hits: number
+  /** ↑↓：键盘选中在下面的命中列表里上下挪一格（下标由 App 管）。 */
+  onMove?: (delta: 1 | -1) => void
+  /** Enter：打开当前选中的那台（没选中时 App 侧什么都不做）。 */
+  onEnter?: () => void
 }) {
   return (
     <Field
@@ -40,6 +44,8 @@ export function SearchBox({ value, onChange, onActivate, onClose, hits }: {
       onChange={onChange}
       onActivate={onActivate}
       onClose={onClose}
+      onMove={onMove}
+      onEnter={onEnter}
       /* 长开只在 ≥640px 生效：`sm:focus-within:` 那个变体就是这道闸。 */
       className="search-field-wide w-9 shrink-0 sm:focus-within:w-60"
       title={value === "" ? "搜索（名称 / 地区 / 系统）" : `搜索：${value}（${hits} 台）`}
@@ -54,15 +60,19 @@ export function SearchBox({ value, onChange, onActivate, onClose, hits }: {
  * `autoFocus`：点开就是为了打字，不该再让访客点第二下。
  * 它**不收** onActivate：那一行刚挂上就自动聚焦，接上 onActivate 会当场又把自己关掉。
  */
-export function SearchRow({ value, onChange, onClose }: {
+export function SearchRow({ value, onChange, onClose, onMove, onEnter }: {
   value: string
   onChange: (next: string) => void
   /** 收起这一行。 */
   onClose: () => void
+  /** ↑↓：键盘选中在命中列表里上下挪一格（与顶栏那格同一套，见 SearchBox）。 */
+  onMove?: (delta: 1 | -1) => void
+  /** Enter：打开当前选中的那台。 */
+  onEnter?: () => void
 }) {
   return (
     <div className="search-row border-t px-4 py-2 sm:hidden">
-      <Field value={value} onChange={onChange} onClose={onClose} autoFocus variant="row" className="search-field-row flex w-full" />
+      <Field value={value} onChange={onChange} onClose={onClose} onMove={onMove} onEnter={onEnter} autoFocus variant="row" className="search-field-row flex w-full" />
     </div>
   )
 }
@@ -90,11 +100,15 @@ export function SearchRow({ value, onChange, onClose }: {
 const SQUARE_INPUT = "search-input relative z-[1] h-9 w-full min-w-0 rounded-md border border-transparent bg-transparent px-2.5 text-sm text-transparent outline-none transition-all placeholder:text-transparent hover:bg-accent focus:bg-transparent sm:focus:border-input sm:focus:px-8 sm:focus:text-foreground sm:focus:ring-[3px] sm:focus:ring-ring/30 sm:focus:placeholder:text-muted-foreground dark:hover:bg-accent/50"
 const ROW_INPUT = "search-input relative z-[1] h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-8 text-sm outline-none transition-all placeholder:text-muted-foreground focus:ring-[3px] focus:ring-ring/30"
 
-function Field({ value, onChange, onActivate, onClose, autoFocus, className, title, variant = "square" }: {
+function Field({ value, onChange, onActivate, onClose, onMove, onEnter, autoFocus, className, title, variant = "square" }: {
   value: string
   onChange: (next: string) => void
   onActivate?: () => void
   onClose?: () => void
+  /** ↑↓：键盘选中在命中列表里上下挪（见 SearchBox 的注释）。 */
+  onMove?: (delta: 1 | -1) => void
+  /** Enter：打开当前选中的那台。 */
+  onEnter?: () => void
   autoFocus?: boolean
   className?: string
   title?: string
@@ -127,6 +141,18 @@ function Field({ value, onChange, onActivate, onClose, autoFocus, className, tit
         onFocus={onActivate}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
+          // ↑↓ 选的是**下面那张列表**（命中列表的顺序），不是输入框里的光标历史 ——
+          // 一概吞掉：单行搜索框里这两下本来没有用途，放行只会让光标跳到词首/词尾。
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault()
+            onMove?.(e.key === "ArrowDown" ? 1 : -1)
+            return
+          }
+          if (e.key === "Enter") {
+            // 只在已选中时才有动作（App 侧判）；没选中的 Enter 不猜访客想开谁。
+            onEnter?.()
+            return
+          }
           if (e.key !== "Escape") return
           // Esc 两段式：有词先清词（这一步谁都用得上）；空框上再按一下才收起。
           if (value !== "") onChange("")

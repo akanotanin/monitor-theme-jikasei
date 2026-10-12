@@ -242,6 +242,38 @@ function matchersFor(term: string): ((text: string) => boolean)[] {
   return out
 }
 
+/**
+ * 名称里所有命中词的**字面区间**（合并重叠、排好序）—— 搜索命中处描色用它（见 Highlight 组件）。
+ *
+ * 只认字面出现（大小写不敏感）：同义词展开（搜「日本」命中名叫 `JP-TYO-01` 的机器那种）没有
+ * 可描的位置，不硬凑 —— 「描了半截不对的词」比不描更让人困惑。多个词各自找、区间重叠就合并；
+ * 返回 UTF-16 下标（slice 直接用，汉字都在 BMP 上）。空词忽略。
+ */
+export function highlightRanges(text: string, terms: string[]): [number, number][] {
+  const lower = text.toLowerCase()
+  const spans: [number, number][] = []
+  for (const term of terms) {
+    // 空词与纯空白忽略：搜词侧本来就会滤掉它们，这里再兜一道 —— 万一漏进来，
+    // 纯空白会几乎处处命中、把整串名字涂满。
+    if (!term.trim()) continue
+    let from = 0
+    for (;;) {
+      const at = lower.indexOf(term, from)
+      if (at < 0) break
+      spans.push([at, at + term.length])
+      from = at + Math.max(1, term.length)
+    }
+  }
+  spans.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const out: [number, number][] = []
+  for (const [s, e] of spans) {
+    const last = out[out.length - 1]
+    if (last && s <= last[1]) last[1] = Math.max(last[1], e)
+    else out.push([s, e])
+  }
+  return out
+}
+
 /** 按关键词收窄一组节点。空词＝没在搜（原样返回，连数组都不必重建）。 */
 export function searchNodes(nodes: Node[], query: string): SearchResult {
   const terms = searchTerms(query)

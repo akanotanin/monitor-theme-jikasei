@@ -6,6 +6,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { LatencyPanel, PeekLatency } from "@/components/Latency"
+import { TextHighlight } from "@/components/TextHighlight"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
 import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
@@ -205,15 +206,21 @@ export function RemarkChips({ chips, max = "full", keep = false }: { chips: Rema
   )
 }
 
-export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remarkPlacement }: {
+export function NodeCard({ node, onOpen, onOpenLatency, onWarm, latencyLines, cardStyle, remarkPlacement, terms, selected }: {
   node: Node
   onOpen: () => void
+  /** 点卡面那组「三网延迟」的行：绕开默认页签，直达详情的「网络延迟」（没有延迟块时不挂）。 */
+  onOpenLatency?: () => void
   /** 指针或键盘刚落到这张卡片上：先把手头这块 chunk（详情页的图表那 391KB）取回来。 */
   onWarm?: () => void
   latencyLines: string
   cardStyle: "classic" | "latency" | "detailed" | "plain"
   /** 「备注显示位置」：`detail` 时卡片这一侧一枚都不摊（整页详情照旧，见 NodeDetail）。 */
   remarkPlacement?: RemarkPlacement
+  /** 搜索命中词：名字里描色（见 Highlight）。没在搜时是空数组。 */
+  terms?: string[]
+  /** 键盘光标（↑↓）停在这张卡上：加一圈描边。 */
+  selected?: boolean
 }) {
   const m = node.metrics
   // 详细档：图标、元信息行与三枚读数盒都只在它里面出现；配色仍与另外两档同一套灰。
@@ -299,7 +306,13 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remark
       // name line below does not wrap, so on a phone the card would grow past its
       // column and scroll the page sideways. The truncate inside only takes effect
       // once the card is allowed to be narrower.
-      className="min-w-0 cursor-pointer gap-0 p-4 transition-colors hover:border-foreground/25"
+      // 键盘光标（搜索框里 ↑↓ 选中的那台）停在上面时加一圈 2px 描边：用 outline 而不是
+      // border/ring —— 不占盒宽、不改网格（用 border 会让这张卡大一圈、把邻居挤动）。
+      // data-node-card 是滚动定位（见 App 的 NodeList）与护栏共用的锚点；
+      // data-selected 是「当前被键盘选中」的标记（护栏读它，不用去解析类名）。
+      data-node-card={node.id}
+      data-selected={selected ? "1" : undefined}
+      className={`min-w-0 cursor-pointer gap-0 p-4 transition-colors hover:border-foreground/25 ${selected ? "outline-2 outline-offset-1 outline-ring" : ""}`}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}
@@ -310,8 +323,9 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remark
           名字推到省略号。 */}
       <div className="flex min-w-0 items-center gap-2">
         <Country node={node} />
-        {/* 简约档只把名字加粗一档（参考站是 600），文字与位置照旧。 */}
-        <h3 className={`min-w-0 truncate ${plain ? "font-semibold" : "font-medium"}`}>{node.name}</h3>
+        {/* 简约档只把名字加粗一档（参考站是 600），文字与位置照旧。搜索命中处描色（Highlight：
+            mark 不改变 textContent，既有文案断言照旧；没在搜时它原样返回，零影响）。 */}
+        <h3 className={`min-w-0 truncate ${plain ? "font-semibold" : "font-medium"}`}><TextHighlight text={node.name} terms={terms} /></h3>
         {/* 「详细」档的备注：挂在**标题行右端**——名字下面那一行、读数格、
             三枚读数盒一概不动（早先那套「把价格挤进读数盒、把到期日藏起来」的重排已经取消）。
             写法与公开备注那几处一致：逗号分隔＝多枚，一枚一枚各自成卡片。
@@ -402,7 +416,7 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remark
                   <span className="tnum min-w-0 truncate">{expiryText(node) ?? "无期限"}</span>
                 </span>
                 {/* 三网延迟排在计费那几行下面、自带一条分隔线；只有「经典」档挂它，且要打开浮层才取数。 */}
-                {cardStyle === "classic" && <PeekLatency node={node} lines={latencyLines} />}
+                {cardStyle === "classic" && <PeekLatency node={node} lines={latencyLines} onOpen={onOpenLatency} />}
               </span>
             )}
           </span>
@@ -462,7 +476,7 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remark
                   分隔线由它自己的 border-t 画在上面，三网延迟再从下面那条线开始。 */}
               {netRow}
               {/* 三网延迟：每条线路一行，数据来自 hub 的 ping 历史（详见 Latency.tsx）。 */}
-              <LatencyPanel node={node} lines={latencyLines} />
+              <LatencyPanel node={node} lines={latencyLines} onOpen={onOpenLatency} />
             </>
           ) : (
             <>
@@ -486,7 +500,7 @@ export function NodeCard({ node, onOpen, onWarm, latencyLines, cardStyle, remark
                   )}
                 </InfoBox>
               </div>
-              <LatencyPanel node={node} lines={latencyLines} />
+              <LatencyPanel node={node} lines={latencyLines} onOpen={onOpenLatency} />
             </>
           )}
         </>

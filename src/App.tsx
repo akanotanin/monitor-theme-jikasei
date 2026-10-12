@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExtern
 import { Globe as GlobeIcon, Moon, Sun, Wrench } from "lucide-react"
 
 import { CardStyleMenu } from "@/components/CardStyleMenu"
+import { Freshness } from "@/components/Freshness"
 import { NodeCard } from "@/components/NodeCard"
 import { CompactList } from "@/components/CompactList"
 import { Globe } from "@/components/Globe"
@@ -109,21 +110,49 @@ function DetailSkeleton({ hasRemarks = false }: { hasRemarks?: boolean }) {
 // `/node/{id}` is a real page: it survives a reload, can be linked to, and back
 // leaves the detail view rather than the site. The hub serves index.html for any
 // unknown path, so no server-side route is required.
-function useNodeRoute() {
+//
+// ★ 筛选三件套（分组 / 地区 / 搜索词）也在地址栏里（2026-10-12 起）：`/?group=…&region=…&q=…`。
+//   刷新、收藏、分享都带着当时的筛选；详情页的地址同样带着它们（外加 `?tab=latency`），
+//   于是「后退 / 前进」在列表与详情之间来回时，每一屏连筛选一起复原——URL 是状态的唯一来源，
+//   内存只是它的一份镜像。只带**有值**的项：清掉筛选就回到干净的 `/`。
+type ListState = { group: string | null; region: string | null; q: string }
+
+/** 从地址栏读筛选三件套（首次加载与 popstate 各读一次）。 */
+function readListState(): ListState {
+  const p = new URLSearchParams(location.search)
+  return { group: p.get("group"), region: p.get("region"), q: p.get("q") ?? "" }
+}
+
+/** 列表 / 详情共用的地址串：有值才带；详情页可选再带 `?tab=`。 */
+function pageUrl(id: number | null, tab: string | null, s: ListState): string {
+  const p = new URLSearchParams()
+  if (s.group !== null) p.set("group", s.group)
+  if (s.region !== null) p.set("region", s.region)
+  if (s.q.trim() !== "") p.set("q", s.q)
+  if (id !== null && tab) p.set("tab", tab)
+  const qs = p.toString()
+  return `${id === null ? "/" : `/node/${id}`}${qs ? `?${qs}` : ""}`
+}
+
+function useNodeRoute(onPop: (s: ListState) => void) {
   const read = () => {
     const match = location.pathname.match(/^\/node\/(\d+)/)
     return match ? Number(match[1]) : null
   }
   const [id, setId] = useState(read)
   useEffect(() => {
-    const sync = () => setId(read())
+    const sync = () => {
+      setId(read())
+      // 后退/前进也把筛选三件套从地址栏恢复：历史里每个条目都记着当时的筛选，落在哪一条就回哪一屏。
+      onPop(readListState())
+    }
     addEventListener("popstate", sync)
     return () => removeEventListener("popstate", sync)
-  }, [])
+  }, [onPop])
   return [
     id,
-    (next: number | null) => {
-      history.pushState({}, "", next === null ? "/" : `/node/${next}`)
+    (next: number | null, url?: string) => {
+      history.pushState({}, "", url ?? (next === null ? "/" : `/node/${next}`))
       setId(next)
       scrollTo(0, 0)
     },
@@ -162,12 +191,19 @@ function useTheme(siteMode: ThemeMode) {
     },
     () => DARK_MEDIA.matches,
   )
+  // siteMode 变档时马上按新档校正一次「夜里没夜里」——不等下一分钟。
+  // 写法用「渲染期调节 state」而不是在 effect 里同步 setState（后者要多一轮级联渲染，
+  // oxlint 也点名这一条）；模式这一档运行时几乎不变，代价最多是一次立即重放。
+  const [night, setNight] = useState(() => isBeijingNight())
+  const [nightMode, setNightMode] = useState(siteMode)
+  if (nightMode !== siteMode) {
+    setNightMode(siteMode)
+    setNight(isBeijingNight())
+  }
   // 「随北京时间自动」要自己跨过 19:00 / 07:00：每分钟问一次现在几点（几乎不要钱），
   // 到点前后最多差一分钟。别的档不挂这个定时器。
-  const [night, setNight] = useState(() => isBeijingNight())
   useEffect(() => {
     if (siteMode !== "auto") return
-    setNight(isBeijingNight())
     const timer = setInterval(() => setNight(isBeijingNight()), 60_000)
     return () => clearInterval(timer)
   }, [siteMode])
@@ -230,22 +266,32 @@ export default function App() {
   const farmUrl = useLocalFarm()
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
-  const { nodes, error, closed } = useNodes()
-  const [open, go] = useNodeRoute()
-  // The list's group tab, held here so it survives a visit to a node's page.
-  const [group, setGroup] = useState<string | null>(null)
+  const { nodes, error, closed, lastAt } = useNodes()
+  // 筛选三件套（分组 / 地区 / 搜索词）：**初始值从地址栏读**（刷新、收藏、别人分享的链接
+  // 都因此带着筛选进来），之后变化再写回去（见下面的 replaceState 那段）。
+  const [group, setGroup] = useState<string | null>(() => readListState().group)
   // 地球侧栏里选中的地区：同理留在这儿，进详情页再回来不丢。
-  const [region, setRegion] = useState<string | null>(null)
+  const [region, setRegion] = useState<string | null>(() => readListState().region)
+  // 顶栏那个搜索框：词与「窄屏那一行展开了没」都留在这儿 —— 进详情页再回来，搜到的那几台还在。
+  const [query, setQuery] = useState(() => readListState().q)
+  const [searchOpen, setSearchOpen] = useState(false)
+  // 搜索键盘导航：↑↓ 在**命中列表**里移动的那一格（下标，null = 没选）。词一变就清零
+  // （命中的那批换了，之前选到「第几台」已经没有意义）；显示时再按当前命中数夹一次。
+  const [cursor, setCursor] = useState<number | null>(null)
+  // popstate（后退/前进）时把筛选三件套从地址栏恢复 —— 与详情 id 同一趟同步。
+  const onPop = useCallback((s: ListState) => {
+    setGroup(s.group)
+    setRegion(s.region)
+    setQuery(s.q)
+    setCursor(null)
+  }, [])
+  const [open, go] = useNodeRoute(onPop)
   // 访客自己的两个偏好（都只存在他自己浏览器里，见 @/lib/theme-config）：
   // 地球看不看，以及列表用哪种卡片形态 —— 后者没选过时跟着站长的设置走。
   // ★ 站长那档是「节点地球」的**闸门**：他关掉时 `globeOn` 一律是 false，顶栏那枚开关也一起
   //   不挂（见下面那段渲染条件）——关掉的整块不该在页面上留一枚点了没落点的按钮。
   const [globeOn, toggleGlobe] = useGlobeVisible(config.globeOn)
   const [cardStyle, chooseStyle] = useCardStyle(config.cardStyle)
-  // 顶栏那个搜索框：词与「窄屏那一行展开了没」都留在这儿 —— 进详情页再回来，
-  // 搜到的那几台还在（与分组标签、地区选择同一套「看哪几台」的记忆）。
-  const [query, setQuery] = useState("")
-  const [searchOpen, setSearchOpen] = useState(false)
   // 收起搜索（Esc 在空框上按的那一下）。**不清词**：收起是「让出顶栏那点宽度」，不是「别筛了」
   // —— 词留着，点开一台机器看清了再回来，那几台还在（收起态会看不见词，所以那枚放大镜会提色、
   // 悬停说明里带上词与命中数，见 SearchBox）。
@@ -258,9 +304,17 @@ export default function App() {
   }
   // 窄屏那一行收起：连词一起清掉 —— 那一行是「临时张开的一块地方」，收起后顶栏上看不见它，
   // 留着词就成了看不见的筛选。（桌面那套不一样：收起态本来就是那枚图标，词留着有据可依。）
+  // 清词的同时把键盘光标也归零（见上面的 cursor）。
   const closeSearchRow = () => {
     setSearchOpen(false)
     setQuery("")
+    setCursor(null)
+  }
+  // 搜索词的唯一入口：词一变就把键盘光标归零（↑↓ 选的「第几台」属于上一批命中，
+  // 命中集合换了就不该悄悄指向另一台机器）。SearchBox / SearchRow 两处都走它。
+  const changeQuery = (next: string) => {
+    setQuery(next)
+    setCursor(null)
   }
 
   const loadMe = useCallback(() => {
@@ -347,6 +401,49 @@ export default function App() {
   // 不是搜索结果热力图；地区列表点一行照样能把列表收窄到那个地区）。
   const found = searchNodes(regions.shown, query)
   const listView = { ...view, shown: found.shown }
+  // 归一化后的当前筛选（地址栏更新与进详情都读它）。提成局部值再用：effect 的依赖数组里
+  // 直接写 `view.current` 会踩 exhaustive-deps（规则只认对象，而对象每渲染都是新的）。
+  const groupNow = view.current
+  const regionNow = regions.current
+
+  /**
+   * 筛选变了就把地址栏跟手更新（`replaceState`）。
+   *
+   * 为什么是 replace 而不是 push：筛选的每一次调整（点分组、点地区、敲一个字）不该往历史里
+   * 塞一整条条目 —— 否则「后退」得按十几下才退出这一页。replace 让历史里始终只留
+   * 「列表（当时筛选）→ 详情」这种有意义的两跳，后退一步就是干净的回退。
+   * 详情页时不写：那时的路径是 `/node/{id}`，筛选要留在它自己的查询串里（见 openNode）。
+   * 值取**归一化后**的 `groupNow / regionNow` —— 悬空的选择（分组解散、地区没了）
+   * 已经被回落成「全部」，地址栏里就不该还留着那个死值。
+   */
+  useEffect(() => {
+    if (open !== null) return
+    history.replaceState({}, "", pageUrl(null, null, { group: groupNow, region: regionNow, q: query }))
+  }, [open, groupNow, regionNow, query])
+
+  /**
+   * 进详情 / 回列表都走这里，把**当前筛选**一并写进地址（刷新或分享详情链接时，列表那一屏
+   * 也能原样复原）。延迟行那一下多带一个 `?tab=latency`（见 NodeCard 的 onOpenLatency）。
+   */
+  const openNode = (id: number, tab: "latency" | null = null) => {
+    go(id, pageUrl(id, tab, { group: groupNow, region: regionNow, q: query }))
+  }
+  const openList = () => {
+    go(null, pageUrl(null, null, { group: groupNow, region: regionNow, q: query }))
+  }
+
+  // 搜索键盘导航（↑↓ 选、Enter 开）：下标是「命中列表里的第几台」，不变式与清零时机见 cursor 的声明处。
+  const moveCursor = (delta: 1 | -1) => {
+    const count = found.shown.length
+    if (count === 0) return
+    setCursor((c) => (c === null ? (delta === 1 ? 0 : count - 1) : (c + delta + count) % count))
+  }
+  const enterCursor = () => {
+    const node = cursor !== null ? found.shown[cursor] : undefined
+    if (node) openNode(node.id)
+  }
+  // 显示时的当前选中：下标越界（命中数刚变过）就当作没选 —— 读的时候再夹一次，写的时候不用追。
+  const cursorId = cursor !== null && cursor < found.shown.length ? found.shown[cursor].id : null
 
   // `/node/{id}` is a page people bookmark and share, so the tab needs the node's
   // name. The site name rather than a fixed string, since the hub lets an operator
@@ -397,7 +494,7 @@ export default function App() {
               no back button of its own. A 32px disc of the site's icon leads
               it — `/favicon.svg` is the one address that answers with the
               panel's site icon (or the theme's own when none is set). */}
-          <button className="tap tap-8 flex max-w-[55%] shrink-0 items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={() => go(null)}>
+          <button className="tap tap-8 flex max-w-[55%] shrink-0 items-center gap-2.5 font-semibold transition-opacity hover:opacity-70" onClick={openList}>
             <SiteIcon />
             <span className="truncate">{me.site_name || "Monitor"}</span>
           </button>
@@ -408,10 +505,12 @@ export default function App() {
           {open === null && (
             <SearchBox
               value={query}
-              onChange={setQuery}
+              onChange={changeQuery}
               onActivate={onSearchActivate}
               onClose={collapseSearch}
               hits={found.hit}
+              onMove={moveCursor}
+              onEnter={enterCursor}
             />
           )}
           {/* ★ 图标条带：装不下就**横向滑动**（与下面那行分组标签同一套做法）。
@@ -479,7 +578,7 @@ export default function App() {
         {/* 窄屏点开搜索后在顶栏下面多出来的那一行：摆成 header 的直接子节点，
             于是它跟着这个 sticky 块一起吸顶（滚动时不会留在列表里被滚走）。 */}
         {open === null && searchOpen && (
-          <SearchRow value={query} onChange={setQuery} onClose={closeSearchRow} />
+          <SearchRow value={query} onChange={changeQuery} onClose={closeSearchRow} onMove={moveCursor} onEnter={enterCursor} />
         )}
       </header>
 
@@ -497,7 +596,7 @@ export default function App() {
             </Suspense>
           ) : (
             <p className="py-16 text-center text-sm text-muted-foreground">
-              节点不存在或未公开。<button className="underline" onClick={() => go(null)}>返回列表</button>
+              节点不存在或未公开。<button className="underline" onClick={openList}>返回列表</button>
             </p>
           )
         ) : !nodes ? (
@@ -522,7 +621,7 @@ export default function App() {
             {hasSummary(config.listTop) && <SummaryCards nodes={found.shown} group={view.current} finance={isBudgetLayout(config.listTop)} searching={found.active} />}
             {/* 节点地球：概览卡片之下、列表之上（上游就是这个次序）。 */}
             {globeOn && (
-              <Globe nodes={view.shown} dark={dark} region={regions.current} onRegion={setRegion} onOpen={go} onWarm={warmDetail} />
+              <Globe nodes={view.shown} dark={dark} region={regions.current} onRegion={setRegion} onOpen={openNode} onWarm={warmDetail} />
             )}
             {/* 一台都剩不下时说清楚是谁把它筛没的，并指回去哪儿取消 —— 否则访客只看到
                 一大片空白，会以为站点坏了。搜索那一层排在前面：它是最后叠上去、也是访客
@@ -537,31 +636,40 @@ export default function App() {
                 这个地区里当前没有节点 —— 点上面那一列的「全部」取消筛选。
               </p>
             ) : null}
-            <NodeList view={listView} group={group} onGroup={setGroup} onOpen={go} onWarm={warmDetail}
+            <NodeList view={listView} group={group} onGroup={setGroup} onOpen={openNode} onWarm={warmDetail}
               latencyLines={config.pingLines}
               cardStyle={cardStyle}
               historyDays={me.history_days}
-              remarkPlacement={config.remarkPlacement} />
+              remarkPlacement={config.remarkPlacement}
+              terms={found.terms}
+              cursorId={cursorId} />
           </>
         )}
       </main>
 
-      {/* 页脚署名：一行浅色小字。桌面在右下角（右对齐、比内容右沿往左收 12px）；手机上**收进一个
-          带上分割线的页脚带**里居中 —— 2026-10-07 站长两轮反馈：先嫌「右下角一行孤零零的灰字
-          像水印」（改居中），再说「还是得改个位置、要和谐美观不突兀」。根因是它**没有结构**：
-          一行灰字悬在卡片下面，既不像页脚、也不像卡片的一部分。加一条 1px 上分割线（与顶栏的
-          border-b 呼应，页面上下就都框住了），留白按「卡→线 24px、线→字 16px、字→底 20px」
-          拉开，它才读成一个明确的页脚区。分割线只出现在窄屏（<640px，与署名居中的断点同一档）
-          —— 为手机改的东西不落到电脑端，桌面维持原样。
+      {/* 页脚：署名 + 一枚「数据年龄」。桌面维持原构图 —— 右下角一行小字，只是左边多挨着
+          「更新于 N 秒前」（数据行在前、署名在后，都靠右下）；手机上**收进一个带上分割线的
+          页脚带**里堆叠居中（数据行在上、署名在下）—— 2026-10-07 站长两轮反馈：先嫌「右下角
+          一行孤零零的灰字像水印」（改居中），再说「还是得改个位置、要和谐美观不突兀」。根因是
+          它**没有结构**：一行灰字悬在卡片下面，既不像页脚、也不像卡片的一部分。加一条 1px 上
+          分割线（与顶栏的 border-b 呼应，页面上下就都框住了），留白按「卡→线 24px、线→字
+          16px、字→底 20px」拉开，它才读成一个明确的页脚区。分割线只出现在窄屏（<640px，与
+          署名居中的断点同一档）—— 为手机改的东西不落到电脑端，桌面维持原样。
+          「更新于 N 秒前」是**页面数据的实际年龄**（见 Freshness 组件）：实时连接每 2 秒推一次、
+          静默断掉时自动降级为 5 秒轮询 —— 这行小字让访客一眼看见「数字还在动吗」。数字在
+          正常节奏里（≤10 秒）时它用与署名同档的弱化灰，安静地待在角上。
           「Jikasei」那截点开去本主题的源码仓库 —— 新标签页打开，别把访客从状态页带走
           （链接地址与 theme.json 的 url 是同一个，见上面的 REPO_URL）。样式见 index.css 的 .theme-credit。 */}
       <footer className="mx-auto mt-2 w-full max-w-[1280px] border-t px-4 pb-5 pt-4 sm:mt-0 sm:border-t-0 sm:px-6 sm:pb-5 sm:pt-1">
-        <p className="theme-credit text-center sm:pr-3 sm:text-right">
-          Theme:{" "}
-          <a href={REPO_URL} target="_blank" rel="noreferrer">
-            Jikasei
-          </a>
-        </p>
+        <div className="flex flex-col items-center gap-1 sm:flex-row sm:items-baseline sm:justify-end sm:gap-4">
+          <Freshness at={lastAt} />
+          <p className="theme-credit text-center sm:pr-3 sm:text-right">
+            Theme:{" "}
+            <a href={REPO_URL} target="_blank" rel="noreferrer">
+              Jikasei
+            </a>
+          </p>
+        </div>
       </footer>
     </div>
   )
@@ -626,13 +734,14 @@ function useProgressive(total: number, first = 24, step = 12): number {
   return limit
 }
 
-function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyle, historyDays, remarkPlacement }: {
+function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyle, historyDays, remarkPlacement, terms, cursorId }: {
   /** 分组求值的结果：groups / current / shown / tabs / total（App 与概览卡片共用一份）。 */
   view: ReturnType<typeof groupView>
   /** 原始选中值（null = 全部，"" = 未分组）：只在归一化后回写时用，见下面的 effect。 */
   group: string | null
   onGroup: (group: string | null) => void
-  onOpen: (id: number) => void
+  /** 进详情。第二个参数给 "latency" 时，详情页落在「网络延迟」页签（卡面延迟行那一下）。 */
+  onOpen: (id: number, tab?: "latency") => void
   /** 指针/键盘刚落到某一张卡片上：把详情那块 chunk 先取回来（见 App 的 warmDetail）。 */
   onWarm: () => void
   /** 卡片延迟块要显示哪几条线路（ping 任务名，换行分隔）；空串 = 自动。 */
@@ -643,10 +752,20 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
   historyDays?: number
   /** 主题设置里的「备注显示位置」：卡片那一侧要不要摊备注（见 @/lib/site-settings）。 */
   remarkPlacement: RemarkPlacement
+  /** 搜索命中词：卡片名字里描色（见 Highlight）。没在搜时是空数组 —— 一切照旧。 */
+  terms: string[]
+  /** 键盘选中的那台（↑↓ 选中的下标换算来的 id）：加一圈描边、并随光标滚进视野。 */
+  cursorId: number | null
 }) {
   const { groups, current, shown, tabs, total, showTabs } = view
   // 首屏先画一屏的量，剩下的分帧补上（见 useProgressive）。
   const list = shown.slice(0, useProgressive(shown.length))
+  // 键盘选中（↑↓）的那台滚进视野：block: nearest —— 够不着才拉，不打断访客自己滚到的地方。
+  // 分批挂载还没轮到它时（选择挂在第 25 台开外）查询落空，等下一批挂上来光标再动自然会被看见。
+  useEffect(() => {
+    if (cursorId === null) return
+    document.querySelector(`[data-node-card="${cursorId}"]`)?.scrollIntoView({ block: "nearest" })
+  }, [cursorId])
   // 归一化后的值回写给 App（悬空的选中态被回落时纠正一次，见 groupView 的注释）。
   useEffect(() => {
     if (current !== group) onGroup(current)
@@ -679,11 +798,11 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
       {total === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
       ) : cardStyle === "compact" ? (
-        <CompactList nodes={list} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} remarkPlacement={remarkPlacement} />
+        <CompactList nodes={list} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} remarkPlacement={remarkPlacement} terms={terms} cursorId={cursorId} />
       ) : (
         <div data-card-style={cardStyle} className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
           {list.map((n) => (
-            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} latencyLines={latencyLines} cardStyle={cardStyle} remarkPlacement={remarkPlacement} />
+            <NodeCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onOpenLatency={() => onOpen(n.id, "latency")} onWarm={onWarm} latencyLines={latencyLines} cardStyle={cardStyle} remarkPlacement={remarkPlacement} terms={terms} selected={n.id === cursorId} />
           ))}
         </div>
       )}

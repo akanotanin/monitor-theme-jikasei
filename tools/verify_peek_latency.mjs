@@ -249,6 +249,33 @@ check('经典（关掉 1.3 秒后）：没有新的 ping 请求（不是关着�
 await openPeek({ waitBlock: true })
 check('经典（再点开）：又取了 1 条（不是「只在页面加载时取一次」）', (await hits()) === afterOpen + 1, `实测 ${await hits()} 次`)
 
+/* ───────────────── ①.五 点一条延迟行：直达详情页「网络延迟」页签（2026-10-12 的创意项） ───────────────── */
+// 这一段会让页面跳到详情页 —— 放在「经典档」这组断言都跑完之后；浮层正好还开着。
+const jumped = await evalJS(`(async () => {
+  const row = document.querySelector('[data-peek-latency] [data-probe-name]')
+  const line = row ? row.parentElement : null
+  if (!line) return 'no-line'
+  line.click()
+  await new Promise((r) => setTimeout(r, 800))
+  return location.pathname + location.search
+})()`)
+check('★ 点浮层里的一条延迟行：跳详情页且 URL 带 ?tab=latency（不是默认的「资源」）',
+  String(jumped) === '/node/1?tab=latency', String(jumped))
+const landed = JSON.parse(String(await evalJS(`(async () => {
+  let btn = null
+  for (let i = 0; i < 30; i++) {
+    const btns = [...document.querySelectorAll('main button')]
+    btn = btns.find((b) => b.textContent.trim() === '网络延迟')
+    if (btn) break
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  const res = [...document.querySelectorAll('main button')].find((b) => b.textContent.trim() === '资源')
+  return JSON.stringify({ net: btn ? btn.className : null, res: res ? res.className : null })
+})()`)))
+check('★ 落点就是「网络延迟」页签（高亮在它身上、资源那个没有）',
+  !!landed.net && /bg-primary/.test(String(landed.net)) && !!landed.res && !/bg-primary/.test(String(landed.res)),
+  JSON.stringify(landed))
+
 /* ───────────────── ② 站长的线路清单：与卡面共用同一份口径 ───────────────── */
 console.log('\n── 经典档：后台「三网延迟」里填了名字 ──')
 await render({ cardStyle: 'classic', pingLines: '上海电信\n北京联通' })

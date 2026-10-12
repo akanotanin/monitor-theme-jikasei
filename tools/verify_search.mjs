@@ -158,6 +158,11 @@ const PROBE = `(() => {
     borderTransparent: pl ? transparent(pl.borderTopColor) : null,
     bgTransparent: pl ? transparent(pl.backgroundColor) : null,
     count: cards.length, names: cards.map((el) => (el.querySelector('h3')?.textContent || '').trim()),
+    // 命中描色（2026-10-12）：名字里被 <mark> 包住的片段（没在搜/没字面命中时是空数组）。
+    marks: [...document.querySelectorAll('[data-card-style] > [data-slot="card"] h3 mark')].map((el) => el.textContent),
+    // 键盘光标选中的那台（↑↓ 选的）：data-selected 是卡片组件加的稳定锚点。
+    selected: (() => { const el = q('[data-card-style] [data-node-card][data-selected]'); return el ? (el.querySelector('h3')?.textContent || '').trim() : null })(),
+    url: location.pathname + location.search,
     fleet, notes, value: live ? live.value : null,
     overflow: document.documentElement.scrollWidth - innerWidth, viewport: { w: innerWidth, h: innerHeight },
   })
@@ -377,6 +382,70 @@ if (!REAL) {
   check('搜着的时候进详情页、再回列表：词还在、还是那两台',
     detail.startsWith('/node/') && back.value === '东京' && back.count === 2,
     `详情页=${detail}；回来后 value=${JSON.stringify(back.value)}、卡片 ${back.count} 张`)
+
+  // ── 命中描色（2026-10-12 的创意项）：命中词在名字里那一截被 <mark> 包住 ──
+  await type('东京')
+  const hl = await probe()
+  check('描色：两张卡的名字里各有一枚 <mark>，内容就是「东京」',
+    JSON.stringify(hl.marks) === JSON.stringify(['东京', '东京']), JSON.stringify(hl.marks))
+  await type('debian 一号')   // AND：两台 Debian 里名字含「一号」的；名字里只有「一号」有字面落点
+  const hl2 = await probe()
+  check('描色只认字面命中：搜「debian 一号」时名字里只有「一号」被描（debian 在系统字段里，不硬凑）',
+    JSON.stringify(hl2.marks) === JSON.stringify(['一号', '一号']), JSON.stringify(hl2.marks))
+  await type('日本')          // 同义展开：两台东京都在，但名字里没有「日本」两个字
+  const hl3 = await probe()
+  check('同义命中（搜「日本」中「东京一号」）不给描色（没有字面落点就不凑）',
+    hl3.count === 2 && hl3.marks.length === 0, `卡片 ${hl3.count}；marks=${JSON.stringify(hl3.marks)}`)
+
+  // ── 键盘导航：↑↓ 在命中里选、Enter 开（2026-10-12 的创意项） ──
+  await type('东京')          // 命中两台：[东京一号, 东京二号]
+  await key('ArrowDown', 'ArrowDown', 40)
+  let cur = await probe()
+  check('↑↓：↓ 一下选中第一张', cur.selected === '东京一号', `selected=${JSON.stringify(cur.selected)}`)
+  await key('ArrowDown', 'ArrowDown', 40)
+  cur = await probe()
+  check('↑↓：再 ↓ 移到第二张', cur.selected === '东京二号', `selected=${JSON.stringify(cur.selected)}`)
+  await key('ArrowDown', 'ArrowDown', 40)
+  cur = await probe()
+  check('↑↓：到底绕回第一张（环形，不卡在末尾）', cur.selected === '东京一号', `selected=${JSON.stringify(cur.selected)}`)
+  await key('ArrowUp', 'ArrowUp', 38)
+  cur = await probe()
+  check('↑↓：↑ 从第一张绕到第二张', cur.selected === '东京二号', `selected=${JSON.stringify(cur.selected)}`)
+  await key('Enter', 'Enter', 13)
+  await sleep(700)
+  const enteredPath = await js('location.pathname + location.search')
+  check('Enter：打开选中的那台（东京二号）；详情 URL 带着筛选（?q=东京）',
+    enteredPath === '/node/2?q=' + encodeURIComponent('东京'), `落点 ${enteredPath}`)
+  await js('document.querySelector("header button").click()')   // 回列表（词还在）
+  await sleep(700)
+  const afterBack = await probe()
+  check('从详情回来：词还在、还是那两台（键盘这套不动既有的记忆）',
+    afterBack.value === '东京' && afterBack.count === 2, `value=${JSON.stringify(afterBack.value)} 卡片 ${afterBack.count}`)
+  check('从详情回来：地址栏也回到带筛选的列表（?q=东京 —— 后退/刷新都落在同一屏）',
+    String(afterBack.url) === '/?q=' + encodeURIComponent('东京'), `url=${JSON.stringify(afterBack.url)}`)
+  // 改词后选中归零：命中那批换了，旧下标不该再悄悄指向谁。
+  await key('ArrowDown', 'ArrowDown', 40)   // 先选中一张
+  await type('东京一号')
+  const reset = await probe()
+  check('改词后选中清零（↑↓ 选的「第几台」属于上一批命中）', reset.selected === null, `selected=${JSON.stringify(reset.selected)}`)
+
+  // ── 搜索词进地址栏（2026-10-12 的创意项）：刷新、分享、后退都带着它 ──
+  await type('东京')
+  const urlNow = await js('location.search')
+  check('打完词：地址栏多了 ?q=东京（编码后）', decodeURIComponent(urlNow) === '?q=东京', urlNow)
+  await send('Page.navigate', { url: `${BASE}/?q=${encodeURIComponent('东京')}` })
+  await settle()
+  const reload = await probe()
+  check('拿带 ?q= 的链接打开（刷新/分享同一条路）：词回填、列表收着、命中照样描色',
+    reload.value === '东京' && reload.count === 2 && reload.marks.length === 2,
+    `value=${JSON.stringify(reload.value)} 卡片 ${reload.count} marks=${JSON.stringify(reload.marks)}`)
+  // 拿链接冷开时搜索框是**收起的**（36px，× 不存在）——先打字让框长开（词本来就是「东京」），
+  // 再点那枚 × 清词：这条路才是「点 × 清词 → 地址栏跟着干净」。
+  await type('东京')
+  await js(`${VISIBLE('.search-clear')}?.click()`)
+  await sleep(400)
+  const cleanedUrl = await js('location.search')
+  check('点 × 清词：地址栏回到干净的 /（参数消失）', cleanedUrl === '', `search=${JSON.stringify(cleanedUrl)}`)
 }
 
 console.log('\n二、窄屏 390×844（亮色）:')

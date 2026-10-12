@@ -1,10 +1,10 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { ArrowDown, ArrowUp } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
 import { speedHistory, type Node } from "@/lib/api"
 import { bytes, rate } from "@/lib/format"
-import { budgetOf, cny, fxNote } from "@/lib/money"
+import { budgetOf, cny, fxNote, type BudgetItem } from "@/lib/money"
 import { summarize, type Fleet } from "@/lib/summary"
 
 /**
@@ -43,18 +43,74 @@ import { summarize, type Fleet } from "@/lib/summary"
  * 有富余时才起作用；刚好装下时那行就紧跟在数字下面（`pt-1`）——也就是参考站那种三段式。
  *
  * 标签前不带图标：参考站的四张卡都没有，图标只是把标签挤窄、并把整行垫高。
+ *
+ * `detail` 给了它，整块就成了一枚可悬停/点开的热点（2026-10-12 的创意项）：鼠标悬停（或
+ * 触屏点一下）弹出一枚浮层，把这个数的分解摊开（如「月度预算」的逐台明细）。开合规则：
+ * 鼠标 pointerenter 即开、leave 即关；触屏/笔点一下开，点别处或 Esc 关；键盘 Tab 到它开、
+ * blur 关。原来的 hint（原生 title）在这条路径上让位给了浮层尾巴里的同一段说明 ——
+ * 两套悬停提示叠在一起会打架，而信息一字不少。
  */
-function Block({ title, hint, children }: {
+function Block({ title, hint, detail, children }: {
   title: string
   /** 悬停提示：口径说明——月度预算与剩余价值那两个数不是一眼能看懂的，得写清楚。 */
   hint?: string
+  /** 给了它可悬停/点开：弹出的浮层内容（口径行由调用方放在 detail 尾巴里）。 */
+  detail?: ReactNode
   children: ReactNode
 }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
+  // 开着的浮层：点别处 / Esc 收起（与 NodeCard 那枚浮层同一个做法）。
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      const el = e.target
+      if (!(el instanceof HTMLElement) || !ref.current?.contains(el)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false) }
+    document.addEventListener("pointerdown", onDown)
+    document.addEventListener("keydown", onKey)
+    return () => { document.removeEventListener("pointerdown", onDown); document.removeEventListener("keydown", onKey) }
+  }, [open])
   return (
-    <div className="flex min-w-0 flex-col" title={hint}>
+    <div
+      ref={ref}
+      className={`relative flex min-w-0 flex-col ${detail !== undefined ? "rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" : ""}`}
+      title={detail ? undefined : hint}
+      tabIndex={detail ? 0 : undefined}
+      role={detail ? "button" : undefined}
+      aria-expanded={detail ? open : undefined}
+      onPointerEnter={detail ? (e) => { if (e.pointerType === "mouse") setOpen(true) } : undefined}
+      onPointerLeave={detail ? (e) => { if (e.pointerType === "mouse") setOpen(false) } : undefined}
+      onFocus={detail ? () => setOpen(true) : undefined}
+      onBlur={detail ? () => setOpen(false) : undefined}
+      onClick={detail ? () => setOpen(true) : undefined}
+    >
       <div className="truncate text-xs text-muted-foreground">{title}</div>
       {children}
+      {detail !== undefined && open && (
+        // data-budget-detail：护栏认「浮层开没开、内容对不对」的锚点（与 data-latency 同一套做法）。
+        <span data-budget-detail="" className="absolute left-0 top-full z-20 mt-1.5 block w-max max-w-[15rem] space-y-1 rounded-md border bg-popover px-2.5 py-2 text-xs shadow-md">
+          {detail}
+        </span>
+      )}
     </div>
+  )
+}
+
+/** 「月度预算」浮层的内容：逐台月摊明细（金额降序，与 budgetOf 的 items 同序）+ 口径行。 */
+function BudgetDetail({ items, note }: { items: BudgetItem[]; note: string }) {
+  return (
+    <>
+      <span className="block text-muted-foreground">各节点月摊</span>
+      {items.map((item, i) => (
+        <span key={i} data-budget-row="" className="flex items-baseline justify-between gap-3">
+          <span className="min-w-0 truncate">{item.name}</span>
+          <span className="tnum shrink-0">≈{cny(item.monthly)}</span>
+        </span>
+      ))}
+      <span className="block border-t pt-1 text-muted-foreground">{note}</span>
+    </>
   )
 }
 
@@ -264,6 +320,9 @@ export function SummaryCards({ nodes, group, finance = false, searching = false 
   const series = speedHistory.get(group) ?? []
   // 折算说明：只列真的用到过的币种——各站的账混着 USD / EUR / CNY 记，合起来必须说明口径。
   const note = fxNote(budget.used, budget.skipped)
+  // 「月度预算」那一段口径文字：没有浮层时它是原生 title；有浮层时它挪进浮层尾巴
+  // （两处同一份，别让口径说岔了）。
+  const monthlyNote = `各节点的价格按计费周期摊到每个月后相加；一次性买断与没填价格的不计入。${note}`
 
   return (
     /* 版式照参考站：`sm` 起两列、`lg` 起四列。**手机是一列而不是参考站的两列**——参考站每张
@@ -273,9 +332,11 @@ export function SummaryCards({ nodes, group, finance = false, searching = false 
       {finance ? (
         <>
           {/* 第一张卡：月度预算 + 剩余价值。两个数都是把各站的账按固定汇率折成人民币后相加，
-              所以写「≈」；口径与汇率清单放在悬停提示里（见 lib/money.ts）。 */}
+              所以写「≈」；口径与汇率清单放在悬停提示里（见 lib/money.ts）。
+              「月度预算」块还挂了浮层（detail）：悬停/点开摊开逐台月摊明细——有可计的机器
+              才挂（items 为空时保持原生的 title 提示那副面孔）。 */}
           <Pair>
-            <Block title="月度预算" hint={`各节点的价格按计费周期摊到每个月后相加；一次性买断与没填价格的不计入。${note}`}>
+            <Block title="月度预算" hint={monthlyNote} detail={budget.items.length > 0 ? <BudgetDetail items={budget.items} note={monthlyNote} /> : undefined}>
               <Big>{budget.monthly === null ? "—" : `≈${cny(budget.monthly)}`}</Big>
               <Foot>{budget.monthlyCount ? `${budget.monthlyCount} 台计费` : "未记录价格"}</Foot>
             </Block>

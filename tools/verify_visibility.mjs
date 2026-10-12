@@ -198,6 +198,15 @@ check('★ 回前台把 WS 接回来了（+1 条新连接）', reopenA.wsOpens >
 const resumed = await waitFor(`(document.body.innerText.match(/帧(\\d+)/) || [0, '0'])[1] > ${seqBefore}`, 3000)
 check('实时帧重新画出来（序号大于隐藏前那一帧）', resumed, `隐藏前 帧${seqBefore}`)
 
+// 数据年龄指示（2026-10-12 的创意项）：页脚那行「更新于 N 秒前」跟着每一次快照走。
+const freshText = async () => String(await js(`(document.querySelector('[data-freshness]') || {}).textContent || ''`)).trim()
+const freshAgo = async () => { const m = (await freshText()).match(/^更新于 (\d+) 秒前$/); return m ? Number(m[1]) : -1 }
+const freshA = await freshText()
+check('★ 页脚的数据年龄行出来了（WS 主路径）', /^更新于 \d+ 秒前$/.test(freshA), JSON.stringify(freshA))
+await sleep(3200)
+const agoA = await freshAgo()
+check('★ 3 秒后仍是「秒」档的小数字（它跟着推送在走，不是冻住的）', agoA >= 0 && agoA <= 10, `ago=${agoA}`)
+
 /* ------------------------------------------------------------- 场景 B：WS 不可用 */
 
 console.log('\n=== B. WS 不可用（兜底轮询路径） ===')
@@ -214,12 +223,19 @@ await sleep(5800)
 const afterB = await stats()
 check('★ 隐藏期间轮询真的停了（跨过一个 5 秒周期计数不涨）', afterB.nodesHits === snapB.nodesHits, `${snapB.nodesHits} → ${afterB.nodesHits}`)
 check('★ 隐藏期间连 WS 重试都不发', afterB.wsAttempts === snapB.wsAttempts, `attempts ${snapB.wsAttempts} → ${afterB.wsAttempts}`)
+// 隐藏期间数据停了：那一行会如实变老 —— 它是「数据年龄」，不是装饰（回前台补拉后回落，见下）。
+const hiddenAgo = await freshAgo()
+check('★ 隐藏（数据停了）期间数字如实变老（≥4 秒）', hiddenAgo >= 4, `ago=${hiddenAgo}`)
 
 await js(`window.__setVis('visible')`)
 const backB = await waitStats((s) => s.nodesHits >= snapB.nodesHits + 1, 2500)
 check('★ 回前台补一次（轮询不可用时的「立刻拉一下」）', backB.nodesHits >= snapB.nodesHits + 1, `${snapB.nodesHits} → ${backB.nodesHits}`)
 const againB = await waitStats((s) => s.nodesHits >= snapB.nodesHits + 2, 7500)
 check('轮询也接回来了（回前台后 5 秒周期恢复）', againB.nodesHits >= snapB.nodesHits + 2, `${snapB.nodesHits} → ${againB.nodesHits}`)
+// WS 关掉的这条路上（兜底轮询每 5 秒喂一次），数据年龄照样是「秒」档小数字 ——
+// 这正是这行小字存在的意义：静默降级时访客还能看到数字在动。
+const agoB = await freshAgo()
+check('★ 降级到轮询后，数据年龄照常走动（回到 ≤15 秒的秒档）', agoB >= 0 && agoB <= 15, `ago=${agoB}`)
 
 check('全程没有未捕获异常', exceptions === 0, `${exceptions} 条`)
 

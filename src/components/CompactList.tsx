@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from "react"
 import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react"
 
 import { Country, deployed, monthUsage } from "@/components/NodeCard"
+import { TextHighlight } from "@/components/TextHighlight"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { Node } from "@/lib/api"
 import type { RemarkPlacement } from "@/lib/site-settings"
@@ -148,7 +149,7 @@ function Expanded({ node, span, onOpenDetail, historyDays, remarkPlacement }: { 
   )
 }
 
-function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, remarkPlacement }: {
+function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, remarkPlacement, terms, selected }: {
   node: Node
   span: number
   open: boolean
@@ -160,6 +161,10 @@ function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, re
   historyDays?: number
   /** 「备注显示位置」：展开行那格也算「卡片」那一侧。 */
   remarkPlacement?: RemarkPlacement
+  /** 搜索命中词：名字里描色（见 Highlight）。没在搜时是空数组。 */
+  terms?: string[]
+  /** 键盘光标（↑↓）停在这一行上：铺一层浅底 —— 表格里 outline 的渲染各家不一，底色最稳。 */
+  selected?: boolean
 }) {
   const m = node.metrics
   // CPU 是 hub 直接给的百分比；内存、硬盘、流量都要自己按 used/total 算。流量按套餐口径
@@ -180,21 +185,23 @@ function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, re
         role="button"
         aria-expanded={open}
         tabIndex={0}
+        data-node-card={node.id}
+        data-selected={selected ? "1" : undefined}
         onClick={onToggle}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onToggle())}
         onPointerOver={onWarm}
         onFocus={onWarm}
         onTouchStart={onWarm}
-        className={`cursor-pointer outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 ${open ? "bg-muted/30" : ""}`}
+        className={`cursor-pointer outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 ${open ? "bg-muted/30" : ""} ${selected ? "bg-accent" : ""}`}
       >
         {/* 名称列不写宽度、也不居中：定宽表把余量全给它，机器名长短不一时其余列纹丝不动。
             折角 → 国旗 → 名字：折角是「点得进去」的提示，展开时转成朝下；国旗与另外三种
-            形态同一处读法，都排在名字之前。 */}
+            形态同一处读法，都排在名字之前。名字里命中搜索词的那截描色（Highlight）。 */}
         <td className="px-3 py-2 align-middle">
           <span className="flex min-w-0 items-center gap-2">
             <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground/60 transition-transform ${open ? "rotate-90" : ""}`} />
             <Country node={node} />
-            <span className="truncate text-sm font-medium">{node.name}</span>
+            <span className="truncate text-sm font-medium"><TextHighlight text={node.name} terms={terms} /></span>
           </span>
         </td>
         <td className={`${colCls("os")} ${CELL} ${node.os ? "" : "text-muted-foreground"}`}>
@@ -246,7 +253,7 @@ function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, re
 }
 
 /** 紧凑形态的外壳：一张带边框的表，表头一行。展开的行由 CompactList 统一管开合。 */
-export function CompactList({ nodes, onOpen, onWarm, historyDays, remarkPlacement }: { nodes: Node[]; onOpen: (id: number) => void; onWarm?: () => void; historyDays?: number; remarkPlacement?: RemarkPlacement }) {
+export function CompactList({ nodes, onOpen, onWarm, historyDays, remarkPlacement, terms, cursorId }: { nodes: Node[]; onOpen: (id: number, tab?: "latency") => void; onWarm?: () => void; historyDays?: number; remarkPlacement?: RemarkPlacement; terms?: string[]; cursorId?: number | null }) {
   const span = useSpan()
   // 一次只摊开一行：表格本来就密，同时摊开两块会把上下文冲散。
   const [open, setOpen] = useState<number | null>(null)
@@ -277,10 +284,14 @@ export function CompactList({ nodes, onOpen, onWarm, historyDays, remarkPlacemen
               span={span}
               open={open === n.id}
               onToggle={() => setOpen((cur) => (cur === n.id ? null : n.id))}
-              onOpenDetail={() => onOpen(n.id)}
+              /* 「完整详情 ›」从展开行（正在看延迟图）跳整页：直接落在「网络延迟」页签，
+                 语境不中断（2026-10-12 的创意项；入口那一格本来就叫「完整详情」）。 */
+              onOpenDetail={() => onOpen(n.id, "latency")}
               onWarm={onWarm}
               historyDays={historyDays}
               remarkPlacement={remarkPlacement}
+              terms={terms}
+              selected={n.id === cursorId}
             />
           ))}
         </tbody>

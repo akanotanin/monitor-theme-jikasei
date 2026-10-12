@@ -220,6 +220,10 @@
 .globe-atlas svg line,
 .globe-atlas svg circle { pointer-events: none; }
 .globe-atlas svg .hit { pointer-events: auto; cursor: pointer; }
+/* 键盘轮到某枚针上时（Tab）：画一圈前景色描边当焦点环 —— 命中圆半径 9，这一圈正好落在
+   针的外面、不压旁边的标签；SVG 上各家对原生 outline 的处理不一，关掉换这个。
+   用 focus-visible（不是 focus）：鼠标点击过针之后不留环。 */
+.globe-atlas svg .hit:focus-visible { outline: none; stroke: var(--foreground); stroke-width: 1.5; }
 /* 标签那行名字也能点：点了打开它对应的机器（见 Globe.tsx 的 Pin）。命中区给足 ——
    Chrome 里 text 的命中本来就近乎整行盒，`bounding-box` 让内容框整个可点；
    `visiblePainted` 写在前面，给不认前者的浏览器兜底（回落到字形 + 描边）。 */

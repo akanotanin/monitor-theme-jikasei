@@ -127,6 +127,9 @@ const send = (m, p = {}) => new Promise((res) => { const i = ++id; pending.set(i
 ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id) } }
 const js = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value
 await send('Runtime.enable'); await send('Page.enable')
+// headless 里窗口本身没有焦点：el.focus() 只改 activeElement、不派发 focus/focusin 事件 ——
+// 「聚焦在针上、Enter 打开」这套键盘交互的测试需要真事件（2026-10-12）。
+await send('Emulation.setFocusEmulationEnabled', { enabled: true })
 let errors = []
 ws.addEventListener('message', (e) => { const m = JSON.parse(e.data); if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.text) })
 
@@ -345,12 +348,30 @@ check('钉住之后不再自转', (await (async () => {
 })()) === true, filtered.caption)
 await shot('02-live-region.png')
 
+// ★ 地区筛选进地址栏（2026-10-12 的创意项）：`?region=` 落进 URL —— 刷新、收藏、分享
+//   都带着这一屏；popstate 也会把它读回来（见 App 的 onPop）。
+const regUrl = String(await js('location.pathname + location.search'))
+check('★ 选了地区：地址栏带上了 region 参数', regUrl.startsWith('/?') && decodeURIComponent(regUrl).includes('region='), regUrl)
+await send('Page.reload')
+let regAfter = null
+for (let i = 0; i < 16; i++) {
+  await sleep(280)
+  try { regAfter = JSON.parse(await js(READ)) } catch { continue }
+  if (regAfter && regAfter.cards === 3 && regAfter.regs.find((r) => r.text.indexOf('Tokyo') >= 0)?.on) break
+}
+check('★ 刷新之后：地区选择原样复原（那一行仍选中、列表仍只剩 3 台）',
+  !!regAfter && regAfter.cards === 3 && regAfter.regs.find((r) => r.text.indexOf('Tokyo') >= 0)?.on === true,
+  JSON.stringify({ cards: regAfter?.cards, url: await js('location.search') }))
+
 check('再点一次同一行 = 取消筛选', await (async () => {
   await js(`(() => { const b = [...document.querySelectorAll('.globe-reg')].find((x) => x.textContent.indexOf('Tokyo') >= 0); b.click(); return true })()`)
   await sleep(500)
   const back = JSON.parse(await js(READ))
   return back.cards === 7 && back.selected === 0 && back.regs[0].on === true && back.sideTitle === '地区'
 })())
+// 取消筛选之后地址栏也回到干净（region 参数消失）。
+const regClean = String(await js('location.search'))
+check('★ 取消地区筛选：地址栏回到干净的 /（参数消失）', regClean === '', JSON.stringify(regClean))
 check('取消之后又转起来了', await (async () => {
   const a = JSON.parse(await js(READ)).caption
   await sleep(1200)
@@ -491,6 +512,45 @@ if (L1?.self) {
 }
 const byLabel = JSON.parse(await js(READ))
 check('★ 点标签进得去**它对应的那台**（URL = /node/<data-node>）', L1?.node != null && byLabel.url === `/node/${L1.node}`, `${byLabel.url} 期望 /node/${L1?.node}`)
+check('  详情页真的画出来了（不是整页空白）', /CPU|内存/.test(String(await js('document.body.innerText')).slice(0, 200)))
+await js(`(() => { history.pushState({}, '', '/'); location.reload(); return true })()`)
+await sleep(900)
+
+console.log('\n=== 五点七、针的键盘可达（Tab 到针、Enter 打开；2026-10-12 的创意项） ===')
+// 每一枚命中圆都是一枚真焦点（tabIndex=0 + role=button + aria-label），地球不再整块
+// 对读屏隐藏；装饰件（标签文字、台数角标）标掉 aria-hidden，不重复播报。
+const kbd = JSON.parse((await js(`(() => {
+  const svg = document.querySelector('.globe-atlas svg');
+  if (!svg) return 'null';
+  const hits = [...svg.querySelectorAll('.hit')];
+  return JSON.stringify({
+    ariaHidden: svg.getAttribute('aria-hidden'), group: svg.getAttribute('role'), ariaLabel: svg.getAttribute('aria-label'),
+    n: hits.length,
+    allFocusable: hits.every((h) => h.getAttribute('tabindex') === '0' && h.getAttribute('role') === 'button' && (h.getAttribute('aria-label') || '').startsWith('打开')),
+    firstLabel: hits[0] ? hits[0].getAttribute('aria-label') : null,
+    labelsHidden: [...svg.querySelectorAll('.globe-label')].every((t) => t.getAttribute('aria-hidden') === 'true'),
+    countsHidden: [...svg.querySelectorAll('.globe-count')].every((t) => t.getAttribute('aria-hidden') === 'true'),
+  });
+})()`)) ?? 'null') ?? {}
+check('★ 地球整块不再对读屏隐藏（role=group + 「节点地球」的名字）',
+  kbd.ariaHidden === null && kbd.group === 'group' && !!kbd.ariaLabel,
+  JSON.stringify({ ariaHidden: kbd.ariaHidden, group: kbd.group, label: kbd.ariaLabel }))
+check('★ 每一枚针都是真焦点（tabIndex=0 + role=button + 「打开 …」的 aria-label）',
+  kbd.n > 0 && kbd.allFocusable, `${kbd.n} 枚，首枚 label=${JSON.stringify(kbd.firstLabel)}`)
+check('装饰件不重复播报（标签文字与台数角标都 aria-hidden）', kbd.labelsHidden && kbd.countsHidden,
+  `标签 ${kbd.labelsHidden} 角标 ${kbd.countsHidden}`)
+// 走到第一枚针上按 Enter：焦点环（.hit:focus-visible 的描边）应当画出来，Enter 进它的详情页。
+const firstId = await js(`(() => { const h = document.querySelector('.globe-atlas svg .hit'); if (!h) return null; h.focus(); return document.activeElement === h ? h.getAttribute('data-node') : null })()`)
+check('（前置）能把焦点放到那枚针上', firstId != null, `data-node=${firstId}`)
+const ring = await js(`(() => { const h = document.querySelector('.globe-atlas svg .hit'); const cs = getComputedStyle(h); return JSON.stringify({ w: cs.strokeWidth, s: cs.stroke }) })()`)
+const ringOk = (() => { try { const r = JSON.parse(ring); return r.w === '1.5px' && r.s !== 'none' } catch { return false } })()
+check('★ 焦点环画出来了（命中圆描边切到 1.5px 的前景色）', ringOk, ring)
+await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+await sleep(700)
+const kbdOpen = JSON.parse(await js(READ))
+check('★ Enter 打开那枚针对应的机器（URL = /node/<data-node>）',
+  firstId != null && kbdOpen.url === `/node/${firstId}`, `${kbdOpen.url} 期望 /node/${firstId}`)
 check('  详情页真的画出来了（不是整页空白）', /CPU|内存/.test(String(await js('document.body.innerText')).slice(0, 200)))
 await js(`(() => { history.pushState({}, '', '/'); location.reload(); return true })()`)
 await sleep(900)

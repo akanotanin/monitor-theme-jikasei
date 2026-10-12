@@ -192,8 +192,13 @@ function pickRows(probes: Probe[] | null, lines: string): Probe[] {
  * 延迟与走势只走灰阶，越糟越深（见 toneClass）。站长可在后台「三网延迟」里指定显示哪几条
  * （按 ping 任务名匹配，一行一个，最多三条）；留空时按后台顺序自动取前三条。数据每 60 秒
  * 刷新一次（页面在后台时不取）。
+ *
+ * `onOpen` 给了就整块可点：点一行**直达详情页的「网络延迟」页签** —— 这一块显示的就是那张
+ * 一小时的延迟图，想看更大更全的同款，点它比「先开详情、再找页签」少一步（2026-10-12 的
+ * 创意项）。行 hover 时线路名从弱化灰提亮，作为「这里能点」的提示（与整卡可点不冲突：
+ * 行级点击先 `stopPropagation`，否则会走整卡那条「默认页签」的路）。
  */
-export function LatencyPanel({ node, lines }: { node: Node; lines: string }) {
+export function LatencyPanel({ node, lines, onOpen }: { node: Node; lines: string; onOpen?: () => void }) {
   const probes = useNodePing(node.id)
   const rows = useMemo(() => pickRows(probes, lines), [probes, lines])
   if (rows.length === 0) return null
@@ -207,12 +212,18 @@ export function LatencyPanel({ node, lines }: { node: Node; lines: string }) {
         const tone = toneOf(ms, p.loss)
         const gray = toneClass(tone)
         return (
-          <div key={p.id} className="flex items-center gap-2 text-xs">
+          <div
+            key={p.id}
+            className={`group flex items-center gap-2 text-xs ${onOpen ? "cursor-pointer" : ""}`}
+            onClick={onOpen ? (e) => { e.stopPropagation(); onOpen() } : undefined}
+            title={onOpen ? "打开详情 · 网络延迟" : undefined}
+          >
             {/* 线路名列宽 80px（原 64px）：站长常把线路名写成「城市 · 服务商」（「东京 · Google」
                 实测 72px、被 64px 截成「东京 · Go…」，2026-10-12 视觉 QA 实拍发现）——放宽到
                 80px 后这一档常见的名字全放得下；再长的仍有 title 悬停看全名。首选名字列与
-                数字列都固定宽，行与行之间才对得齐（sparkline 是弹性的，少 16px 无碍）。 */}
-            <span data-probe-name="" className="w-20 shrink-0 truncate text-muted-foreground" title={p.name}>{p.name}</span>
+                数字列都固定宽，行与行之间才对得齐（sparkline 是弹性的，少 16px 无碍）。
+                可点时（onOpen）hover 提亮，作为「行能点」的低调提示。 */}
+            <span data-probe-name="" className={`w-20 shrink-0 truncate text-muted-foreground ${onOpen ? "transition-colors group-hover:text-foreground" : ""}`} title={p.name}>{p.name}</span>
             <span className={`tnum w-14 shrink-0 text-right font-medium ${gray}`}>
               {ms === null ? "超时" : `${ms} ms`}
             </span>
@@ -239,7 +250,7 @@ export function LatencyPanel({ node, lines }: { node: Node; lines: string }) {
  * 这一块自带顶部分隔线（`border-t`）——它排在「到期」下面，靠这条线把「计费那几行」与
  * 「现在通不通」分开；没有数据时整块不渲染，所以也不会留下一条孤零零的线。
  */
-export function PeekLatency({ node, lines }: { node: Node; lines: string }) {
+export function PeekLatency({ node, lines, onOpen }: { node: Node; lines: string; onOpen?: () => void }) {
   const probes = useNodePing(node.id)
   const rows = useMemo(() => pickRows(probes, lines), [probes, lines])
   if (rows.length === 0) return null
@@ -250,10 +261,16 @@ export function PeekLatency({ node, lines }: { node: Node; lines: string }) {
         const ms = [...p.points].reverse().find((pt) => pt.latency !== null)?.latency ?? null
         const gray = toneClass(toneOf(ms, p.loss))
         return (
-          <span key={p.id} className="flex items-center gap-2">
+          <span
+            key={p.id}
+            className={`group flex items-center gap-2 ${onOpen ? "cursor-pointer" : ""}`}
+            onClick={onOpen ? (e) => { e.stopPropagation(); onOpen() } : undefined}
+            title={onOpen ? "打开详情 · 网络延迟" : undefined}
+          >
             {/* 浮层里的名字列 72px（原 56px）：与卡面同一条「城市 · 服务商」口径，
-                浮层更窄所以只放宽一档；超长的名字靠 title 悬停看全。 */}
-            <span data-probe-name="" className="w-[4.5rem] shrink-0 truncate text-muted-foreground" title={p.name}>{p.name}</span>
+                浮层更窄所以只放宽一档；超长的名字靠 title 悬停看全。与卡面同一套
+                onOpen 行为：点一行直达详情的「网络延迟」页签。 */}
+            <span data-probe-name="" className={`w-[4.5rem] shrink-0 truncate text-muted-foreground ${onOpen ? "transition-colors group-hover:text-foreground" : ""}`} title={p.name}>{p.name}</span>
             <span className={`tnum w-12 shrink-0 text-right font-medium ${gray}`}>
               {ms === null ? "超时" : `${ms} ms`}
             </span>

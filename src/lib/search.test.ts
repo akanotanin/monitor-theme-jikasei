@@ -1,7 +1,7 @@
 // 搜索口径：名称 / 地区 / 系统三处命中即算中；多个关键词是「都要中」（AND）。
 // 跑法同另外几个：`npm test`（Node 自己剥类型，不需要 runner）。
 // 没有任何东西 import 它，所以不进 bundle。
-import { searchNodes, searchText, searchTerms } from "./search.ts"
+import { searchNodes, searchText, searchTerms, highlightRanges } from "./search.ts"
 import type { Node } from "./api.ts"
 
 let failed = 0
@@ -152,6 +152,18 @@ eq(searchNodes([en[2]], "ty").hit, 0, "认不出城市的机器：三字码前�
 // 一个字母总会被「原样子串」那枚命中（这里是 2 台）。规则留着是为了别把 `t` 扩成一串城市，
 // 说明写在 `isCityPrefix` 的注释里，不假装有断言罩着它。
 eq(searchText(en[0]).includes("东京") && searchText(en[0]).includes("東京"), true, "可搜文本含城市的中文写法（含繁体）")
+
+/* 命中区间的计算（卡片名字里描色用，见 components/TextHighlight）：只认**字面**出现、
+   大小写不敏感；同词多处各成段、相邻与重叠都合并；空词忽略；没有命中返回空。 */
+eq(highlightRanges("东京一号", ["东京"]), [[0, 2]], "字面命中的区间（含起止下标）")
+eq(highlightRanges("SG-Edge", ["edge"]), [[3, 7]], "大小写不敏感（词小写、文本混合大小写）")
+eq(highlightRanges("东京X东京", ["东京"]), [[0, 2], [3, 5]], "同词多处出现、隔开的各自成段")
+eq(highlightRanges("东京一号", ["一号", "东京"]), [[0, 4]], "相邻/乱序的命中合并成一段")
+eq(highlightRanges("abc", ["bc", "ab"]), [[0, 3]], "重叠的命中合并成一段")
+eq(highlightRanges("东京一号", ["上海"]), [], "没有字面命中就没有区间")
+eq(highlightRanges("东京一号", ["", "  "]), [], "空词与纯空白忽略（不变成整串高亮）")
+// 同义展开（搜「日本」命中 JP-TYO-01）没有字面落点 —— 描色不硬凑，这里返回空。
+eq(highlightRanges("JP-TYO-01", ["日本"]), [], "没有字面落点的命中不给区间（不硬凑）")
 
 if (failed) {
   console.error(`\n${failed} 处不符`)

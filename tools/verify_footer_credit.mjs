@@ -104,6 +104,8 @@ const MEASURE = `(() => {
   const main = q('main')
   const link = credit ? credit.querySelector('a') : null
   const siteName = q('header button')
+  // 页脚那枚「更新于 N 秒前」（数据年龄指示，2026-10-12 加入）：与署名同一条页脚带。
+  const fresh = q('[data-freshness]')
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]) }
@@ -146,6 +148,7 @@ const MEASURE = `(() => {
     linkInside: !!(credit && link && credit.contains(link)),
     credit: of(credit),
     creditText,
+    freshness: fresh ? { text: fresh.textContent.replace(/\s+/g, ' ').trim(), ...of(fresh) } : null,
     siteName: of(siteName),
     main: mb ? { left: Math.round(mb.left), right: Math.round(mb.right), bottom: Math.round(mb.bottom), contentRight: Math.round(mb.right - parseFloat(mcs.paddingRight)) } : null,
     footer: fb ? { top: Math.round(fb.top), bottom: Math.round(fb.bottom), right: Math.round(fb.right),
@@ -160,10 +163,10 @@ const MEASURE = `(() => {
 let pass = 0, fail = 0
 const check = (name, ok, extra = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? ' — ' + extra : ''}`); if (ok) pass++; else fail++ }
 
-// 等页面安静：署名出来、字体加载完。判据里不带百分比之类会被数据直接命中的串。
+// 等页面安静：署名与数据年龄行出来、字体加载完。判据里不带百分比之类会被数据直接命中的串。
 const settle = async () => {
   for (let i = 0; i < Math.ceil(SETTLE / 200) + 10; i++) {
-    const ok = await js(`!!document.querySelector('.theme-credit') && document.fonts.status === 'loaded'`)
+    const ok = await js(`!!document.querySelector('.theme-credit') && !!document.querySelector('[data-freshness]') && document.fonts.status === 'loaded'`)
     if (ok) break
     await sleep(200)
   }
@@ -229,22 +232,49 @@ const common = (m, where) => {
   // 窄屏的**页脚带**（2026-10-07 站长第二轮：「还是得改个位置、要和谐美观不突兀」）：一行灰字
   // 悬在卡片下面没有任何结构，既不像页脚也不像卡片的一部分。加一条 1px 上分割线把它圈成页脚区，
   // 判据按「带」量三段留白 —— 正文→线、线→字、字→页底。给区间不钉死数值，拦住「又漂回去」即可。
+  // ★2026-10-12：「更新于 N 秒前」（数据年龄）加入后，窄屏这一带排成**两行**（数据在上、
+  //   署名在下），所以「线→字」那一段的锚从「署名」改成「首行（数据行）」，另补一段
+  //   「首行→署名」的间距断言；「字→页底」仍量**末行**（署名）。
   if (narrow) {
     check(`${where}：页脚带有 1px 上分割线（窄屏专属）`, !!m.footer && m.footer.borderTop >= 1,
       `border-top=${m.footer?.borderTop}px`)
     check(`${where}：正文下沿 → 分割线 20~32px`, m.bodyBottom != null && !!m.footer
       && (m.footer.top - m.bodyBottom) >= 20 && (m.footer.top - m.bodyBottom) <= 32,
       `卡片底 ${m.bodyBottom} → 线 ${m.footer?.top} = ${m.bodyBottom != null && m.footer ? m.footer.top - m.bodyBottom : '?'}px（main 自己还垫了 pb-4）`)
-    check(`${where}：分割线 → 署名上沿 10~22px`, !!m.creditText && !!m.footer
-      && (m.creditText.y - m.footer.top) >= 10 && (m.creditText.y - m.footer.top) <= 22,
-      `${m.footer?.top} → ${m.creditText?.y} = ${m.creditText && m.footer ? m.creditText.y - m.footer.top : '?'}px`)
+    check(`${where}：分割线 → 首行（更新于）上沿 10~22px`, !!m.freshness && !!m.footer
+      && (m.freshness.rect.y - m.footer.top) >= 10 && (m.freshness.rect.y - m.footer.top) <= 22,
+      `${m.footer?.top} → ${m.freshness?.rect?.y} = ${m.freshness && m.footer ? m.freshness.rect.y - m.footer.top : '?'}px`)
+    check(`${where}：首行（更新于）→ 署名上沿 0~8px（同一条页脚带里的两行）`, !!m.freshness && !!m.creditText
+      && (m.creditText.y - m.freshness.rect.bottom) >= 0 && (m.creditText.y - m.freshness.rect.bottom) <= 8,
+      `数据行底 ${m.freshness?.rect?.bottom} → 署名顶 ${m.creditText?.y} = ${m.freshness && m.creditText ? m.creditText.y - m.freshness.rect.bottom : '?'}px`)
     check(`${where}：署名下沿 → 页底 16~28px`, !!m.creditText
       && (m.docH - (m.creditText.bottom + m.scrollY)) >= 16 && (m.docH - (m.creditText.bottom + m.scrollY)) <= 28,
       `页高 ${m.docH} − 署名底 ${m.creditText?.bottom}（滚动 ${m.scrollY}）= ${m.creditText ? m.docH - m.creditText.bottom - m.scrollY : '?'}px`)
   } else {
     check(`${where}：桌面不加分割线（为手机加的东西不落到电脑端）`, !!m.footer && m.footer.borderTop === 0,
       `border-top=${m.footer?.borderTop}px`)
+    // 桌面维持「右下角一行」的构图：数据行与署名同一条基线上、数据行在署名左侧（gap-4=16px），
+    // 两件一起被右对齐（signat 的 inset 由上面那条既有断言罩着）。
+    check(`${where}：数据行与署名同一行、在署名左侧（右下角一簇）`, !!m.freshness && !!m.creditText
+      && Math.abs(m.freshness.rect.y - m.creditText.y) <= 4 && m.freshness.rect.right <= m.creditText.x,
+      `数据 y=${m.freshness?.rect?.y} 署名 y=${m.creditText?.y}；数据右 ${m.freshness?.rect?.right} → 署名左 ${m.creditText?.x}`)
+    check(`${where}：数据行与署名的间距 12~20px（gap-4=16px）`, !!m.freshness && !!m.creditText
+      && (m.creditText.x - m.freshness.rect.right) >= 12 && (m.creditText.x - m.freshness.rect.right) <= 20,
+      `署名前空隙 = ${m.freshness && m.creditText ? m.creditText.x - m.freshness.rect.right : '?'}px`)
   }
+  // 「更新于 N 秒前」本身（2026-10-12 的创意项）：格式、跟的是实时数据、也是浅色小字。
+  check(`${where}：页脚有数据年龄行（「更新于 N 秒/分钟/小时前」）`,
+    !!m.freshness && /^更新于 \d+ (秒|分钟|小时)前$/.test(m.freshness.text),
+    m.freshness?.text ?? '（没有这一行）')
+  check(`${where}：秒数很小（≤60 秒 —— 它跟的是刚来的实时数据，不是死数）`,
+    !!m.freshness && (() => {
+      const hit = m.freshness.text.match(/^更新于 (\d+) 秒前$/)
+      return !!hit && Number(hit[1]) <= 60
+    })(),
+    m.freshness?.text ?? '')
+  check(`${where}：数据行浅色小字（对比度 ≥1.6，且不响过顶栏站名）`,
+    !!m.freshness && !!m.siteName && m.freshness.ratio >= 1.6 && m.freshness.ratio < m.siteName.ratio,
+    `数据行 ${m.freshness?.ratio}:1（${m.freshness?.color} × ${m.freshness?.opacity}） vs 站名 ${m.siteName?.ratio}:1`)
   check(`${where}：排在正文之后（不是压在列表上）`, !!m.footer && !!m.main && m.footer.top >= m.main.bottom - 1,
     `footer.top=${m.footer?.top} main.bottom=${m.main?.bottom}`)
   check(`${where}：比顶栏站名浅（对比度更低），但仍看得见（≥1.6）`,

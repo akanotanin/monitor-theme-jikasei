@@ -286,9 +286,11 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
         onPointerUp={(e) => endDrag(e, true)}
         onPointerCancel={(e) => endDrag(e, false)}
       >
-        {/* 地球是下面那张列表的另一种画法，不是唯一的入口：对读屏隐藏，免得 26 枚针
-            变成 26 个无名可点项。地区侧栏那几个是真按钮，留着。 */}
-        <svg viewBox={canvas.viewBox} preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+        {/* 地球是下面那张列表的另一种画法，不是唯一的入口。但从 2026-10-12 起它**键盘可达**：
+            每一枚针的命中圆都是一枚真焦点（tabIndex + role=button + aria-label），Tab 走到
+            哪枚、Enter/Space 就打开那台机器 —— 所以不再对整个 svg 说 aria-hidden，
+            改为只把纯绘制件（标签文字、台数角标）标掉，语义全部落在针上。 */}
+        <svg viewBox={canvas.viewBox} preserveAspectRatio="xMidYMid meet" role="group" aria-label="节点地球">
           <defs>
             {/* 圆盘里那层明暗：中心几乎透明、边上压到 `--globe-rim`（上游同一套停点）。 */}
             <radialGradient id="globe-shade" cx="38%" cy="36%" r="68%">
@@ -315,7 +317,7 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
             <path key={i} className="globe-link" d={arc.d} />
           ))}
           {placed.map((p) => (
-            <Pin key={p.key} p={p} />
+            <Pin key={p.key} p={p} onOpen={onOpen} onWarm={onWarm} />
           ))}
           {marker && (
             <g className="globe-selected">
@@ -376,8 +378,13 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
  *
  * 大机群时被行数上限省掉的行（见 globe.ts 的 MAX_LABEL_ROWS）只画针 —— 引线与标签
  * 都不画，针边上的台数角标照留：那一行字没了，但这枚针是哪里、有几台仍然读得出来。
+ *
+ * 命中圆同时是**键盘入口**（2026-10-12 的创意项）：tabIndex=0 + role=button + aria-label，
+ * Tab 能停在上面、Enter/Space 打开（与鼠标点击同一落点）；聚焦或指针扫过先预热详情 chunk
+ * （onWarm，与卡片「摸到就预热」同一套）。焦点圈画在 index.css 的 `.hit:focus-visible`。
+ * 标签文字与台数角标标 aria-hidden：它们与命中圆的 aria-label 是同一份信息，别播两遍。
  */
-function Pin({ p }: { p: Placed }) {
+function Pin({ p, onOpen, onWarm }: { p: Placed; onOpen: (id: number) => void; onWarm: () => void }) {
   const cx = p.px.toFixed(1)
   const cy = p.py.toFixed(1)
   return (
@@ -393,18 +400,40 @@ function Pin({ p }: { p: Placed }) {
       {/* 多台地区：针边上挂一个小小的台数（标签里也写着「地区 ×N」，两处都在，
           因为标签可能被挤掉、针本身也常常落在标签的另一头）。 */}
       {p.count > 1 && (
-        <text className="globe-count" x={p.px + 4.5} y={p.py - 3.5}>
+        <text className="globe-count" x={p.px + 4.5} y={p.py - 3.5} aria-hidden="true">
           {p.count}
         </text>
       )}
       {!p.hidden && (
         /* 这行名字本身也能点：点了打开它对应的那台机器（多台地区 = 打开其中第一台）。
            与命中圆共用一个事件路径 —— pointerdown 那一刻用 closest('[data-node]') 认下它是谁。 */
-        <text className="globe-label" x={p.lx + (p.end ? -3 : 3)} y={p.ly + 3} textAnchor={p.end ? "end" : "start"} data-node={p.id}>
+        <text className="globe-label" x={p.lx + (p.end ? -3 : 3)} y={p.ly + 3} textAnchor={p.end ? "end" : "start"} data-node={p.id} aria-hidden="true">
           {p.label}
         </text>
       )}
-      <circle className="hit" cx={cx} cy={cy} r={9} fill="transparent" data-node={p.id} data-index={p.index} data-region={p.region.key} data-online={p.online ? "1" : "0"} data-count={p.count} />
+      <circle
+        className="hit"
+        cx={cx}
+        cy={cy}
+        r={9}
+        fill="transparent"
+        data-node={p.id}
+        data-index={p.index}
+        data-region={p.region.key}
+        data-online={p.online ? "1" : "0"}
+        data-count={p.count}
+        tabIndex={0}
+        role="button"
+        aria-label={p.count > 1 ? `${p.region.label}：${p.count} 台，打开其中第一台` : `打开 ${p.name}`}
+        onFocus={onWarm}
+        onPointerOver={onWarm}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            onOpen(p.id)
+          }
+        }}
+      />
     </g>
   )
 }

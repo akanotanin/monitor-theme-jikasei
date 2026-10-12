@@ -494,6 +494,33 @@ let classicStyle = null
   const { dom } = await render({ cardStyle: 'latency', pingLines: '北京电信\n上海电信\n广州电信\n成都电信', listTop: 'none' }, 'latency-cap')
   check('延迟：指定四条有效线路也只显示三条', dom.rows.join('/') === '北京电信/上海电信/广州电信', dom.rows.join('/'))
 }
+{
+  // 点卡面的一条延迟行：直达详情页「网络延迟」页签（2026-10-12 的创意项）。
+  // 这一段会让页面跳到详情页 —— 放在 latency 这组样式断言都跑完之后；后面每段都会重新 render。
+  const jumped = await evalJS(`(async () => {
+    const row = document.querySelector('[data-latency] [data-probe-name]')
+    const line = row ? row.parentElement : null
+    if (!line) return 'no-line'
+    line.click()
+    await new Promise((r) => setTimeout(r, 800))
+    return location.pathname + location.search
+  })()`)
+  check('★ 点卡面延迟行：跳详情页且 URL 带 ?tab=latency（不是默认「资源」）',
+    String(jumped) === '/node/1?tab=latency', String(jumped))
+  const landed = JSON.parse(String(await evalJS(`(async () => {
+    let btn = null
+    for (let i = 0; i < 30; i++) {
+      btn = [...document.querySelectorAll('main button')].find((b) => b.textContent.trim() === '网络延迟')
+      if (btn) break
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    const res = [...document.querySelectorAll('main button')].find((b) => b.textContent.trim() === '资源')
+    return JSON.stringify({ net: btn ? btn.className : null, res: res ? res.className : null })
+  })()`)))
+  check('★ 落点就是「网络延迟」页签（高亮在它身上、资源那个没有）',
+    !!landed.net && /bg-primary/.test(String(landed.net)) && !!landed.res && !/bg-primary/.test(String(landed.res)),
+    JSON.stringify(landed))
+}
 
 
 /* 3) 详细（新档） */

@@ -80,6 +80,20 @@ export type Budget = {
   used: string[]
   /** 填了价格、但汇率表里没有的那种币种（那台机器因此没计入，提示里会说明）。 */
   skipped: string[]
+  /**
+   * 逐台的月摊明细（金额降序、同额保持原顺序）—— 「月度预算」那块读数悬停时弹出的浮层
+   * 用它回答「合起来这些钱，是哪几台摊出来的」。口径与 `monthly` 完全同一份：一次性买断、
+   * 没填价格、汇率表里没有的机器都不在这里出现（所以 `items.length === monthlyCount`）。
+   */
+  items: BudgetItem[]
+}
+
+/** 逐台月摊明细里的一条。 */
+export type BudgetItem = {
+  /** 机器名（原样显示；浮层里过长由 CSS 截断）。 */
+  name: string
+  /** 折成人民币的月摊金额。 */
+  monthly: number
 }
 
 export function budgetOf(nodes: Node[]): Budget {
@@ -89,6 +103,7 @@ export function budgetOf(nodes: Node[]): Budget {
   let remainingCount = 0
   const used = new Set<string>()
   const skipped = new Set<string>()
+  const items: BudgetItem[] = []
 
   for (const node of nodes) {
     // 没填价格（0 / 空）＝这台不计账，不是「花 0 元」。
@@ -103,8 +118,10 @@ export function budgetOf(nodes: Node[]): Budget {
     const months = cycleMonthsOf(node.billing_cycle)
     const days = cycleDaysOf(node.billing_cycle)
     if (months > 0) {
-      monthly += (node.price * fx) / months
+      const per = (node.price * fx) / months
+      monthly += per
       monthlyCount++
+      items.push({ name: node.name, monthly: per })
     }
     if (days <= 0) continue
     // `expires_in` 是数字（含 0、负数）就用它；null / 缺字段才按 `expires_at` 自己数。
@@ -124,6 +141,9 @@ export function budgetOf(nodes: Node[]): Budget {
     remainingCount,
     used: [...used].sort(),
     skipped: [...skipped].sort(),
+    // 降序（贵的在前）——「钱花在哪台上了」是这枚浮层要回答的第一个问题；
+    // 同金额的保持节点原顺序（sort 在 ES2019+ 是稳定的）。
+    items: items.sort((a, b) => b.monthly - a.monthly),
   }
 }
 
