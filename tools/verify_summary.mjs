@@ -401,8 +401,10 @@ const readBudgetDetail = (title = '月度预算') => evalJS(`(async () => {
   await new Promise((r) => setTimeout(r, 90))
   const d = b.querySelector('[data-budget-detail]')
   if (!d) return null
+  const cs = getComputedStyle(d)
   return { rows: [...d.querySelectorAll('[data-budget-row]')].map((r) => r.innerText.replace(/\\n/g, ' | ')),
-    text: d.innerText.replace(/\\n/g, ' | ') }
+    text: d.innerText.replace(/\\n/g, ' | '),
+    maxHeight: cs.maxHeight, overflowY: cs.overflowY, clientH: d.clientHeight, scrollH: d.scrollHeight }
 })()`)
 
 /** 一张卡里两块读数：左块贴左、右块贴右、两块不重叠、下沿对齐、数字没被截断。 */
@@ -564,14 +566,19 @@ let classicNet = null
   check('预算版·浮层：各行金额之和 ≈ 卡片大数（同一份口径）',
     sums.length > 0 && Math.abs(sums.reduce((a, b) => a + b, 0) - big) <= 0.02,
     `明细和 ${sums.reduce((a, b) => a + b, 0).toFixed(2)} vs 卡片 ${big}`)
-  check('预算版·浮层：表头是「各节点月摊」', !!pop && pop.text.includes('各节点月摊'), pop?.text ?? '')
+  check('预算版·浮层：表头是「各节点月摊 · N 台」（N=「台计费」数）', !!pop && pop.text.includes(`各节点月摊 · ${count} 台`), pop?.text ?? '')
+  // ★2026-10-12 浮层限高：近百台明细不许把浮层拉出屏幕 —— min(24rem,60vh) + 内部滚动
+  //   （.budget-detail，紧贴块底无 margin gap，悬停能摸进浮层）。
+  check('预算版·浮层：限高生效（max-height 有值 / overflow-y: auto）',
+    !!pop && pop.maxHeight !== 'none' && pop.overflowY === 'auto',
+    `max-height=${pop?.maxHeight} / overflow-y=${pop?.overflowY}`)
 
   // 剩余价值浮层（2026-10-12 加装）：同一套牙齿 —— 行数 = 「N 台未到期」、降序、和 ≈ 大数。
   const valueText = block(dom, '剩余价值').text
   const vCount = Number((valueText.match(/(\d+) 台未到期/) || [])[1] ?? NaN)
   const vBig = Number(((valueText.match(/¥([\d,]+\.\d\d)/) || [])[1] ?? '').replace(/,/g, '') || NaN)
   const vSums = (popValue?.rows ?? []).map((r) => Number(((r.match(/¥([\d,]+\.\d\d)/) || [])[1] ?? '').replace(/,/g, '') || NaN))
-  check('预算版·剩余价值浮层：表头是「各节点剩余价值」', !!popValue && popValue.text.includes('各节点剩余价值'), popValue?.text ?? '')
+  check('预算版·剩余价值浮层：表头是「各节点剩余价值 · N 台」（N=「台未到期」数）', !!popValue && popValue.text.includes(`各节点剩余价值 · ${vCount} 台`), popValue?.text ?? '')
   check('预算版·剩余价值浮层：行数 = 「N 台未到期」', !!popValue && popValue.rows.length === vCount && vCount > 0,
     `浮层行数 ${popValue?.rows.length} ／ 卡片「${vCount} 台未到期」`)
   check('预算版·剩余价值浮层：各行金额降序（贵的在前）',

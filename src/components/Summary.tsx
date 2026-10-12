@@ -91,7 +91,13 @@ function Block({ title, hint, detail, children }: {
       {children}
       {detail !== undefined && open && (
         // data-budget-detail：护栏认「浮层开没开、内容对不对」的锚点（与 data-latency 同一套做法）。
-        <span data-budget-detail="" className="absolute left-0 top-full z-20 mt-1.5 block w-max max-w-[15rem] space-y-1 rounded-md border bg-popover px-2.5 py-2 text-xs shadow-md">
+        // ★2026-10-12 两处讲究（服务器多了以后浮层会长到几十行）：
+        //   ① 去掉了原来的 mt-1.5 —— 那段 6px 空隙会让「指针从块下移到浮层」的路上触发
+        //      pointerleave，桌面鼠标一往下浮层就闪关（根本摸不进浮层、也滚不动）。现在浮层紧贴
+        //      块底，指针全程留在 Block 子树里，悬停不断；视觉上的缓冲由浮层自己的内边距兜着。
+        //   ② 上限高 + 内部滚动写在 index.css 的 .budget-detail 里：min(24rem, 60vh) —— 近百行
+        //      明细也在这一个浮层里滚着看，不会把浮层拖出屏幕。
+        <span data-budget-detail="" className="budget-detail absolute left-0 top-full z-20 block w-max max-w-[15rem] space-y-1 rounded-md border bg-popover px-2.5 py-2 text-xs shadow-md">
           {detail}
         </span>
       )}
@@ -103,7 +109,8 @@ function Block({ title, hint, detail, children }: {
 function BudgetDetail({ head, items, note }: { head: string; items: BudgetItem[]; note: string }) {
   return (
     <>
-      <span className="block text-muted-foreground">{head}</span>
+      {/* 表头带上条数（「各节点月摊 · 87 台」）：浮层能滚了之后，第一眼就知道一共有多少台。 */}
+      <span className="block text-muted-foreground">{head} · {items.length} 台</span>
       {items.map((item, i) => (
         <span key={i} data-budget-row="" className="flex items-baseline justify-between gap-3">
           <span className="min-w-0 truncate">{item.name}</span>

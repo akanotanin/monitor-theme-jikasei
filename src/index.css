@@ -395,6 +395,14 @@
 .search-field .search-clear { display: none; position: absolute; }
 .search-field:focus-within .search-clear { display: grid; }
 
+/* 预算卡那两枚明细浮层（「各节点月摊 / 各节点剩余价值」，src/components/Summary.tsx）。
+   服务器一多、可计的能到近百台 —— 不限高的话浮层会长出屏幕（demo 站 87 台实测）。
+   限高 min(24rem, 60vh)：桌面大约放十几行，手机跟随视口；超高就在浮层里滚，
+   overscroll-contain 防滚到头把页面也带着跑；细滚动条不抢视觉。
+   浮层紧贴块底（没有 margin gap）是配合悬停的：指针从块移进浮层的整条路上都还在 Block 里，
+   不会触发 pointerleave 把浮层关掉（原来的 6px mt 就会——桌面鼠标根本摸不进浮层）。 */
+.budget-detail { max-height: min(24rem, 60vh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+
 /* 触屏命中区：**外观一点不动，只把可点范围往外撑**。
    手指比鼠标粗 —— Apple 的通行线是 44×44，WCAG 2.2 的硬线（2.5.8）是 24×24。
    撑出来的那圈是 ::before，透明、不参与布局，所以排版、间距、视觉都不受影响；
