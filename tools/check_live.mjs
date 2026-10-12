@@ -37,11 +37,24 @@ const send = (method, params = {}) => new Promise((r) => { const i = ++id; pendi
 const js = async (e) => (await send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true })).result?.value
 await send('Page.enable'); await send('Runtime.enable'); await send('Network.enable')
 await send('Page.addScriptToEvaluateOnNewDocument', { source: `(function () {
-  window.__m = { cards: null, chunkUrl: null, chunkMs: null, chunkCount: 0, idleRequests: [], chart: null, clickAt: null, enters: 0 }
+  window.__m = { cards: null, chunkUrl: null, chunkMs: null, chunkCount: 0, idleRequests: [], chart: null, clickAt: null, enters: 0, wsFirst: null }
   document.addEventListener('pointerover', function (e) { if (e.target && e.target.closest && e.target.closest('[data-slot="card"][role="button"], table tbody tr[role="button"]')) window.__m.enters++ }, true)
-  try { new MutationObserver(function () { if (window.__m.cards === null && document.querySelector('[data-slot="card"][role="button"], table tbody tr[role="button"]')) window.__m.cards = Math.round(performance.now()) }).observe(document.documentElement, { childList: true, subtree: true }) } catch (e) {}
+  // ★ observe 的目标必须是 **document**，不能是 document.documentElement：这段脚本在
+  //   document 创建后、解析前执行，此时 documentElement 还是 null —— observe(null) 抛
+  //   TypeError 并被下面的 catch 吞掉，这个观察器**从来没生效过**（m.cards 恒 null、
+  //   打印成「卡片 nullms 出现」；2026-10-12 实测，改成 document 后正常记录）。
+  //   verify_detail_preload 里同款观察器还配了一个 5ms 轮询兜底，所以那个脚本没暴露。
+  try { new MutationObserver(function () { if (window.__m.cards === null && document.querySelector('[data-slot="card"][role="button"], table tbody tr[role="button"]')) window.__m.cards = Math.round(performance.now()) }).observe(document, { childList: true, subtree: true }) } catch (e) {}
   const ric = window.requestIdleCallback
   window.requestIdleCallback = function (cb, opt) { window.__m.idleRequests.push(Math.round(performance.now())); return ric.call(window, cb, opt) }
+  // WS 首帧（数据另一条路）：HTTP 与 WS 并发，慢链路上谁先到都可能，判据要取较早者，
+  // 所以这里把它的到达时刻也记下来（回调时刻＝数据对 JS 可用的时刻）。
+  try {
+    const OWS = window.WebSocket
+    window.WebSocket = class extends OWS {
+      constructor(...a) { super(...a); this.addEventListener('message', () => { if (window.__m.wsFirst === null) window.__m.wsFirst = Math.round(performance.now()) }) }
+    }
+  } catch (e) {}
   try { new PerformanceObserver(function (l) { for (const e of l.getEntries()) if (/NodeDetail-/.test(e.name)) { window.__m.chunkCount++; if (window.__m.chunkMs === null) { window.__m.chunkMs = Math.round(e.startTime); window.__m.chunkUrl = e.name } } }).observe({ type: 'resource', buffered: true }) } catch (e) {}
   setInterval(function () { if (window.__m.chart === null && document.querySelector('[data-chart]')) window.__m.chart = Math.round(performance.now()) }, 5)
 })()` })
@@ -55,9 +68,17 @@ const nodes = perf.find((e) => e.n === '/api/nodes')
 const cards = await js(`document.querySelectorAll('[data-slot="card"][role="button"], table tbody tr[role="button"]').length`)
 const title = await js('document.title')
 console.log(`  站点 ${SITE}  标题「${title}」`)
-console.log(`  卡片 ${m.cards}ms 出现（${cards} 台）｜/api/nodes 返回 ${nodes ? nodes.t + nodes.d : '?'}ms｜chunk 首次请求 ${m.chunkMs}ms`)
+// 「不与首屏数据抢链路」的锚用**数据完成时刻**：HTTP（resource timing —— 网络栈记录，不受主线程
+// 影响）与 WS 首帧（回调时刻＝数据对 JS 可用的时刻）取**较早者**。两条路并发，慢链路上谁先到都
+// 可能：只认 HTTP 会在 WS 先到时误报（实测 chunk 5788ms vs HTTP 5816ms）。
+// ★ 别拿 MutationObserver 记录的时刻当锚 —— 它的回调是微任务、会被主线程长任务整体延误
+// （同一批数据里实测偏差 545ms：chunk 3758ms 而记录的「卡片出现」4245ms，卡片其实早已上屏）。
+// （const 有 TDZ：这两个量在下面的打印行里先用到，所以声明在这里。）
+const httpDone = nodes ? nodes.t + nodes.d : null
+const dataDone = [httpDone, m.wsFirst].filter((v) => typeof v === 'number').sort((a, b) => a - b)[0] ?? null
+console.log(`  卡片 ${m.cards}ms 出现（${cards} 台）｜HTTP 完成 ${httpDone ?? '?'}ms｜WS 首帧 ${m.wsFirst ?? '?'}ms｜chunk 首次请求 ${m.chunkMs}ms`)
 console.log(`  chunk 文件：${m.chunkUrl ? m.chunkUrl.replace(SITE, '') : '(未取)'}｜空闲预热登记 ${JSON.stringify(m.idleRequests)}`)
-const ok1 = m.chunkCount > 0 && nodes && m.chunkMs >= nodes.t + nodes.d
+const ok1 = m.chunkCount > 0 && dataDone !== null && m.chunkMs >= dataDone
 console.log(`  ${ok1 ? 'PASS' : 'FAIL'}  现网上：详情 chunk 在节点数据回来之后才取（不再和首屏数据抢链路）`)
 const ok2 = !WANT_CHUNK || (m.chunkUrl || '').includes(WANT_CHUNK)
 console.log(`  ${ok2 ? 'PASS' : 'FAIL'}  取的是这一版构建的那块 chunk（期望含 ${WANT_CHUNK}）`)

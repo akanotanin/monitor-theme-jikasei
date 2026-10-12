@@ -13,11 +13,12 @@
 // ② 站点在 Cloudflare 后面时本机 headless Chrome 走系统代理（本机代理策略已把 Chrome 钉在
 // 127.0.0.1:2080），不要另加 --no-proxy-server。
 import { spawn } from 'node:child_process'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const SITE = (process.argv[2] || '').replace(/\/$/, '')
 const OUT = process.argv[3] || 'shots'
+mkdirSync(OUT, { recursive: true }) // ★ 2026-10-12 修：原来截图目录不存在会在收尾处 ENOENT 崩掉（还漏了 chrome.kill，留下僵尸实例）
 if (!SITE) {
   console.error('用法：node tools/verify_live_globe_toggle.mjs <站点地址> [截图输出目录]')
   process.exit(2)

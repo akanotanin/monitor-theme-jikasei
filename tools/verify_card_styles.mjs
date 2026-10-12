@@ -236,7 +236,9 @@ const PROBE = `JSON.stringify((() => {
     dots: all.reduce((n, c) => n + c.querySelectorAll('span[aria-label="在线"],span[aria-label="离线"],span[aria-label="刚接入"]').length, 0),
     dotLabels: all.map((c) => [...c.querySelectorAll('span[aria-label]')].map((s) => s.getAttribute('aria-label')).join('+')),
     polylines: document.querySelectorAll('svg polyline').length,
-    rows: [...(first?.querySelectorAll('[class*="border-t"] span.w-16') ?? [])].map((s) => s.textContent.trim()),
+    // 线路名按主题自己的锚点取（data-probe-name 属性），不认 Tailwind 宽度类：名字列从
+    // w-16 放宽到 w-20（2026-10-12）时，按 span.w-16 找的旧判据会静默 0 命中。
+    rows: [...(first?.querySelectorAll('[data-latency] [data-probe-name]') ?? [])].map((s) => s.textContent.trim()),
     text: first ? first.innerText.replace(/\\n/g, ' | ') : '',
   }
 })())`

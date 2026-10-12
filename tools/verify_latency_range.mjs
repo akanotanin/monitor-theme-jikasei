@@ -186,7 +186,7 @@ if (has7) {
   // 日期刻度形如「09/28 15:30」、24 小时内的刻度是纯「15:30」，两者靠有没有日期段区分。
   // 正则一律写成 [0-9]，不用 \\d —— 表达式要经 node 的模板字面量再进页面，反斜杠层数一多就会
   // 变成匹配字面量反斜杠，而它恒假（这里踩过：断言红了却看着像选择器的问题）。
-  const hasDate = (t) => /[0-9]{1,2}[\/-][0-9]{1,2}/.test(t)
+  const hasDate = (t) => /[0-9]{1,2}[/-][0-9]{1,2}/.test(t)
   const clockOnly = (t) => /^[0-9]{1,2}:[0-9]{2}$/.test(t)
   check('7 天窗口画出了曲线', d.curves > 0, `curves=${d.curves}`)
   check('x 轴按日期打刻度（不是 24 小时内的时刻）', d.ticks.length > 0 && d.ticks.every(hasDate) && !d.ticks.some(clockOnly), `ticks=${d.ticks.join(' ')} | 全部文本=${d.texts.join(' ')}`)

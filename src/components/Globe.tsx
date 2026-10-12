@@ -434,7 +434,12 @@ function subscribe(query: MediaQueryList, notify: () => void) {
   return () => query.removeEventListener("change", notify)
 }
 
-/** 窄屏（≤720px）走 low 档。与上游不同的是：上游在这个宽度上干脆不画地球。 */
+/**
+ * 窄屏（≤720px）。★ 现在这个宽度**不再降档**（2026-10-07 站长看过手机上 low 档的效果、
+ * 说「地球太简陋了」之后，组件顶部的 `NARROW_LOW_TIER` 已经改成 false）——这个钩子现在
+ * 只用来在 quality 那一行表达「窄屏本来可以降档」：开关保持可读、回退是一行改回 true，
+ * 免得后人以为那里漏了判断。上游在这个宽度上干脆不画地球；本主题照画，只是不为省电降档。
+ */
 function useNarrow(): boolean {
   return useSyncExternalStore((notify) => subscribe(NARROW, notify), () => NARROW.matches)
 }

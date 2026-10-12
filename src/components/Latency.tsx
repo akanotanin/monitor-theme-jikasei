@@ -208,7 +208,11 @@ export function LatencyPanel({ node, lines }: { node: Node; lines: string }) {
         const gray = toneClass(tone)
         return (
           <div key={p.id} className="flex items-center gap-2 text-xs">
-            <span className="w-16 shrink-0 truncate text-muted-foreground">{p.name}</span>
+            {/* 线路名列宽 80px（原 64px）：站长常把线路名写成「城市 · 服务商」（「东京 · Google」
+                实测 72px、被 64px 截成「东京 · Go…」，2026-10-12 视觉 QA 实拍发现）——放宽到
+                80px 后这一档常见的名字全放得下；再长的仍有 title 悬停看全名。首选名字列与
+                数字列都固定宽，行与行之间才对得齐（sparkline 是弹性的，少 16px 无碍）。 */}
+            <span data-probe-name="" className="w-20 shrink-0 truncate text-muted-foreground" title={p.name}>{p.name}</span>
             <span className={`tnum w-14 shrink-0 text-right font-medium ${gray}`}>
               {ms === null ? "超时" : `${ms} ms`}
             </span>
@@ -247,7 +251,9 @@ export function PeekLatency({ node, lines }: { node: Node; lines: string }) {
         const gray = toneClass(toneOf(ms, p.loss))
         return (
           <span key={p.id} className="flex items-center gap-2">
-            <span className="w-14 shrink-0 truncate text-muted-foreground">{p.name}</span>
+            {/* 浮层里的名字列 72px（原 56px）：与卡面同一条「城市 · 服务商」口径，
+                浮层更窄所以只放宽一档；超长的名字靠 title 悬停看全。 */}
+            <span data-probe-name="" className="w-[4.5rem] shrink-0 truncate text-muted-foreground" title={p.name}>{p.name}</span>
             <span className={`tnum w-12 shrink-0 text-right font-medium ${gray}`}>
               {ms === null ? "超时" : `${ms} ms`}
             </span>
