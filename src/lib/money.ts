@@ -43,15 +43,29 @@ export function cycleDaysOf(cycle: string): number {
 }
 
 /**
- * 固定汇率：1 单位该币种 = N 人民币。
+ * 内置汇率（兜底表）：1 单位该币种 = N 人民币。
  *
- * 主题是一个离线的静态包，访客的浏览器里不会（也不该）去查实时汇率，所以这里写死一份，
- * 只用来把站长填的各币种账折成同一把尺子求合计——卡片上的数字因此是「≈」。改这张表
- * 就够了，别处不用动（`FX_DATE` 只是给悬停提示用来自报取价日期）。
+ * 把站长填的各币种账折成同一把尺子求合计——卡片上的数字因此是「≈」。平时这份表只在
+ * 两种情况下上场：①页面刚打开、每日汇率（见 lib/fx.ts）还在路上；②拉不到每日汇率
+ * （访客网络够不着、源挂了）时的兜底。fxNote 会自报用的是「每日更新的汇率」还是
+ * 「固定汇率」，两种口径在悬停提示里都能看见。
  *
  * 取值：2026-09-30 的公开汇率参考价，四舍五入到四位小数。
  */
 export const FX_DATE = "2026-09-30"
+
+/** 币种 → 人民币的映射（折算是逐币种乘，不是矩阵）。 */
+export type FxRates = Record<string, number>
+
+/** 一份汇率快照：币种→人民币 + 取价日期 + 来源（每日拉的 / 内置表）。 */
+export type FxSnapshot = {
+  /** 币种 → 人民币（1 单位该币种 = N 人民币；CNY 恒为 1）。 */
+  rates: FxRates
+  /** 取价日期 YYYY-MM-DD（口径文案里自报）。 */
+  date: string
+  /** true = 每日汇率（lib/fx.ts 拉的）；false = 内置表。 */
+  live: boolean
+}
 
 export const FX_CNY: Record<string, number> = {
   CNY: 1,
@@ -66,6 +80,9 @@ export const FX_CNY: Record<string, number> = {
   CAD: 4.7351,
   RUB: 0.0795,
 }
+
+/** 内置表打好的快照（budgetOf / fxNote 的默认参数；每日汇率拉不到时的兜底）。 */
+export const FX_BUILTIN: FxSnapshot = { rates: FX_CNY, date: FX_DATE, live: false }
 
 export type Budget = {
   /** 折成人民币的每月合计；一台可计的都没有时 null（卡片显示「—」而不是 ¥0.00）。 */
@@ -102,7 +119,7 @@ export type BudgetItem = {
   amount: number
 }
 
-export function budgetOf(nodes: Node[]): Budget {
+export function budgetOf(nodes: Node[], fx: FxSnapshot = FX_BUILTIN): Budget {
   let monthly = 0
   let remaining = 0
   let monthlyCount = 0
@@ -116,8 +133,8 @@ export function budgetOf(nodes: Node[]): Budget {
     // 没填价格（0 / 空）＝这台不计账，不是「花 0 元」。
     if (!(node.price > 0)) continue
     const currency = (node.currency || "").toUpperCase()
-    const fx = FX_CNY[currency]
-    if (fx === undefined) {
+    const rate = fx.rates[currency]
+    if (rate === undefined) {
       skipped.add(currency || "（空）")
       continue
     }
@@ -125,7 +142,7 @@ export function budgetOf(nodes: Node[]): Budget {
     const months = cycleMonthsOf(node.billing_cycle)
     const days = cycleDaysOf(node.billing_cycle)
     if (months > 0) {
-      const per = (node.price * fx) / months
+      const per = (node.price * rate) / months
       monthly += per
       monthlyCount++
       monthlyItems.push({ name: node.name, amount: per })
@@ -136,7 +153,7 @@ export function budgetOf(nodes: Node[]): Budget {
     if (typeof left === "number" && left > 0) {
       // 剩余天数超过一个周期（顺延、或站长填了个很远的日期）时按整期封顶：
       // 剩余价值不可能比这台机器买价还贵。
-      const worth = node.price * fx * (Math.min(left, days) / days)
+      const worth = node.price * rate * (Math.min(left, days) / days)
       remaining += worth
       remainingCount++
       remainingItems.push({ name: node.name, amount: worth })
@@ -165,14 +182,17 @@ export function cny(amount: number): string {
   return `¥${amount.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-/** 提示里那句汇率说明。只列真的用到的币种（人民币自身不必写「1 CNY = ¥1」）。 */
-export function fxNote(used: string[], skipped: string[] = []): string {
+/**
+ * 提示里那句汇率说明。只列真的用到的币种（人民币自身不必写「1 CNY = ¥1」）。
+ * `fx` 决定前缀措辞与取价日期：每日汇率（lib/fx.ts 拉的）写「按每日更新的汇率折算」，
+ * 内置表写「按固定汇率折算」——文案与数字同源，不许说岔。
+ */
+export function fxNote(used: string[], skipped: string[] = [], fx: FxSnapshot = FX_BUILTIN): string {
   const rates = used
     .filter((code) => code !== "CNY")
-    .map((code) => `1 ${code} = ¥${trimRate(FX_CNY[code])}`)
-  const head = rates.length
-    ? `按固定汇率折算（${rates.join("，")}，${FX_DATE}）`
-    : "按固定汇率折算成人民币"
+    .map((code) => `1 ${code} = ¥${trimRate(fx.rates[code])}`)
+  const kind = fx.live ? "按每日更新的汇率折算" : "按固定汇率折算"
+  const head = rates.length ? `${kind}（${rates.join("，")}，${fx.date}）` : `${kind}成人民币`
   const miss = skipped.length ? `；${skipped.join("、")} 没有汇率，未计入` : ""
   return head + miss
 }

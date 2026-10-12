@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { speedHistory, type Node } from "@/lib/api"
 import { bytes, rate } from "@/lib/format"
+import { useFx } from "@/lib/fx"
 import { budgetOf, cny, fxNote, type BudgetItem } from "@/lib/money"
 import { summarize, type Fleet } from "@/lib/summary"
 
@@ -312,14 +313,17 @@ function BusiestBlock({ fleet }: { fleet: Fleet }) {
 
 export function SummaryCards({ nodes, group, finance = false, searching = false }: { nodes: Node[]; group: string | null; finance?: boolean; searching?: boolean }) {
   const fleet = summarize(nodes)
-  const budget = budgetOf(nodes)
+  // 每日汇率（lib/fx.ts）：新鲜缓存 ∪ 内置表起步，拉到新的在后台无缝换上——只调一次，
+  // 两个数（budget 与 note）共用同一份快照，文案与数字不许说岔。
+  const fx = useFx()
+  const budget = budgetOf(nodes, fx)
   // 模块级的采样缓冲：`useNodes` 每次收到推送（或轮询回来）就追加一个点，
   // 所以这里读到的是「打开页面到现在」的速率。**按分组取**（`group` = 当前选中的那一档，
   // null = 全部）：同一个缓冲里每个分组各有一条线（api.ts 的 sample），拿全站那条线画在
   // 分组标签下面，会出现「读数是这一组的、走势线是全站的」这种对不上的画面。
   const series = speedHistory.get(group) ?? []
   // 折算说明：只列真的用到过的币种——各站的账混着 USD / EUR / CNY 记，合起来必须说明口径。
-  const note = fxNote(budget.used, budget.skipped)
+  const note = fxNote(budget.used, budget.skipped, fx)
   // 「月度预算」与「剩余价值」两段口径文字：没有浮层时它们是原生 title；有浮层时挪进浮层尾巴
   // （两处同一份，别让口径说岔了）。
   const monthlyNote = `各节点的价格按计费周期摊到每个月后相加；一次性买断与没填价格的不计入。${note}`

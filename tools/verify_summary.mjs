@@ -214,6 +214,29 @@ await send('Page.enable')
 //   那类交互在测试里永远不开（2026-10-12 实测踩到：activeElement 对得上、事件不来）。
 //   打开焦点模拟（CDP 专为这个场景提供），focus() 才产生真正的事件。
 await send('Emulation.setFocusEmulationEnabled', { enabled: true })
+// ★每日汇率（2026-10-12）：页面会异步拉公开汇率源（lib/fx.ts）——护栏里把「站外请求」一律
+//   拒掉（确定性走内置表那一档），并用 ?fxseed 开关种一份「新鲜缓存」来测每日汇率那一档。
+//   两档都有确定断言；不种缓存的用例全部吃内置表口径（与 939.51 之类既有一致）。
+const FX_STUB = `
+try {
+  if (location.search.includes('fxseed')) {
+    localStorage.setItem('jikasei:fx', JSON.stringify({
+      rates: { CNY: 1, USD: 7.1234, EUR: 7.5678, GBP: 9.0123, JPY: 0.043, HKD: 0.85, TWD: 0.21, SGD: 5.3, AUD: 4.7, CAD: 4.75, RUB: 0.08 },
+      date: '2026-10-11', at: Date.now(),
+    }))
+  } else {
+    localStorage.removeItem('jikasei:fx')
+  }
+} catch {}
+const __origFetch = window.fetch.bind(window)
+window.fetch = (u, o) => {
+  const s = String(u)
+  return s.startsWith('http') && !s.startsWith(location.origin)
+    ? Promise.reject(new Error('stub: offsite blocked'))
+    : __origFetch(u, o)
+}
+`
+await send('Page.addScriptToEvaluateOnNewDocument', { source: FX_STUB })
 const WIDE = { width: 1440, height: 1200, deviceScaleFactor: 1, mobile: false }
 await send('Emulation.setDeviceMetricsOverride', WIDE)
 await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })
@@ -298,10 +321,11 @@ const PROBE = `JSON.stringify((() => {
   }
 })())`
 
-async function render(cfg, tag = '', v = 'mixed') {
+async function render(cfg, tag = '', v = 'mixed', seed = false) {
   config = cfg
   await fetch(`http://127.0.0.1:${PORT}/__variant?name=${v}`)
-  await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/?m=${encodeURIComponent(tag)}` })
+  // seed=true → URL 挂 ?fxseed=1：注入脚本会给页面种一份「新鲜的每日汇率缓存」（见 FX_STUB）。
+  await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/?m=${encodeURIComponent(tag)}${seed ? '&fxseed=1' : ''}` })
   let dom = null
   for (let i = 0; i < 60; i++) {
     await sleep(300)
@@ -556,6 +580,21 @@ let classicNet = null
   check('预算版·剩余价值浮层：各行金额之和 ≈ 卡片大数（同一份口径）',
     vSums.length > 0 && Math.abs(vSums.reduce((a, b) => a + b, 0) - vBig) <= 0.02,
     `明细和 ${vSums.reduce((a, b) => a + b, 0).toFixed(2)} vs 卡片 ${vBig}`)
+
+  // ★每日汇率（2026-10-12）：种一份缓存（?fxseed=1）→ 数字按种子汇率折算、口径文案改口
+  //   「按每日更新的汇率折算」并自报种子日期——同一份夹具走两种口径（内置 vs 每日），
+  //   两种都必须自洽。夹具的账：12 USD 月付 + 120 USD 年付 + 300 EUR 季付 + 30 CNY，
+  //   月摊 = 12×7.1234 + 120×7.1234÷12 + 300×7.5678÷3 + 30 = 943.4948 → ≈¥943.49。
+  {
+    const fxDom = await render({ listTop: 'budget' }, 'fx-seed', 'mixed', true)
+    check('每日汇率：种子汇率被采纳（月度预算 ≈¥943.49）',
+      block(fxDom, '月度预算').text === '月度预算 | ≈¥943.49 | 4 台计费', block(fxDom, '月度预算').text)
+    const fxPop = await readBudgetDetail()
+    check('每日汇率：口径文案改口并自报种子日期（1 USD = ¥7.1234，2026-10-11）',
+      !!fxPop && fxPop.text.includes('按每日更新的汇率折算') && fxPop.text.includes('1 USD = ¥7.1234') &&
+      fxPop.text.includes('1 EUR = ¥7.5678') && fxPop.text.includes('2026-10-11'),
+      fxPop?.text ?? '（没有浮层）')
+  }
   // 收起：Esc；以及焦点离开（blur）。
   const popEsc = await evalJS(`(async () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))

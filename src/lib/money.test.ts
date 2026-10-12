@@ -143,6 +143,14 @@ eq(round(worth.remainingItems[0].amount), 100, "封顶规则与合计同一份�
 eq(worth.remainingItems.length, worth.remainingCount, "明细条数与「N 台未到期」一致")
 eq(round(worth.remaining), round(100 + 15), "明细与合计同源：加起来就是合计那个数")
 
+/* 每日汇率（2026-10-12）：budgetOf / fxNote 接受注入的快照 —— 数字按新汇率、文案自报来源。 */
+const liveSnap = { rates: { ...FX_CNY, USD: 7.1, EUR: 7.5 }, date: "2026-10-11", live: true }
+const live = budgetOf([node({ price: 12, currency: "USD", billing_cycle: "monthly", expires_in: 10 })], liveSnap)
+eq(round(live.monthly), round(12 * 7.1), "注入每日汇率：月摊按新值折算（不是内置表的数）")
+eq(fxNote(["USD"], [], liveSnap), "按每日更新的汇率折算（1 USD = ¥7.1，2026-10-11）", "每日汇率文案自报来源与日期")
+eq(fxNote(["CNY"], [], liveSnap), "按每日更新的汇率折算成人民币", "每日汇率：只用人民币时的简版")
+eq(fxNote(["USD"]), `按固定汇率折算（1 USD = ¥${FX_CNY.USD}，2026-09-30）`, "不注入时仍是内置表口径（默认参数）")
+
 if (failed) {
   console.error(`\n${failed} 处不符`)
   process.exit(1)
