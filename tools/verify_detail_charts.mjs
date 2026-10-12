@@ -46,7 +46,7 @@ const node = (id, name, group, country, os) => ({
 })
 const NODES = { nodes: [node(1, '东京一号', '东京', 'JP', 'Debian GNU/Linux 12 (bookworm)')] }
 const START = 1790300000
-// 响应形状：真 hub（komari.im，2026-10-09 实测）**五个键每次都带齐** —— 不管 `series` 要哪一半，
+// 响应形状：真 hub（2026-10-09 实测）**五个键每次都带齐** —— 不管 `series` 要哪一半，
 // 没要的那半是**空数组**（`series=ping` 回 `{metrics: [], ping: […], probes, loss}`）。
 // 老桩只回一半的键（ping 响应没有 metrics），把「延迟 → 资源」切回的那一帧炸成整页卸载
 // （见下面三；`partialShape` 就是用来复现那个形状的回归哨兵）。
