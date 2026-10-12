@@ -346,6 +346,17 @@ if (!REAL) {
   }
   // 清空：点框里那枚 ×
   await type('东京')
+  // ★2026-10-12 修掉的坑（站长实拍）：`.search-clear` 类名里的 `absolute` 是 Tailwind 分层
+  //   工具类，被未分层的 `.tap{position:relative}` 压掉 —— 清空按钮落回 flex 流，被满宽的
+  //   输入框顶到**框外右侧 16px**，输入框自己还被挤窄 21px（219px ≠ 240px）。回归锚：× 必须
+  //   在输入框内部（右缘内收 4~8px）、垂直居中（±2px）、长开宽度是完整的 240px。
+  const beforeClear = await probe()
+  check('× 悬浮在框内右端（右缘内收 4~8px、垂直居中、输入框没被挤窄）',
+    !!beforeClear.clear && !!beforeClear.input &&
+    (beforeClear.input.right - beforeClear.clear.right) >= 4 && (beforeClear.input.right - beforeClear.clear.right) <= 8 &&
+    Math.abs((beforeClear.clear.y + beforeClear.clear.h / 2) - (beforeClear.input.y + beforeClear.input.h / 2)) <= 2 &&
+    beforeClear.input.w === 240,
+    `× ${JSON.stringify(beforeClear.clear)} vs 框 ${JSON.stringify(beforeClear.input)}`)
   await js(`${VISIBLE('.search-clear')}?.click()`)
   await sleep(300)
   const cleared = await probe()
@@ -469,6 +480,19 @@ if (!REAL) {
   const hits = await probe()
   check('窄屏搜「日本」：也收窄到那两台', hits.count === 2 && JSON.stringify(hits.names) === JSON.stringify(['东京一号', '东京二号']), `卡片 ${hits.count} 张：${JSON.stringify(hits.names)}`)
   await shot('mobile-hit', 'main', 8)
+  // 同一处修复的另一半：窄屏这一行里 × 也必须在框内右端（与桌面同一条 CSS）。
+  // ★选择器精确到行内那个：文档里顶栏 wide 的 × 也在（窄屏下 display:none），
+  //   别被它骗了 —— 当年「多实例选择器」的坑之窄屏分坑。
+  const beforeClearM = JSON.parse(String(await js(`JSON.stringify((() => {
+    const c = document.querySelector('.search-field-row .search-clear')
+    const i = document.querySelector('.search-field-row .search-input')
+    if (!c || !i || getComputedStyle(c).display === 'none') return null
+    const cr = c.getBoundingClientRect(), ir = i.getBoundingClientRect()
+    return { gap: Math.round(ir.right - cr.right), dcy: Math.round((cr.y + cr.height / 2) - (ir.y + ir.height / 2)) }
+  })())`)))
+  check('窄屏 × 也在框内右端（右缘内收 4~8px、垂直居中）',
+    !!beforeClearM && beforeClearM.gap >= 4 && beforeClearM.gap <= 8 && Math.abs(beforeClearM.dcy) <= 2,
+    JSON.stringify(beforeClearM))
   await js(`${VISIBLE('.search-clear')}?.click()`)
   await sleep(300)
   const cleared = await probe()

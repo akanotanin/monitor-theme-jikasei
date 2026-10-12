@@ -98,15 +98,15 @@ function Block({ title, hint, detail, children }: {
   )
 }
 
-/** 「月度预算」浮层的内容：逐台月摊明细（金额降序，与 budgetOf 的 items 同序）+ 口径行。 */
-function BudgetDetail({ items, note }: { items: BudgetItem[]; note: string }) {
+/** 预算卡两枚浮层的内容：逐台明细（金额降序，与 budgetOf 的明细同序）+ 口径行。 */
+function BudgetDetail({ head, items, note }: { head: string; items: BudgetItem[]; note: string }) {
   return (
     <>
-      <span className="block text-muted-foreground">各节点月摊</span>
+      <span className="block text-muted-foreground">{head}</span>
       {items.map((item, i) => (
         <span key={i} data-budget-row="" className="flex items-baseline justify-between gap-3">
           <span className="min-w-0 truncate">{item.name}</span>
-          <span className="tnum shrink-0">≈{cny(item.monthly)}</span>
+          <span className="tnum shrink-0">≈{cny(item.amount)}</span>
         </span>
       ))}
       <span className="block border-t pt-1 text-muted-foreground">{note}</span>
@@ -320,9 +320,10 @@ export function SummaryCards({ nodes, group, finance = false, searching = false 
   const series = speedHistory.get(group) ?? []
   // 折算说明：只列真的用到过的币种——各站的账混着 USD / EUR / CNY 记，合起来必须说明口径。
   const note = fxNote(budget.used, budget.skipped)
-  // 「月度预算」那一段口径文字：没有浮层时它是原生 title；有浮层时它挪进浮层尾巴
+  // 「月度预算」与「剩余价值」两段口径文字：没有浮层时它们是原生 title；有浮层时挪进浮层尾巴
   // （两处同一份，别让口径说岔了）。
   const monthlyNote = `各节点的价格按计费周期摊到每个月后相加；一次性买断与没填价格的不计入。${note}`
+  const remainingNote = `已经付掉、还没用掉的那一段：价格 × 剩余天数 ÷ 周期天数；无到期日与一次性买断的不计入。${note}`
 
   return (
     /* 版式照参考站：`sm` 起两列、`lg` 起四列。**手机是一列而不是参考站的两列**——参考站每张
@@ -333,14 +334,14 @@ export function SummaryCards({ nodes, group, finance = false, searching = false 
         <>
           {/* 第一张卡：月度预算 + 剩余价值。两个数都是把各站的账按固定汇率折成人民币后相加，
               所以写「≈」；口径与汇率清单放在悬停提示里（见 lib/money.ts）。
-              「月度预算」块还挂了浮层（detail）：悬停/点开摊开逐台月摊明细——有可计的机器
-              才挂（items 为空时保持原生的 title 提示那副面孔）。 */}
+              两块都挂了浮层（detail，2026-10-12）：月度预算摊出「各节点月摊」、剩余价值摊出
+              「各节点剩余价值」——各有可计的机器才挂（明细为空时保持原生的 title 提示那副面孔）。 */}
           <Pair>
-            <Block title="月度预算" hint={monthlyNote} detail={budget.items.length > 0 ? <BudgetDetail items={budget.items} note={monthlyNote} /> : undefined}>
+            <Block title="月度预算" hint={monthlyNote} detail={budget.monthlyItems.length > 0 ? <BudgetDetail head="各节点月摊" items={budget.monthlyItems} note={monthlyNote} /> : undefined}>
               <Big>{budget.monthly === null ? "—" : `≈${cny(budget.monthly)}`}</Big>
               <Foot>{budget.monthlyCount ? `${budget.monthlyCount} 台计费` : "未记录价格"}</Foot>
             </Block>
-            <Block title="剩余价值" hint={`已经付掉、还没用掉的那一段：价格 × 剩余天数 ÷ 周期天数；无到期日与一次性买断的不计入。${note}`}>
+            <Block title="剩余价值" hint={remainingNote} detail={budget.remainingItems.length > 0 ? <BudgetDetail head="各节点剩余价值" items={budget.remainingItems} note={remainingNote} /> : undefined}>
               <Big>{budget.remaining === null ? "—" : `≈${cny(budget.remaining)}`}</Big>
               <Foot>{budget.remainingCount ? `${budget.remainingCount} 台未到期` : "无预付到期"}</Foot>
             </Block>

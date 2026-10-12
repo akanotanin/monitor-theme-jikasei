@@ -193,11 +193,6 @@ export function useNodes() {
   // on the fallback fetch the reconnect starts; a close allows a client to
   // re-query its state but cannot compel it.
   const [closed, setClosed] = useState(false)
-  /**
-   * 最近一次收到快照的本地时刻（毫秒）。页脚那枚「更新于 N 秒前」用它 —— WS 静默降级到
-   * 5 秒轮询时，访客至少能看见数字照常走动，而不是对着一个不跳的页面猜它死没死。
-   */
-  const [lastAt, setLastAt] = useState<number | null>(null)
 
   useEffect(() => {
     let socket: WebSocket | null = null
@@ -210,7 +205,6 @@ export function useNodes() {
       const safe = safeNodes(list)
       sample(safe)
       setNodes(safe)
-      setLastAt(Date.now())
       setError(null)
       setClosed(false)
     }
@@ -287,5 +281,5 @@ export function useNodes() {
     }
   }, [])
 
-  return { nodes, error, closed, lastAt }
+  return { nodes, error, closed }
 }

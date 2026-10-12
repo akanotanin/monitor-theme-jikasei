@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExtern
 import { Globe as GlobeIcon, Moon, Sun, Wrench } from "lucide-react"
 
 import { CardStyleMenu } from "@/components/CardStyleMenu"
-import { Freshness } from "@/components/Freshness"
 import { NodeCard } from "@/components/NodeCard"
 import { CompactList } from "@/components/CompactList"
 import { Globe } from "@/components/Globe"
@@ -266,7 +265,7 @@ export default function App() {
   const farmUrl = useLocalFarm()
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
-  const { nodes, error, closed, lastAt } = useNodes()
+  const { nodes, error, closed } = useNodes()
   // 筛选三件套（分组 / 地区 / 搜索词）：**初始值从地址栏读**（刷新、收藏、别人分享的链接
   // 都因此带着筛选进来），之后变化再写回去（见下面的 replaceState 那段）。
   const [group, setGroup] = useState<string | null>(() => readListState().group)
@@ -647,29 +646,24 @@ export default function App() {
         )}
       </main>
 
-      {/* 页脚：署名 + 一枚「数据年龄」。桌面维持原构图 —— 右下角一行小字，只是左边多挨着
-          「更新于 N 秒前」（数据行在前、署名在后，都靠右下）；手机上**收进一个带上分割线的
-          页脚带**里堆叠居中（数据行在上、署名在下）—— 2026-10-07 站长两轮反馈：先嫌「右下角
-          一行孤零零的灰字像水印」（改居中），再说「还是得改个位置、要和谐美观不突兀」。根因是
-          它**没有结构**：一行灰字悬在卡片下面，既不像页脚、也不像卡片的一部分。加一条 1px 上
-          分割线（与顶栏的 border-b 呼应，页面上下就都框住了），留白按「卡→线 24px、线→字
-          16px、字→底 20px」拉开，它才读成一个明确的页脚区。分割线只出现在窄屏（<640px，与
-          署名居中的断点同一档）—— 为手机改的东西不落到电脑端，桌面维持原样。
-          「更新于 N 秒前」是**页面数据的实际年龄**（见 Freshness 组件）：实时连接每 2 秒推一次、
-          静默断掉时自动降级为 5 秒轮询 —— 这行小字让访客一眼看见「数字还在动吗」。数字在
-          正常节奏里（≤10 秒）时它用与署名同档的弱化灰，安静地待在角上。
+      {/* 页脚署名：一行浅色小字。桌面在右下角（右对齐、比内容右沿往左收 12px）；手机上**收进一个
+          带上分割线的页脚带**里居中 —— 2026-10-07 站长两轮反馈：先嫌「右下角一行孤零零的灰字
+          像水印」（改居中），再说「还是得改个位置、要和谐美观不突兀」。根因是它**没有结构**：
+          一行灰字悬在卡片下面，既不像页脚、也不像卡片的一部分。加一条 1px 上分割线（与顶栏的
+          border-b 呼应，页面上下就都框住了），留白按「卡→线 24px、线→字 16px、字→底 20px」
+          拉开，它才读成一个明确的页脚区。分割线只出现在窄屏（<640px，与署名居中的断点同一档）
+          —— 为手机改的东西不落到电脑端，桌面维持原样。
+          （2026-10-12：站上短暂加过一枚「更新于 N 秒前」的数据年龄行，当天按站长要求撤掉 ——
+           页脚回到这一行署名的最简形态。）
           「Jikasei」那截点开去本主题的源码仓库 —— 新标签页打开，别把访客从状态页带走
           （链接地址与 theme.json 的 url 是同一个，见上面的 REPO_URL）。样式见 index.css 的 .theme-credit。 */}
       <footer className="mx-auto mt-2 w-full max-w-[1280px] border-t px-4 pb-5 pt-4 sm:mt-0 sm:border-t-0 sm:px-6 sm:pb-5 sm:pt-1">
-        <div className="flex flex-col items-center gap-1 sm:flex-row sm:items-baseline sm:justify-end sm:gap-4">
-          <Freshness at={lastAt} />
-          <p className="theme-credit text-center sm:pr-3 sm:text-right">
-            Theme:{" "}
-            <a href={REPO_URL} target="_blank" rel="noreferrer">
-              Jikasei
-            </a>
-          </p>
-        </div>
+        <p className="theme-credit text-center sm:pr-3 sm:text-right">
+          Theme:{" "}
+          <a href={REPO_URL} target="_blank" rel="noreferrer">
+            Jikasei
+          </a>
+        </p>
       </footer>
     </div>
   )

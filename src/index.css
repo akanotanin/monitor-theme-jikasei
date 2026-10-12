@@ -386,7 +386,13 @@
       再挤一枚叉就成了「两枚图标叠在一起」。展开／收起的动效由 `transition-all` 负责。 */
 .search-input::-webkit-search-cancel-button,
 .search-input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
-.search-field .search-clear { display: none; }
+/* ★ position: absolute 必须写在这里（而不是只写在组件的类名里）：组件类名里的 `absolute`
+   是 Tailwind 的分层工具类，而 `.tap` 的 `position: relative`（本文件、未分层）在级联顺序上
+   压过它 —— 按钮于是落回 flex 流、被满宽的 input 顶到容器右缘之外（2026-10-12 站长实拍：
+   清空按钮右沿超出输入框 16px，看起来贴在边框外/角上）。未分层对未分层按特异性裁决：
+   `.search-field .search-clear`（0,2,0）> `.tap`（0,1,0) ✓。垂直居中交给容器的
+   `align-items: center` 对绝对定位子元素的 static position（挺标准的做法，Chrome/Safari/FF 都按规范实现）。 */
+.search-field .search-clear { display: none; position: absolute; }
 .search-field:focus-within .search-clear { display: grid; }
 
 /* 触屏命中区：**外观一点不动，只把可点范围往外撑**。

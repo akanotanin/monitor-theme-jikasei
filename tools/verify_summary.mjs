@@ -363,14 +363,15 @@ const tile = (dom, title) => dom.tiles.find((t) => t.titles.includes(title)) ?? 
 const block = (dom, title) => tile(dom, title).blocks.find((b) => b.title === title) ?? MISSING.blocks[0]
 
 /**
- * 「月度预算」块的悬停浮层（2026-10-12 的创意项）：把块聚焦（等价悬停，鼠标 hover 与
- * 键盘 focus 走同一个 open），读 [data-budget-detail] 里的明细行与全文；没浮层返回 null。
- * 读之前会让页面多等两帧 —— focus() 触发的 setState 要等 React 提交完才看得到 DOM。
+ * 第一张卡里某块读数（默认「月度预算」，可传「剩余价值」）的悬停浮层（2026-10-12 的创意项）：
+ * 把块聚焦（等价悬停，鼠标 hover 与键盘 focus 走同一个 open），读 [data-budget-detail] 里的
+ * 明细行与全文；没浮层返回 null。读之前会让页面多等两帧 —— focus() 触发的 setState 要等
+ * React 提交完才看得到 DOM。
  */
-const readBudgetDetail = () => evalJS(`(async () => {
+const readBudgetDetail = (title = '月度预算') => evalJS(`(async () => {
   const card = [...document.querySelectorAll('[data-slot=card]')].find((c) => c.innerText.startsWith('月度预算'))
   if (!card) return null
-  const b = [...card.children].find((x) => x.innerText.startsWith('月度预算'))
+  const b = [...card.children].find((x) => x.innerText.startsWith(${JSON.stringify(title)}))
   if (!b) return null
   b.focus()
   await new Promise((r) => setTimeout(r, 90))
@@ -509,17 +510,19 @@ let classicNet = null
   checkRhythm('预算版', dom)
 
   // 悬停提示：口径与汇率都得写清（面板上看不出「≈」是怎么来的）。
-  // ★2026-10-12：月度预算那块改成了「悬停/聚焦弹浮层」（逐台明细），口径文字从原生 title
-  //   挪进了浮层尾巴 —— 这三条断言跟着改成「聚焦后读浮层」。剩余价值没有浮层，仍读 title。
-  const valueHint = tile(dom, '剩余价值').blocks[1].hint
-  check('预算版：剩余价值的提示写明口径（价格 × 剩余天数 ÷ 周期天数）',
-    valueHint.includes('剩余天数') && valueHint.includes('无到期日') && valueHint.includes('折算'), valueHint)
+  // ★2026-10-12：两块都改成了「悬停/聚焦弹浮层」（逐台明细），口径文字从原生 title 挪进
+  //   浮层尾巴 —— 断言跟着改成「聚焦后读浮层」；两块各读各的浮层。
   const pop = await readBudgetDetail()
+  const popValue = await readBudgetDetail('剩余价值')
   check('预算版：月度预算的浮层写明口径（计费周期 / 一次性买断不计入）与实际用到的汇率',
     !!pop && pop.text.includes('计费周期') && pop.text.includes('一次性买断') &&
     pop.text.includes('1 EUR = ¥7.6172') && pop.text.includes('1 USD = ¥6.7179') &&
     !pop.text.includes('1 CNY'),
     pop?.text ?? '（没有浮层）')
+  check('预算版：剩余价值的浮层写明口径（价格 × 剩余天数 ÷ 周期天数 / 无到期日不计入）与汇率',
+    !!popValue && popValue.text.includes('剩余天数') && popValue.text.includes('无到期日') &&
+    popValue.text.includes('1 EUR = ¥7.6172') && popValue.text.includes('1 USD = ¥6.7179'),
+    popValue?.text ?? '（没有浮层）')
   check('预算版：折算日期写在浮层里（不写来源站点）',
     !!pop && pop.text.includes('2026-09-30') && !/https?:\/\/|[a-z0-9-]+\.(com|net|org|io)/.test(pop.text),
     pop?.text ?? '')
@@ -537,6 +540,22 @@ let classicNet = null
   check('预算版·浮层：各行金额之和 ≈ 卡片大数（同一份口径）',
     sums.length > 0 && Math.abs(sums.reduce((a, b) => a + b, 0) - big) <= 0.02,
     `明细和 ${sums.reduce((a, b) => a + b, 0).toFixed(2)} vs 卡片 ${big}`)
+  check('预算版·浮层：表头是「各节点月摊」', !!pop && pop.text.includes('各节点月摊'), pop?.text ?? '')
+
+  // 剩余价值浮层（2026-10-12 加装）：同一套牙齿 —— 行数 = 「N 台未到期」、降序、和 ≈ 大数。
+  const valueText = block(dom, '剩余价值').text
+  const vCount = Number((valueText.match(/(\d+) 台未到期/) || [])[1] ?? NaN)
+  const vBig = Number(((valueText.match(/¥([\d,]+\.\d\d)/) || [])[1] ?? '').replace(/,/g, '') || NaN)
+  const vSums = (popValue?.rows ?? []).map((r) => Number(((r.match(/¥([\d,]+\.\d\d)/) || [])[1] ?? '').replace(/,/g, '') || NaN))
+  check('预算版·剩余价值浮层：表头是「各节点剩余价值」', !!popValue && popValue.text.includes('各节点剩余价值'), popValue?.text ?? '')
+  check('预算版·剩余价值浮层：行数 = 「N 台未到期」', !!popValue && popValue.rows.length === vCount && vCount > 0,
+    `浮层行数 ${popValue?.rows.length} ／ 卡片「${vCount} 台未到期」`)
+  check('预算版·剩余价值浮层：各行金额降序（贵的在前）',
+    vSums.length > 0 && vSums.every((v, i) => i === 0 || (Number.isFinite(v) && Number.isFinite(vSums[i - 1]) && vSums[i - 1] >= v)),
+    JSON.stringify(vSums))
+  check('预算版·剩余价值浮层：各行金额之和 ≈ 卡片大数（同一份口径）',
+    vSums.length > 0 && Math.abs(vSums.reduce((a, b) => a + b, 0) - vBig) <= 0.02,
+    `明细和 ${vSums.reduce((a, b) => a + b, 0).toFixed(2)} vs 卡片 ${vBig}`)
   // 收起：Esc；以及焦点离开（blur）。
   const popEsc = await evalJS(`(async () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
@@ -571,8 +590,8 @@ let classicNet = null
   check('没填价格：提示里只写「按固定汇率折算成人民币」（没有汇率可列）',
     block(free, '月度预算').hint === '各节点的价格按计费周期摊到每个月后相加；一次性买断与没填价格的不计入。按固定汇率折算成人民币',
     block(free, '月度预算').hint)
-  check('没填价格：不挂浮层（没有明细可摊，保持原生 title 那一副面孔）',
-    (await readBudgetDetail()) === null, '浮层不应出现')
+  check('没填价格：两块都不挂浮层（没有明细可摊，保持原生 title 那一副面孔）',
+    (await readBudgetDetail()) === null && (await readBudgetDetail('剩余价值')) === null, '浮层不应出现')
 
   const once = await render({ listTop: 'budget' }, 'once', 'once')
   check('一次性买断：两块都不计入（没有「每月」也没有「剩余天数」）',
@@ -585,6 +604,9 @@ let classicNet = null
     `${block(exotic, '月度预算').text} ／ ${block(exotic, '剩余价值').text}`)
   const popEx = await readBudgetDetail()
   check('没有汇率的币种：浮层照常出现，口径行点名 XYZ', !!popEx && popEx.text.includes('XYZ 没有汇率，未计入'), popEx?.text ?? '（没有浮层）')
+  const popExV = await readBudgetDetail('剩余价值')
+  check('没有汇率的币种：剩余价值浮层 1 行、金额 ≈¥6.67', !!popExV && popExV.rows.length === 1 && popExV.rows[0].includes('6.67'),
+    popExV?.rows?.join(' / ') ?? '（没有浮层）')
 }
 
 /* 5) 全掉线：最忙节点与网速的降级（两副面孔都要） */
