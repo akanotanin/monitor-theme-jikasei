@@ -379,6 +379,11 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
             .filter(Boolean)
             .join(" · ")}
         />
+        {/* 连接数：hub 的实时上报里带着 TCP / UDP 连接条数（`metrics.tcp / udp`，2026-10-14
+            应站长要求加到详情页）。离线机器 `metrics` 是 null，两格随 Fact 的既有口径一起隐身
+            ——「没有这个值」本来就不该占格子。 */}
+        <Fact label="TCP 连接" value={m ? m.tcp : null} />
+        <Fact label="UDP 连接" value={m ? m.udp : null} />
         <Fact label="今日流量" value={`↓ ${bytes(node.day_rx)} · ↑ ${bytes(node.day_tx)}`} />
         {/* 最后一格是「在线时间」：取代原先标题行上那枚状态徽章。它顶掉的是「续费」
             那一格——公开页的访客关心这台机器还活着多久，价格与到期在后台看。 */}

@@ -295,6 +295,19 @@ check('卡片始终夹在绘图区里（上下都没越界）',
   up.top >= -2 && down.bottom <= down.plotH + 2,
   `上半 top=${up.top}；下半 bottom=${down.bottom} / 绘图区 ${down.plotH}`)
 check('没有控制台异常', errors.length === 0, errors.slice(0, 2).join(' | '))
+
+// ── 信息项：连接数（TCP / UDP，2026-10-14 新增的两格）──
+{
+  const facts = JSON.parse(await js(`JSON.stringify(Object.fromEntries([...document.querySelectorAll('dt')].map((d) => [d.textContent.trim(), d.nextElementSibling ? d.nextElementSibling.textContent.trim() : null])))`) ?? '{}')
+  if (REAL) {
+    check('★ 信息项带「TCP 连接」「UDP 连接」两格（真站只断形状：纯数字）',
+      /^\d+$/.test(facts['TCP 连接'] ?? '') && /^\d+$/.test(facts['UDP 连接'] ?? ''),
+      JSON.stringify({ tcp: facts['TCP 连接'], udp: facts['UDP 连接'] }))
+  } else {
+    check('★ 信息项「TCP 连接」= hub 上报的 16', facts['TCP 连接'] === '16', JSON.stringify(facts['TCP 连接']))
+    check('★ 信息项「UDP 连接」= hub 上报的 3', facts['UDP 连接'] === '3', JSON.stringify(facts['UDP 连接']))
+  }
+}
 // 真站那轮也出图：同一台机器、同一时刻，改前改后各拍一张才能比。
 await shot(REAL ? 'live-detail-charts' : 'detail-charts')
 
