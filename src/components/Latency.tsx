@@ -125,10 +125,13 @@ const toneClass = (tone: Tone) =>
 const SPARK_W = 100
 const SPARK_H = 20
 
-/** 走势线：无坐标轴、无交互，只把这一小时的起伏画出来；断点照断，不连桥。 */
+/** 走势线：无坐标轴、无交互，只把这一小时的起伏画出来；断点照断，不连桥。
+    ★w-full：svg 是替换元素，做 grid 项时默认的 stretch 不会把它撑满轨道（会停在
+    viewBox 比例推出来的固有宽）——显式 width:100% 拿足整条轨道；flex 那处不受影响
+    （flex-1 的 basis 是 0%，flex 布局主轴上宽度声明不参与定尺）。 */
 function Sparkline({ values, className }: { values: Array<number | null>; className: string }) {
   const nums = values.filter((v): v is number => v !== null)
-  if (nums.length < 2) return <span className="min-w-0 flex-1" />
+  if (nums.length < 2) return <span className="w-full min-w-0 flex-1" />
   const min = Math.min(...nums)
   const max = Math.max(...nums)
   // 「最近视距」下限：与详情页自动量程共用一个常数（见 Chart.tsx）——窄量程不往死里放，
@@ -151,7 +154,7 @@ function Sparkline({ values, className }: { values: Array<number | null>; classN
     <svg
       viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
       preserveAspectRatio="none"
-      className={`h-4 min-w-0 flex-1 ${className}`}
+      className={`h-4 w-full min-w-0 flex-1 ${className}`}
       aria-hidden="true"
     >
       {segments.map((points, i) => (
@@ -209,7 +212,13 @@ export function LatencyPanel({ node, lines, onOpen }: { node: Node; lines: strin
   return (
     // `data-latency` 是给护栏认「这一档摊没摊三网延迟」的锚点（`data-net` 同一套做法：
     // 按类名找会在改版后失配，而失配的表现是"看着没坏"）。
-    <div data-latency="" className="mt-4 space-y-1.5 border-t pt-4">
+    // ★版式（2026-10-14 论坛反馈「名字到数值之间空一大块」的 C 稿）：四列 = 名字 / 数值 /
+    // 走势线 / 丢包。名字与数值列**按内容自适应**（不再各占固定列），上限沿用旧口径——
+    // 名字最宽 80px（超了截断 + title 悬停看全）、丢包列仍固定 40px 右对齐。行是 subgrid：
+    // 列宽在本容器（`[data-latency]`）内**整块共享**，所以名字短的行数值紧跟名字、三行之间
+    // 依然逐列对齐（原固定列设计要保的就是这个对齐；找齐的活儿交给共享轨道，而不是留死区）。
+    // 逐宽判据：tools/verify_latency_row_fit.mjs。
+    <div data-latency="" className="mt-4 grid grid-cols-[max-content_max-content_minmax(0,1fr)_2.5rem] items-center gap-x-2 gap-y-1.5 border-t pt-4">
       {rows.map((p) => {
         const last = [...p.points].reverse().find((pt) => pt.latency !== null)
         const ms = last?.latency ?? null
@@ -218,21 +227,18 @@ export function LatencyPanel({ node, lines, onOpen }: { node: Node; lines: strin
         return (
           <div
             key={p.id}
-            className={`group flex items-center gap-2 text-xs ${onOpen ? "cursor-pointer" : ""}`}
+            className={`group col-span-4 grid grid-cols-subgrid items-center gap-x-2 text-xs ${onOpen ? "cursor-pointer" : ""}`}
             onClick={onOpen ? (e) => { e.stopPropagation(); onOpen() } : undefined}
             title={onOpen ? "打开详情 · 网络延迟" : undefined}
           >
-            {/* 线路名列宽 80px（原 64px）：站长常把线路名写成「城市 · 服务商」（「东京 · Google」
-                实测 72px、被 64px 截成「东京 · Go…」，2026-10-12 视觉 QA 实拍发现）——放宽到
-                80px 后这一档常见的名字全放得下；再长的仍有 title 悬停看全名。首选名字列与
-                数字列都固定宽，行与行之间才对得齐（sparkline 是弹性的，少 16px 无碍）。
-                可点时（onOpen）hover 提亮，作为「行能点」的低调提示。 */}
-            <span data-probe-name="" className={`w-20 shrink-0 truncate text-muted-foreground ${onOpen ? "transition-colors group-hover:text-foreground" : ""}`} title={p.name}>{p.name}</span>
-            <span className={`tnum w-14 shrink-0 text-right font-medium ${gray}`}>
+            {/* 线路名列（上限 80px = 老固定列宽；「城市 · 服务商」这类长名字照旧放得下、
+                再长仍有 title 悬停看全名。可点时 hover 提亮，作为「行能点」的低调提示）。 */}
+            <span data-probe-name="" className={`max-w-20 truncate text-muted-foreground ${onOpen ? "transition-colors group-hover:text-foreground" : ""}`} title={p.name}>{p.name}</span>
+            <span className={`tnum text-right font-medium ${gray}`}>
               {ms === null ? "超时" : `${ms} ms`}
             </span>
             <Sparkline values={p.points.map((pt) => pt.latency)} className={gray} />
-            <span className="tnum w-10 shrink-0 text-right text-muted-foreground">
+            <span className="tnum text-right text-muted-foreground">
               {p.loss > 0 ? `${p.loss.toFixed(1)}%` : "0.0%"}
             </span>
           </div>
