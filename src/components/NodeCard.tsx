@@ -492,8 +492,9 @@ export function NodeCard({ node, onOpen, onOpenLatency, onWarm, latencyLines, ca
               {/* 延迟档底部与「简约」同一行版式（就是上面那同一个 netRow 节点），
                   分隔线由它自己的 border-t 画在上面，三网延迟再从下面那条线开始。 */}
               {netRow}
-              {/* 三网延迟：每条线路一行，数据来自 hub 的 ping 历史（详见 Latency.tsx）。 */}
-              <LatencyPanel node={node} lines={latencyLines} onOpen={onOpenLatency} />
+              {/* 三网延迟：每条线路一行，数据来自 hub 的 ping 历史（详见 Latency.tsx）。
+                  延迟档走自适应版式；详细档不带 adaptive、保持固定列原样（站长 2026-10-15 分档）。 */}
+              <LatencyPanel node={node} lines={latencyLines} onOpen={onOpenLatency} adaptive />
             </>
           ) : (
             <>

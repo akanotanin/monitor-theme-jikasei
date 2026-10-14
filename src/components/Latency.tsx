@@ -205,20 +205,26 @@ function pickRows(probes: Probe[] | null, lines: string): Probe[] {
  * 创意项）。行 hover 时线路名从弱化灰提亮，作为「这里能点」的提示（与整卡可点不冲突：
  * 行级点击先 `stopPropagation`，否则会走整卡那条「默认页签」的路）。
  */
-export function LatencyPanel({ node, lines, onOpen }: { node: Node; lines: string; onOpen?: () => void }) {
+export function LatencyPanel({ node, lines, onOpen, adaptive = false }: { node: Node; lines: string; onOpen?: () => void; adaptive?: boolean }) {
   const probes = useNodePing(node.id)
   const rows = useMemo(() => pickRows(probes, lines), [probes, lines])
   if (rows.length === 0) return null
+  // ★版式分档（站长 2026-10-15 定的口径，别再合并成一套）：
+  //  · **延迟档（adaptive）**：2026-10-14 论坛反馈的 C 稿——名字/数值列按内容自适应，上限沿用
+  //    旧口径（名字最宽 80px、超了截断 + title 悬停看全；丢包列仍固定 40px 右对齐）。行是
+  //    subgrid：列宽在本容器（`[data-latency]`）内**整块共享**，短名字贴身、三行仍逐列对齐。
+  //  · **详细档（不带 adaptive）**：保持固定列原样（名字 80 + 数值 56 右对齐 + 丢包 40），
+  //    逐字未动——站长要详细卡维持原表格感。
+  // 逐宽判据：tools/verify_latency_row_fit.mjs。
   return (
     // `data-latency` 是给护栏认「这一档摊没摊三网延迟」的锚点（`data-net` 同一套做法：
     // 按类名找会在改版后失配，而失配的表现是"看着没坏"）。
-    // ★版式（2026-10-14 论坛反馈「名字到数值之间空一大块」的 C 稿）：四列 = 名字 / 数值 /
-    // 走势线 / 丢包。名字与数值列**按内容自适应**（不再各占固定列），上限沿用旧口径——
-    // 名字最宽 80px（超了截断 + title 悬停看全）、丢包列仍固定 40px 右对齐。行是 subgrid：
-    // 列宽在本容器（`[data-latency]`）内**整块共享**，所以名字短的行数值紧跟名字、三行之间
-    // 依然逐列对齐（原固定列设计要保的就是这个对齐；找齐的活儿交给共享轨道，而不是留死区）。
-    // 逐宽判据：tools/verify_latency_row_fit.mjs。
-    <div data-latency="" className="mt-4 grid grid-cols-[max-content_max-content_minmax(0,1fr)_2.5rem] items-center gap-x-2 gap-y-1.5 border-t pt-4">
+    <div
+      data-latency=""
+      className={adaptive
+        ? "mt-4 grid grid-cols-[max-content_max-content_minmax(0,1fr)_2.5rem] items-center gap-x-2 gap-y-1.5 border-t pt-4"
+        : "mt-4 space-y-1.5 border-t pt-4"}
+    >
       {rows.map((p) => {
         const last = [...p.points].reverse().find((pt) => pt.latency !== null)
         const ms = last?.latency ?? null
@@ -227,18 +233,20 @@ export function LatencyPanel({ node, lines, onOpen }: { node: Node; lines: strin
         return (
           <div
             key={p.id}
-            className={`group col-span-4 grid grid-cols-subgrid items-center gap-x-2 text-xs ${onOpen ? "cursor-pointer" : ""}`}
+            className={adaptive
+              ? `group col-span-4 grid grid-cols-subgrid items-center gap-x-2 text-xs ${onOpen ? "cursor-pointer" : ""}`
+              : `group flex items-center gap-2 text-xs ${onOpen ? "cursor-pointer" : ""}`}
             onClick={onOpen ? (e) => { e.stopPropagation(); onOpen() } : undefined}
             title={onOpen ? "打开详情 · 网络延迟" : undefined}
           >
-            {/* 线路名列（上限 80px = 老固定列宽；「城市 · 服务商」这类长名字照旧放得下、
-                再长仍有 title 悬停看全名。可点时 hover 提亮，作为「行能点」的低调提示）。 */}
-            <span data-probe-name="" className={`max-w-20 truncate text-muted-foreground ${onOpen ? "transition-colors group-hover:text-foreground" : ""}`} title={p.name}>{p.name}</span>
-            <span className={`tnum text-right font-medium ${gray}`}>
+            {/* 线路名列：自适应档按内容收缩（上限 80px = 老固定列宽，超长截断 + title 悬停看全）；
+                详细档保持 80px 固定列。可点时 hover 提亮，作为「行能点」的低调提示。 */}
+            <span data-probe-name="" className={`${adaptive ? "max-w-20" : "w-20 shrink-0"} truncate text-muted-foreground ${onOpen ? "transition-colors group-hover:text-foreground" : ""}`} title={p.name}>{p.name}</span>
+            <span className={adaptive ? `tnum text-right font-medium ${gray}` : `tnum w-14 shrink-0 text-right font-medium ${gray}`}>
               {ms === null ? "超时" : `${ms} ms`}
             </span>
             <Sparkline values={p.points.map((pt) => pt.latency)} className={gray} />
-            <span className="tnum text-right text-muted-foreground">
+            <span className={adaptive ? "tnum text-right text-muted-foreground" : "tnum w-10 shrink-0 text-right text-muted-foreground"}>
               {p.loss > 0 ? `${p.loss.toFixed(1)}%` : "0.0%"}
             </span>
           </div>
@@ -264,8 +272,11 @@ export function PeekLatency({ node, lines, onOpen }: { node: Node; lines: string
   const probes = useNodePing(node.id)
   const rows = useMemo(() => pickRows(probes, lines), [probes, lines])
   if (rows.length === 0) return null
+  // ★版式（站长 2026-10-15：浮层跟「延迟」档一样走自适应）：名字/数值列按内容自适应、
+  // 上限沿用旧列宽（名字 72px、丢包列 36px 固定）；行是 subgrid，列宽整块共享——
+  // 短名字贴身、多行仍逐列对齐。
   return (
-    <span data-peek-latency="" className="block space-y-1 border-t pt-2">
+    <span data-peek-latency="" className="grid grid-cols-[max-content_max-content_minmax(0,1fr)_2.25rem] items-center gap-x-2 gap-y-1 border-t pt-2">
       {rows.map((p) => {
         // 最新一个非空样本 = 浮层里那个数字（与卡面同一口径：ping 每 60 秒一跳）。
         const ms = [...p.points].reverse().find((pt) => pt.latency !== null)?.latency ?? null
@@ -273,19 +284,18 @@ export function PeekLatency({ node, lines, onOpen }: { node: Node; lines: string
         return (
           <span
             key={p.id}
-            className={`group flex items-center gap-2 ${onOpen ? "cursor-pointer" : ""}`}
+            className={`group col-span-4 grid grid-cols-subgrid items-center gap-x-2 ${onOpen ? "cursor-pointer" : ""}`}
             onClick={onOpen ? (e) => { e.stopPropagation(); onOpen() } : undefined}
             title={onOpen ? "打开详情 · 网络延迟" : undefined}
           >
-            {/* 浮层里的名字列 72px（原 56px）：与卡面同一条「城市 · 服务商」口径，
-                浮层更窄所以只放宽一档；超长的名字靠 title 悬停看全。与卡面同一套
-                onOpen 行为：点一行直达详情的「网络延迟」页签。 */}
-            <span data-probe-name="" className={`w-[4.5rem] shrink-0 truncate text-muted-foreground ${onOpen ? "transition-colors group-hover:text-foreground" : ""}`} title={p.name}>{p.name}</span>
-            <span className={`tnum w-12 shrink-0 text-right font-medium ${gray}`}>
+            {/* 名字列按内容收缩（上限 72px = 老固定列宽；超长的名字靠 title 悬停看全。
+                与卡面同一套 onOpen 行为：点一行直达详情的「网络延迟」页签）。 */}
+            <span data-probe-name="" className={`max-w-[4.5rem] truncate text-muted-foreground ${onOpen ? "transition-colors group-hover:text-foreground" : ""}`} title={p.name}>{p.name}</span>
+            <span className={`tnum text-right font-medium ${gray}`}>
               {ms === null ? "超时" : `${ms} ms`}
             </span>
             <Sparkline values={p.points.map((pt) => pt.latency)} className={gray} />
-            <span className="tnum w-9 shrink-0 text-right text-muted-foreground">
+            <span className="tnum text-right text-muted-foreground">
               {p.loss > 0 ? `${p.loss.toFixed(1)}%` : "0.0%"}
             </span>
           </span>
