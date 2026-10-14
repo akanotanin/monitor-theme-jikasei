@@ -384,7 +384,15 @@ export default function App() {
     if (me && !me.public_page && !me.authed) location.href = "/admin/"
   }, [me])
 
-  const sorted = [...(nodes ?? [])].sort((a, b) => a.sort - b.sort || a.id - b.id)
+  // 在线优先：**离线的机器一律沉到列表最末尾**（站长 2026-10-14 的口径「离线服务器的卡片排到
+  // 所有卡片的最末尾」）。组内仍按站长排序（`sort`，并列再按 `id`），所以这只是在排序键前面
+  // 加了一层「在线 0 / 离线 1」——同一台机器在两次帧之间的位置是确定的，不会自己抖动。
+  // 「离线」= hub 的 `online` 为假，包含「曾接入但掉线」与「从未接入」两种；它们在这里不再
+  // 占在线机器前面的位置。分组/地区/搜索那几层筛选都从这份排好序的列表上切，所以每个页签里
+  // 离线也都是垫底的。
+  const sorted = [...(nodes ?? [])].sort(
+    (a, b) => (a.online === b.online ? 0 : a.online ? -1 : 1) || a.sort - b.sort || a.id - b.id,
+  )
   const selected = sorted.find((n) => n.id === open)
   // 分组筛选只求值一次（@/lib/api 的 groupView）：概览卡片与下面的列表吃的是同一份
   // 「该显示哪几台」，切分组时两边一起变——参考站的内置 default 主题就是这个口径。
