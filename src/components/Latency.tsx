@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 
 import { api, type Node } from "@/lib/api"
+import { AUTO_MIN_SPAN_RATIO } from "@/components/Chart"
 
 /** `/api/nodes/{id}/metrics?series=ping` 返回里，本组件用到的几块（形状同详情页）。 */
 type PingPoint = {
@@ -130,9 +131,12 @@ function Sparkline({ values, className }: { values: Array<number | null>; classN
   if (nums.length < 2) return <span className="min-w-0 flex-1" />
   const min = Math.min(...nums)
   const max = Math.max(...nums)
-  const span = max - min || 1
+  // 「最近视距」下限：与详情页自动量程共用一个常数（见 Chart.tsx）——窄量程不往死里放，
+  // 拉到底限档时以中值为轴居中展开。
+  const span = Math.max(max - min, Math.max(max, 1) * AUTO_MIN_SPAN_RATIO)
+  const lo = (min + max) / 2 - span / 2
   const x = (i: number) => (values.length <= 1 ? 0 : (i * SPARK_W) / (values.length - 1))
-  const y = (v: number) => SPARK_H - 2 - ((v - min) / span) * (SPARK_H - 4)
+  const y = (v: number) => SPARK_H - 2 - ((v - lo) / span) * (SPARK_H - 4)
   const segments: string[] = []
   let current: string[] = []
   values.forEach((v, i) => {

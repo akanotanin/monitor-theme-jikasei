@@ -84,6 +84,15 @@ function niceScale(lo: number, hi: number, count = 4): { lo: number; hi: number;
   return { lo: low, hi: high, ticks }
 }
 
+/**
+ * 自动量程的「最近视距」：Y 轴跨度至少摊开顶端值的这个比例，再窄的波动不再往里怼。
+ * 延迟活在几十~几百 ms 的窄带里，自动量程若贴着数据自身量程缩放，130ms 上下只抖 8ms
+ * 的线会被画成满屏地震波；给量程加个下限，这种病态放大就停了，而本来就抖开了的线路
+ * （跨度超过下限）一点不受影响。与「不从 0 起」是同一取舍的两头：不贴 0、也不无限放大。
+ * 卡片走势线（Latency.tsx）共用这一个数。
+ */
+export const AUTO_MIN_SPAN_RATIO = 0.25
+
 export function TimeChart({
   rows,
   series,
@@ -119,8 +128,10 @@ export function TimeChart({
   label?: string
   /**
    * `zero`：Y 轴从 0 起、刻度是 `quarters(top)`（四张资源图）。
-   * `auto`：Y 轴按数据自身的量程取整齐刻度（延迟轴 —— 那些线路活在一条窄带里，
-   *         锚到 0 会把抖动压平；这就是原来 `domain={["auto","auto"]}` 的意思）。
+   * `auto`：Y 轴按数据自身的量程取整齐刻度，且至少摊开 `AUTO_MIN_SPAN_RATIO` 那么宽
+   *         （延迟轴——那些线路活在一条窄带里：锚到 0 会把抖动压平、贴着数据缩放又会
+   *         把几 ms 的抖动放大成地震波，两头各有一道护栏；这就是原来
+   *         `domain={["auto","auto"]}` 的意思）。
    */
   domain?: "zero" | "auto"
   /** 左边留给 Y 轴刻度的宽度（四张资源图 68，延迟图 52，与原来逐像素一致）。 */
@@ -169,10 +180,17 @@ export function TimeChart({
   const t1 = view.length ? view[view.length - 1].ts : 1
   const span = Math.max(1, t1 - t0)
 
-  // 刻度：零起点用 quarters(top)，自动档用数据量程取整齐步长。
+  // 刻度：零起点用 quarters(top)；自动档拿数据量程取整齐步长，但量程至少摊开
+  // AUTO_MIN_SPAN_RATIO 那么宽（「最近视距」，见常量注释）——窄波动不再被怼满全高。
   const scale =
     domain === "auto"
-      ? niceScale(...(extentOf(view, series.map((s) => s.key)) ?? [0, 1]))
+      ? (() => {
+          const [lo, hi] = extentOf(view, series.map((s) => s.key)) ?? [0, 1]
+          const minSpan = Math.max(hi, 1) * AUTO_MIN_SPAN_RATIO
+          if (hi - lo >= minSpan) return niceScale(lo, hi)
+          const mid = (lo + hi) / 2
+          return niceScale(mid - minSpan / 2, mid + minSpan / 2)
+        })()
       : { lo: 0, hi: top > 0 ? top : 1, ticks: quarters(top) }
   const yRange = Math.max(1e-9, scale.hi - scale.lo)
 
