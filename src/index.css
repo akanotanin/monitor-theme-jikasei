@@ -423,35 +423,39 @@
 .globe-reg { position: relative; }
 .globe-reg::before { content: ""; position: absolute; inset: -4px 0; border-radius: 4px; }
 
-/* ---------------------------------------------------------------- 详细档三枚读数盒的排布分档
+/* ---------------------------------------------------------------- 详细档三枚读数盒的让位规则
 
-   速率 / 总量 / 到期这三枚读数盒**按卡片的宽度**分两档（容器查询），不是按视口 ——
-   卡片长在 1/2/3 列的网格里，同一档宽度视口下卡片能差一倍：390 手机单列 326px、
-   640 平板两列只有 ~226px、1280 桌面三列 ~367px，任何视口断点都对不上这条线。
+   速率 / 总量 / 到期这三枚读数盒**永远同一行**（站长 2026-10-14 定的形态）；薄的地方
+   只动第三枚**内部**、按**卡片宽度**让位（容器查询，不是视口）——卡片长在 1/2/3 列的
+   网格里，同一档视口下卡片能差一倍：390 手机单列 326px、640 平板两列 ~226px、
+   1280 桌面三列 ~367px，任何视口断点都对不上这条线。
 
-     · 宽卡（内容盒 ≥ 350px）：三枚一排 —— 与从前逐像素相同；
-     · 窄卡：速率｜总量 两枚一排，**到期那枚独占整行**。
-       3 等分时第三枚可写宽度只有 ~45-85px（320 手机 45 / 390 手机 66 / 1024 三列 53），
-       而「剩余 280 天」「已过期 128 天」这类 3 位读数在 12px 下需要 62-81px —— 必被截
-       （站长 2026-10-14 手机截图）。整行之后最窄的 320 也有 ~200px 可写。
+   3 等分时第三枚内容宽只有 ~45-87px，而「剩余 280 天」「已过期 128 天」这类 3 位读数
+   在 12px 下要 62-81px —— 站长 2026-10-14 手机截图的问题就在这。修复不动外形：
+     · 窄卡（内容盒 < 350px）：三枚读数降一档到 11px（窄卡降字号是本主题的既定语法）、
+       盒内边距由 8px 收到 4px（再换出每枚 8px 可写宽）、第三枚的日历图标隐藏
+       （这是这一枚唯一能省出来的 18px）、日期行去掉按图标的缩进；读数实在超宽时在
+       「剩余｜280 天」的空格处折行（数字+单位用不断行空格连成整块，见 NodeCard 的
+       ExpiryReading）——最窄的 320 也能完整显示；
+     · 宽卡（≥ 350px）：图标、缩进、内边距、单行、12px —— 与从前逐像素相同。
 
-   350 这个门槛是量出来的：三枚一排时第三枚要放得下「已过期 128 天」（74px）+ 图标 18px +
-   内边距 16px，每枚内容宽 (C-16)/3 ≥ 108 ⇒ C ≥ 340，留 10px 余量取 350。
+   350 这个门槛是量出来的（图标留着、12px 时）：第三枚要放得下「已过期 128 天」（74px）+
+   图标 18px + 内边距 16px，每枚内容宽 (C-16)/3 ≥ 108 ⇒ C ≥ 340，留 10px 余量取 350。
    逐宽证据（320→1600 十档）与判据：tools/verify_card_expiry_fit.mjs。
 
-   ★为什么是 6 轨而不是换模板：容器查询**不能给容器自己改样式**（@container 只作用于
-   它的后代），所以用 `span` 而不是在查询里重写 grid-template-columns ——把两档都表达成
-   子元素的跨度，查询只改子元素的规则。 */
+   ★为什么用容器查询改子元素而不是换模板：@container 只作用于容器的后代，**容器不能给
+   自己改样式** —— 3 等分的模板写在 [data-stats] 自己身上，让位规则放进查询、全部落到
+   后代（字号、图标、日期行）。 */
 [data-stats] {
   container-type: inline-size;
   container-name: stats;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-[data-stats] > [data-stat="speed"],
-[data-stats] > [data-stat="total"] { grid-column: span 3; }
-[data-stats] > [data-stat="expiry"] { grid-column: span 6; }
-@container stats (min-width: 350px) {
-  [data-stats] > [data-stat="speed"],
-  [data-stats] > [data-stat="total"],
-  [data-stats] > [data-stat="expiry"] { grid-column: span 2; }
+@container stats (max-width: 349.99px) {
+  [data-stats] > [data-stat] { padding-left: 4px; padding-right: 4px; }
+  [data-stats] .tnum { font-size: 11px; }
+  [data-stats] [data-stat="expiry"] svg { display: none; }
+  /* 宽卡照旧单行截断（与线上逐像素相同）；窄卡把这两处放开折行，保证完整显示。 */
+  [data-stats] .stat-wrap { white-space: normal; }
+  [data-stats] [data-stat-date] { font-size: 11px; padding-left: 0; white-space: normal; }
 }

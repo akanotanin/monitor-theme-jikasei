@@ -131,6 +131,17 @@ function expiryText(node: Node): string | null {
 }
 
 /**
+ * 到期读数的排版：数字与「天」之间换成**不断行空格**（U+00A0）—— 宽卡里整条文本与线上
+ * 一字不差（同一份字体、同一条文本，逐像素相同）；窄卡放开折行后，断点只可能落在
+ * 「剩余｜280 天」之间那个普通空格上，不会把「…280」与「天」拆散（CJK 默认每个字都是
+ * 断点，会折出孤零零一个「天」）。不额外套 span 也是为这条逐像素相同服务：文本节点
+ * 边界会改变字形的亚像素排布。其余几种文案（今天到期 / 无期限）本来就短，原样返回。
+ */
+function ExpiryReading({ node }: { node: Node }) {
+  return (expiryText(node) ?? "无期限").replace(/(\d) 天$/, "$1\u00A0天")
+}
+
+/**
  * 详细档第二行：左「在线时长」、右「价格 / 周期」——**备注不再重排这一行**
  * （改版前它会把价格挤进第三枚读数盒、把到期日藏起来；现在这两样都留在原位）。
  */
@@ -152,9 +163,9 @@ function MetaRow({ node }: { node: Node }) {
  * 像仪表盘上嵌进去的读数窗——前两个对应「此刻」与「累计」，第三个上面是本机还剩多久、
  * 下面一行写到期日。
  *
- * 排布**由 CSS 按卡片宽度分档**（见 index.css 的 `[data-stats]`：宽卡三枚一排、窄卡
- * 「速率｜总量」两枚一排 + 到期独占整行）；这里的 props 透传是给那段 CSS 认盒子用的
- * （`data-stat="speed|total|expiry"`）。
+ * 排布：三枚**永远同一行**（站长 2026-10-14 定的形态）；薄的地方由 CSS 按卡片宽度让位
+ * （见 index.css 的 `[data-stats]`：窄卡里到期图标隐藏、日期行去掉缩进）。这里的 props
+ * 透传是给那段 CSS 认盒子用的（`data-stat="speed|total|expiry"`）。
  */
 function InfoBox({ children, ...rest }: { children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
   return (
@@ -164,14 +175,16 @@ function InfoBox({ children, ...rest }: { children: ReactNode } & React.HTMLAttr
   )
 }
 
-function Stat({ icon: Icon, children }: {
+function Stat({ icon: Icon, children, wrap }: {
   icon: ComponentType<{ className?: string }>
   children: ReactNode
+  /** 窄卡里超宽时允许在空格处折行（到期读数用，见 .stat-wrap 的容器查询）。 */
+  wrap?: boolean
 }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <Icon className="size-3 shrink-0" />
-      <span className="tnum truncate">{children}</span>
+      <span className={wrap ? "tnum truncate stat-wrap" : "tnum truncate"}>{children}</span>
     </span>
   )
 }
@@ -487,9 +500,9 @@ export function NodeCard({ node, onOpen, onOpenLatency, onWarm, latencyLines, ca
               {/* 详细形态：网速、总量，加第三枚读数盒并排。第三枚上面一直是「剩余时间」，
                   下面一行写到期日。
                   速率与总量各按上下行分两行；配色与另外两档同一套灰。下面照旧挂三网延迟。
-                  ★排布由 CSS 按**卡片宽度**（不是视口）分两档，见 index.css 的 [data-stats]：
-                  宽卡三枚一排；窄卡「速率｜总量」两枚一排、到期那枚独占整行 —— 3 等分时
-                  第三枚可写宽度只剩 ~45-85px，「剩余 280 天」这类 3 位读数（62-81px）必截。
+                  ★三枚**永远同一行**（站长 2026-10-14 定的形态）；让位规则在 index.css 的
+                  [data-stats]：窄卡里到期图标隐藏、日期行去掉缩进，读数实在放不下时才在
+                  「剩余｜280 天」的空格处折行（数字+单位整块不拆，见 ExpiryReading）。
                   逐宽判据：tools/verify_card_expiry_fit.mjs。 */}
               <div data-stats="" className="mt-4 grid gap-2">
                 <InfoBox data-stat="speed">
@@ -501,10 +514,11 @@ export function NodeCard({ node, onOpen, onOpenLatency, onWarm, latencyLines, ca
                   <Stat icon={ArrowUp}>{bytes(node.total_tx)}</Stat>
                 </InfoBox>
                 <InfoBox data-stat="expiry">
-                  <Stat icon={CalendarClock}>{expiryText(node) ?? "无期限"}</Stat>
-                  {/* 备注不再重排这一排：第三枚读数盒下面**永远是到期日**（价格留在第二行右侧）。 */}
+                  <Stat icon={CalendarClock} wrap><ExpiryReading node={node} /></Stat>
+                  {/* 备注不再重排这一排：第三枚读数盒下面**永远是到期日**（价格留在第二行右侧）。
+                      日期行的缩进（对应图标宽度）由 CSS 给：窄卡里归零，见 index.css。 */}
                   {node.expires_at && (
-                    <span className="block truncate pl-[18px] text-muted-foreground">{node.expires_at}</span>
+                    <span data-stat-date="" className="block truncate pl-[18px] text-muted-foreground">{node.expires_at}</span>
                   )}
                 </InfoBox>
               </div>

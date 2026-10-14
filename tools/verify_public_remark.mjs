@@ -416,7 +416,7 @@ let detailedBase = null
   check('详细（写了备注）：第二行仍是「在线时长 / 价格」（备注没把它顶掉）',
     /^在线 /.test(on.row2 ?? '') && /¥12\.50 \/ 月付/.test(on.row2 ?? ''), on.row2)
   check('详细（写了备注）：第三枚读数盒下面**仍是到期日**（不是价格）',
-    Array.isArray(on.box3) && on.box3[0] === '剩余 95 天' && on.box3[1] === '2027-01-01', (on.box3 ?? []).join(' | '))
+    Array.isArray(on.box3) && String(on.box3[0]).replace(/\u00A0/g, ' ') === '剩余 95 天' && on.box3[1] === '2027-01-01', (on.box3 ?? []).join(' | '))
   check('详细（写了备注）：备注在卡片上只出现一处，且没有那枚浮层图标',
     on.noteAnchors === 1 && on.badges === tagsOf(SHORT).length && on.popover === false,
     `锚点 ${on.noteAnchors} / 胶囊 ${on.badges} / 图标 ${on.popover}`)

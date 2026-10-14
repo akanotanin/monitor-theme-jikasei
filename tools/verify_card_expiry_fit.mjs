@@ -1,8 +1,9 @@
-// 「详细」档卡片到期读数（剩余天数 / 到期日）在窄卡上的完整展示：逐宽度量每个读数 span 的
+// 「详细」档卡片三枚读数盒（速率 / 总量 / 到期）的**完整展示**：逐宽度量每个读数 span 的
 // scrollWidth 与 clientWidth，任何一处被截（scrollWidth > clientWidth + 1）就 FAIL。
 //
-// 背景：手机（390/360/320 宽）上详细卡的三枚读数盒是 grid-cols-3，每盒内容宽只有 ~90px；
-// 站长的机器读数有 3 位数（剩余 280 天），在 12px 下就顶到边界——站长截图「剩余天数无法完整展示」。
+// 形态约定（站长 2026-10-14 二改后）：三枚**永远同一行**；窄卡（统计区宽 < NARROW_T）里
+// 到期枚的日历图标隐藏、日期行去掉缩进，读数超宽时在「剩余｜280 天」的空格处折行
+// （数字+单位包成不折的整块，不会把「天」拆成孤字）——外形保持三枚一排。
 // 桌面宽（1280/1440）与手机（320/360/390/430）都量：修窄不得改宽（桌面回归由本工具一并管）。
 //
 // 用法：cd <repo> && node tools/verify_card_expiry_fit.mjs
@@ -15,6 +16,8 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 const PORT = 5521
 const CDP_PORT = PORT + 4000
+// 与 index.css 的 `@container stats (max-width: …)` 阈值一致（jikasei 350；rakugaki 版为 366）。
+const NARROW_T = 350
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webp': 'image/webp', '.woff2': 'font/woff2' }
 const GB = 1024 ** 3, MB = 1024 ** 2
 
@@ -91,9 +94,10 @@ const waitFor = async (expr, ms = 10000) => {
   return false
 }
 
-// 卡片里每个读数 span（.tnum）＋第三枚读数盒下面那行到期日（.truncate 的日期行）都量一遍：
+// 卡片里每个读数 span（.tnum）＋第三枚读数盒下面那行到期日（[data-stat-date]）都量一遍：
 //   clip = scrollWidth - clientWidth > 1 即被截（等宽字体给 1px 亚像素余量）。
 //   每条还带 fontSize（容器查询会把窄卡的读数降档，选阈值要看实际字号）与盒宽。
+//   另取：统计区宽度（窄/宽卡判据）、到期枚图标是否隐藏、日期行缩进 —— 用来核对让位规则。
 const PROBE = `JSON.stringify((() => {
   const cards = [...document.querySelectorAll('[data-node-card]')]
   const out = []
@@ -104,23 +108,32 @@ const PROBE = `JSON.stringify((() => {
       const clip = t.scrollWidth - t.clientWidth
       if (clip > 1) rows.push({ text: t.textContent.trim(), clip, sw: t.scrollWidth, cw: t.clientWidth, fs: getComputedStyle(t).fontSize })
     }
-    const dateLine = [...c.querySelectorAll('span.block.truncate')].find((s) => /^\\d{4}-\\d{2}-\\d{2}$/.test((s.textContent || '').trim()))
+    const dateLine = c.querySelector('[data-stats] [data-stat-date]')
     let dateClip = null
     if (dateLine) { const clip = dateLine.scrollWidth - dateLine.clientWidth; if (clip > 1) dateClip = { text: dateLine.textContent.trim(), clip, fs: getComputedStyle(dateLine).fontSize } }
-    // 到期读数盒（第三个）与它的内部量宽：盒宽 / 值文本可写宽度
-    const expiry = [...c.querySelectorAll('span.flex')].find((s) => /剩余|过期|到期|无期限/.test(s.textContent) && s.querySelector('svg'))
+    // 第三枚读数盒：值文本可写/需要宽度、图标在不在、日期行缩进、统计区宽度
+    const box = c.querySelector('[data-stats] > [data-stat="expiry"]')
+    const statsEl = c.querySelector('[data-stats]')
     let expiryInfo = null
-    if (expiry) {
-      const box = expiry.closest('div')
-      const txt = expiry.querySelector('.tnum')
-      expiryInfo = { box: Math.round(box.getBoundingClientRect().width), row: Math.round(expiry.getBoundingClientRect().width), avail: txt ? txt.clientWidth : null, need: txt ? txt.scrollWidth : null, fs: txt ? getComputedStyle(txt).fontSize : null }
+    if (box) {
+      const txt = box.querySelector('.tnum')
+      const svg = box.querySelector('svg')
+      const lh = txt ? parseFloat(getComputedStyle(txt).lineHeight) || 16 : 16
+      expiryInfo = {
+        box: Math.round(box.getBoundingClientRect().width),
+        avail: txt ? txt.clientWidth : null, need: txt ? txt.scrollWidth : null,
+        fs: txt ? getComputedStyle(txt).fontSize : null,
+        lines: txt ? Math.round(txt.getBoundingClientRect().height / lh) : null,
+        iconHidden: svg ? getComputedStyle(svg).display === 'none' : null,
+        dateIndent: dateLine ? Math.round(parseFloat(getComputedStyle(dateLine).paddingLeft) || 0) : null,
+      }
     }
-    // 三枚读数盒各自的几何（x/y/w）：宽卡三枚同 y；窄卡前两枚同 y、到期那枚另起一行且更宽。
+    // 三枚读数盒各自的几何（x/y/w）：任何宽度下都应同一行（y 相等）。
     const stats = [...c.querySelectorAll('[data-stats] > *')].map((b) => {
       const r = b.getBoundingClientRect()
       return { stat: b.getAttribute('data-stat'), x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
     })
-    out.push({ name, expiry: expiryInfo, stats, clipped: rows, dateClip })
+    out.push({ name, statsW: statsEl ? Math.round(statsEl.getBoundingClientRect().width) : null, expiry: expiryInfo, stats, clipped: rows, dateClip })
   }
   return out
 })())`
@@ -135,19 +148,27 @@ for (const w of WIDTHS) {
   const rows = JSON.parse(await js(PROBE) ?? '[]')
   const bad = rows.filter((r) => r.clipped.length > 0 || r.dateClip)
   const detail = bad.map((r) => `${r.name}: ` + [...r.clipped.map((x) => `「${x.text}」截${x.clip}px(sw${x.sw}/cw${x.cw} @${x.fs})`), ...(r.dateClip ? [`日期「${r.dateClip.text}」截${r.dateClip.clip}px`] : [])].join('、')).join(' | ')
-  check(`${w}px 详细卡到期读数无截断`, bad.length === 0, detail)
-  // 排布形状：两档之一 —— ①宽卡三枚同行（y 相等）；②窄卡前两枚同行、到期整行且更宽。
+  check(`${w}px 详细卡读数无截断`, bad.length === 0, detail)
+  // 形态①：三枚读数盒**永远同一行**（y 相等）。
   const shape = rows.filter((r) => {
     const [s, t, e] = r.stats
     if (!s || !t || !e) return true
-    const sameRow = s.y === t.y && s.y === e.y
-    const narrowRow = t.y === s.y && e.y > s.y && e.w > s.w
-    return !(sameRow || narrowRow)
+    return !(s.y === t.y && s.y === e.y)
   })
-  check(`${w}px 排布形状合法（三枚同行 / 到期独占一行）`,
+  check(`${w}px 三枚读数盒同一行`,
     shape.length === 0, shape.map((r) => `${r.name}: ` + JSON.stringify(r.stats)).join(' | '))
-  if (w === 390 || w === 1280 || w === 1440) {
-    console.log(`    ${w}px 到期盒: ` + rows.map((r) => `${r.name}: 盒${r.expiry?.box}px 可写${r.expiry?.avail} 需${r.expiry?.need} @${r.expiry?.fs}`).join(' | '))
+  // 形态②：让位规则 —— 窄卡（统计区 < NARROW_T）到期枚图标隐藏、日期行缩进 0；宽卡原样（图标 + 18px）。
+  const place = rows.filter((r) => {
+    if (!r.expiry) return false
+    const narrow = (r.statsW ?? 0) < NARROW_T
+    const iconOk = r.expiry.iconHidden === narrow
+    const indentOk = r.expiry.dateIndent === null || r.expiry.dateIndent === (narrow ? 0 : 18)
+    return !(iconOk && indentOk)
+  })
+  check(`${w}px 让位规则（窄卡藏图标·去缩进／宽卡原样）`, place.length === 0,
+    place.map((r) => `${r.name}: 统计区${r.statsW} 图藏${r.expiry?.iconHidden} 缩进${r.expiry?.dateIndent}`).join(' | '))
+  if (w === 360 || w === 390 || w === 640 || w === 1280 || w === 1440) {
+    console.log(`    ${w}px 到期盒: ` + rows.map((r) => `${r.name}: 盒${r.expiry?.box}px 可写${r.expiry?.avail} 需${r.expiry?.need} @${r.expiry?.fs}${r.expiry?.lines > 1 ? '·折行' : ''}${r.expiry?.iconHidden ? '·无图' : ''}`).join(' | '))
     console.log(`    ${w}px 盒几何: ` + (rows[0]?.stats ?? []).map((b) => `${b.stat}(x${b.x},y${b.y},w${b.w})`).join(' '))
   }
 }
