@@ -150,11 +150,15 @@ function MetaRow({ node }: { node: Node }) {
 /**
  * 详细档那三枚读数盒：实时速率 / 累计总量 / 剩余时间。一层浅底把它们与上下的网格分开，
  * 像仪表盘上嵌进去的读数窗——前两个对应「此刻」与「累计」，第三个上面是本机还剩多久、
- * 下面一行写到期日（备注改到标题行右端后，这里不再被价格顶掉）。
+ * 下面一行写到期日。
+ *
+ * 排布**由 CSS 按卡片宽度分档**（见 index.css 的 `[data-stats]`：宽卡三枚一排、窄卡
+ * 「速率｜总量」两枚一排 + 到期独占整行）；这里的 props 透传是给那段 CSS 认盒子用的
+ * （`data-stat="speed|total|expiry"`）。
  */
-function InfoBox({ children }: { children: ReactNode }) {
+function InfoBox({ children, ...rest }: { children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className="min-w-0 space-y-1.5 overflow-hidden rounded-md bg-muted/60 px-2 py-2 text-xs">
+    <div {...rest} className="min-w-0 space-y-1.5 overflow-hidden rounded-md bg-muted/60 px-2 py-2 text-xs">
       {children}
     </div>
   )
@@ -482,17 +486,21 @@ export function NodeCard({ node, onOpen, onOpenLatency, onWarm, latencyLines, ca
             <>
               {/* 详细形态：网速、总量，加第三枚读数盒并排。第三枚上面一直是「剩余时间」，
                   下面一行写到期日。
-                  速率与总量各按上下行分两行；配色与另外两档同一套灰。下面照旧挂三网延迟。 */}
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <InfoBox>
+                  速率与总量各按上下行分两行；配色与另外两档同一套灰。下面照旧挂三网延迟。
+                  ★排布由 CSS 按**卡片宽度**（不是视口）分两档，见 index.css 的 [data-stats]：
+                  宽卡三枚一排；窄卡「速率｜总量」两枚一排、到期那枚独占整行 —— 3 等分时
+                  第三枚可写宽度只剩 ~45-85px，「剩余 280 天」这类 3 位读数（62-81px）必截。
+                  逐宽判据：tools/verify_card_expiry_fit.mjs。 */}
+              <div data-stats="" className="mt-4 grid gap-2">
+                <InfoBox data-stat="speed">
                   <Stat icon={ArrowDown}>{m ? rate(m.net_rx) : "—"}</Stat>
                   <Stat icon={ArrowUp}>{m ? rate(m.net_tx) : "—"}</Stat>
                 </InfoBox>
-                <InfoBox>
+                <InfoBox data-stat="total">
                   <Stat icon={ArrowDown}>{bytes(node.total_rx)}</Stat>
                   <Stat icon={ArrowUp}>{bytes(node.total_tx)}</Stat>
                 </InfoBox>
-                <InfoBox>
+                <InfoBox data-stat="expiry">
                   <Stat icon={CalendarClock}>{expiryText(node) ?? "无期限"}</Stat>
                   {/* 备注不再重排这一排：第三枚读数盒下面**永远是到期日**（价格留在第二行右侧）。 */}
                   {node.expires_at && (

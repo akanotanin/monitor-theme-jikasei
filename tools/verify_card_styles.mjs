@@ -232,7 +232,15 @@ const PROBE = `JSON.stringify((() => {
       }
     })(),
     infoBox: q('[class*="bg-muted/60"]'),
-    infoGrid: q('[class*="grid-cols-3"]'),
+    // 三枚读数盒的排布锚点是 [data-stats]（2026-10-14 起：排布改由数据属性 + CSS 按卡片宽度
+    // 分档，不再用 grid-cols-3 类名 —— 旧判据按类名找会在改成窄卡两行档时静默 0 命中）。
+    infoGrid: q('[data-stats]'),
+    // 1440 宽（本工具的视口）下这张卡是「宽卡」档：三枚应同一行（y 相等）。窄卡那个档
+    // （到期独占一行）由 tools/verify_card_expiry_fit.mjs 逐宽度量。
+    statsGeometry: [...(first?.querySelectorAll('[data-stats] > [data-stat]') ?? [])].map((b) => {
+      const r = b.getBoundingClientRect()
+      return { stat: b.getAttribute('data-stat'), y: Math.round(r.top), w: Math.round(r.width) }
+    }),
     dots: all.reduce((n, c) => n + c.querySelectorAll('span[aria-label="在线"],span[aria-label="离线"],span[aria-label="刚接入"]').length, 0),
     dotLabels: all.map((c) => [...c.querySelectorAll('span[aria-label]')].map((s) => s.getAttribute('aria-label')).join('+')),
     polylines: document.querySelectorAll('svg polyline').length,
@@ -528,6 +536,11 @@ let classicStyle = null
   const { dom, ping } = await render({ cardStyle: 'detailed', listTop: 'none' }, 'detailed')
   check('详细：标题行不再挂状态点', dom.dots === 0, `点 ${dom.dots}`)
   check('详细：三枚读数盒', dom.infoBox === 3 && dom.infoGrid === 1, `盒 ${dom.infoBox} / 栅格 ${dom.infoGrid}`)
+  check('详细：1440 下三枚读数盒仍同一行、等宽（宽卡档没被窄卡分档改到；窄卡那条由 verify_card_expiry_fit 逐宽度量）',
+    dom.statsGeometry.length === 3 &&
+    new Set(dom.statsGeometry.map((g) => g.y)).size === 1 &&
+    new Set(dom.statsGeometry.map((g) => g.w)).size === 1,
+    JSON.stringify(dom.statsGeometry))
   check('详细：元信息行（在线时长 · 价格/周期）', /在线 /.test(dom.text) && /¥12\.50 \/ 月付/.test(dom.text), dom.text)
   check('详细：读数盒里是真实读数（速率 / 总量 / 到期）',
     // 速率走 rate() 的三位有效数字（KB 档不给小数）：512 KB/s、128 KB/s —— 别写回 512.0。
