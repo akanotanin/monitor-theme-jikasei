@@ -23,7 +23,10 @@ import { extname, join, normalize } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const OUT = process.argv[2] || 'shots/farm-entry'
-const PORT = 5199
+// 端口可覆盖：5199 是 serve.mjs 的默认位，本机常被别的会话/stub 占着（2026-10-14 实测被占时
+// 本工具直接 EADDRINUSE 退出、连摘要都不打，sweep 里只显示「没抓到结果行」）；
+// FARM_PORT=5899 之类即可错开（与 rakugaki 版对齐，那版 2026-10-10 起就认这个变量）。
+const PORT = Number(process.env.FARM_PORT || 5199)
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' }
 
 // 每个场景换一次的桩状态：站长的设置、本站有没有农场、探测被打了几次。
