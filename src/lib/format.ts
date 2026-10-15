@@ -284,6 +284,74 @@ export function quarters(top: number): number[] {
   return [0, 0.25, 0.5, 0.75, 1].map((f) => top * f)
 }
 
+/** 步长档位：与 niceScale 同族（1 / 2 / 2.5 / 5 / 10 × 10^k），从大到小排，便于「太稀就退一档」。 */
+const STEPS = [1, 2, 2.5, 5, 10]
+
+/**
+ * 手动档（滚轮纵缩）的刻度：边界就是滚出来的**精确值**、刻度只挑范围内的整齐数。
+ *
+ * 自动档那边量程会先被 niceScale 扩到整齐边界；但滚轮缩放要的是「光标压着的那个值钉住不动」，
+ * 边界每扩一次锚点就漂一点，连滚几下会明显「滑走」——所以手动档走这一支。
+ *
+ * ★上界只留**相对步长**的浮点容差、**不放开半步**（2026-10-15 站长截图报到「延迟跑到外面」的
+ * 根因）：原来写 `hi + step / 2`，本意是别丢掉「刚好压线」的那一枚，可它会在量程顶端之外
+ * **多吐一个刻度** —— 那个刻度的网格线与标签就画到绘图区上面去了。半步这个量级太大。
+ * 刻度用精确倍数 k × step 算（不做 1e6 取整：细单位下会把相邻刻度抹成同一个数），
+ * 并且「落进来少于 3 枚就退一档」（精确边界不会外扩，很容易只剩两枚网格线）。
+ */
+export function innerTicks(lo: number, hi: number): number[] {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi > lo)) return []
+  const raw = (hi - lo) / 4
+  const mag = 10 ** Math.floor(Math.log10(Math.max(raw, Number.MIN_VALUE)))
+  const mStep = (mult: number) => {
+    const st = mult * mag
+    return Number.isFinite(st) && st > 0 ? st : raw
+  }
+  let step = mStep(STEPS.find((m) => m * mag >= raw) ?? 10)
+  const count = (st: number) => Math.floor(hi / st) - Math.ceil(lo / st) + 1
+  const finer = STEPS.filter((m) => m * mag < step)
+  while (count(step) < 3 && finer.length) step = mStep(finer.pop()!)
+  const out: number[] = []
+  const first = Math.ceil(lo / step - 1e-9)
+  for (let k = first; out.length < 64; k++) {
+    const v = k * step
+    if (v > hi + step * 1e-9) break
+    out.push(v)
+  }
+  return out
+}
+
+/**
+ * 纵向量程的一次收放（滚轮纵缩用；拖动平移不走这里）：纯函数，单测盯着。
+ *
+ * 三条夹子，顺序固定（跨度 → 下沿 → 顶端）：
+ *  · **跨度下限**不是固定 1ms，而是调用方给的 `floor`（= min(1ms, 自动量程的 1/4)）：
+ *    亚毫秒线路的自动量程本来就窄于 1ms，固定下限会把「收窄」硬重置成一个比原量程还宽的
+ *    1ms 窗口 —— 第一格滚轮反而把量程放大、锚点被挪到正中，下沿贴 0 时收放还会被夹回同一
+ *    状态、滚轮彻底卡死（2026-10-15 审出来）。另外 floor 再取一次 min(floor, 当前跨度)。
+ *  · 夹到下限时**按锚点比例收**（锚点在框里的相对位置不变），不能以中心硬重置。
+ *  · 下沿不越 0、顶端不越 cap；两根边界夹子各自单调收口，不互相推。
+ */
+export function zoomSpan(o: { lo: number; hi: number; anchor: number; ratio: number; factor: number; floor: number; cap: number }): { lo: number; hi: number } {
+  const span = o.hi - o.lo
+  if (!(span > 0) || !(o.factor > 0) || !Number.isFinite(o.anchor)) return { lo: o.lo, hi: o.hi }
+  let lo = o.anchor - (o.anchor - o.lo) * o.factor
+  let hi = o.anchor + (o.hi - o.anchor) * o.factor
+  const floor = Math.min(o.floor, span)
+  if (hi - lo < floor) {
+    const r = Math.min(Math.max(o.ratio, 0), 1)
+    lo = o.anchor - r * floor
+    hi = o.anchor + (1 - r) * floor
+  }
+  if (lo < 0) lo = 0
+  if (hi > o.cap) hi = o.cap
+  if (hi - lo < floor * 1e-9) {
+    hi = Math.min(o.cap, lo + floor)
+    if (hi - lo < floor * 1e-9) lo = Math.max(0, hi - floor)
+  }
+  return { lo, hi }
+}
+
 /**
  * Hampel filter (Hampel 1974; MATLAB ships it as `hampel`). A sample more than
  * `sigmas` robust deviations from the median of its window is replaced by that

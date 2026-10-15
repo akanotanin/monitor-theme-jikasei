@@ -201,7 +201,6 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   const [failed, setFailed] = useState("")
   // Where the brush has been dragged, so the axis reticks for the visible span
   // rather than retaining the whole window's ticks.
-  const [zoom, setZoom] = useState<[number, number] | null>(null)
   // Where the chart begins on screen, so its height can occupy the remainder.
   const [chartTop, setChartTop] = useState(0)
 
@@ -211,8 +210,6 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
     // flight.
     // oxlint-disable-next-line react/set-state-in-effect
     setData(null)
-    // oxlint-disable-next-line react/set-state-in-effect
-    setZoom(null)
     // oxlint-disable-next-line react/set-state-in-effect
     setFailed("")
     // What this screen can resolve, in device pixels, which is the unit the line
@@ -563,11 +560,8 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
                   domain="auto"
                   unit="ms"
                   left={52}
-                  from={Math.min(zoom?.[0] ?? 0, pingRows.length - 1)}
-                  to={Math.min(zoom?.[1] ?? pingRows.length - 1, pingRows.length - 1)}
-                  // 原来 recharts 的 Brush（22px 高的拖两端把手）换成「在图上横向拖选一段」+
-                  // 一枚「重置」：手机上那对手指头太细，而且这样代码少一半。
-                  onZoom={(from, to) => setZoom([from, to])}
+                  // 缩放与对位都归图表自己管（滚轮纵向缩放 + 左键拖着线平移，见 Chart 的
+                  // `wheelZoom`）：原来那套「横向拖选一段放大」2026-10-15 与 kanso 同步下线。
                   // 滚轮缩放延迟范围（2026-10-15）：光标在图上滚 = 收放 Y 轴、双击复位。
                   // 只开在整页详情——紧凑展开的图在列表里，滚轮要留给翻列表。
                   wheelZoom={!embedded}
