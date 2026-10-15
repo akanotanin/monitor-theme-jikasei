@@ -1,15 +1,21 @@
-// 离线服务器沉底的护栏（2026-10-14 站长要求：「把离线服务器的卡片排到所有卡片的最末尾」）。
+// 「没有实时数据就沉底」的护栏（站长 2026-10-14：「把离线服务器的卡片排到所有卡片的最末尾」；
+// 2026-10-15 补充：预览站上「连上但从未上报」的卡片也没沉底 —— 判据从 `online` 扩成
+// `online && metrics`）。
+//
+// hub 口径（src/agent_ws.rs：「在线」与「有当前数据」是同一个事实）：一个 agent 连上但还没
+// 上报的节点，答复是 `online: true` + `metrics: null`（重连后一个上报间隔内同样是这个长相）；
+// 只有真掉线（会话释放）与从未接入才是 `online: false`。两种都要沉底。
 //
 // 判据（夹具里的排序是**交错**的：离线机器在 sort 序里本来就排在中间 —— 不沉底的话第一
 // 条断言必红）：
-//   ① 列表页顺序 = 在线（按站长 sort）在前、离线的全部垫底（组内仍按 sort）；
+//   ① 列表页顺序 = 有数据（在线且已上报，按站长 sort）在前、其余全部垫底（组内仍按 sort）；
 //   ② 分组页签里同样成立（切到「甲」组：在线在前、离线的那个仍在组内垫底）；
 //   ③ 紧凑档（一行一台的表格）同一口径；
 //   ④ 一键动态：把一台离线机器「恢复在线」后（等兜底轮询带新数据进来），它自己升回在线段
 //      —— 沉底不是快照，是对实时状态的排序。
 //
-// 夹具还含一台「从未接入」（cpu_cores 0 / metrics null）的机器：它在 `online` 里也是 false，
-// 与掉线机一样沉底。
+// 夹具里有三种要沉底的机器：掉线（Bravo/Delta）、从未接入（Foxtrot，online:false）、
+// 连上但从未上报（Golf，online:true + metrics:null —— 预览站「阿姆斯特丹」那张卡的形状）。
 // 用法：cd <repo> && node tools/verify_offline_last.mjs
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
@@ -43,11 +49,13 @@ const nodes = [
   base(5, 'Echo', { sort: 4, online: true, group: '' }),
   // 从未接入：cpu_cores / mem_total 都是 0，卡片形态是那行「还没有接入」。
   base(6, 'Foxtrot', { sort: 5, online: false, group: '', metrics: null, last_seen: 0, last_seen_ago: null, cpu_cores: 0, mem_total: 0 }),
+  // 连上但从未上报（hub 口径：online 真、metrics 空、ago null）——预览站上没沉底的就是它。
+  base(7, 'Golf', { sort: 6, online: true, group: '', metrics: null, last_seen: 0, last_seen_ago: null, cpu_cores: 0, mem_total: 0 }),
 ]
-const EXPECT_ALL = [1, 3, 5, 2, 4, 6]
+const EXPECT_ALL = [1, 3, 5, 2, 4, 6, 7]
 const EXPECT_G1 = [1, 2]
 // ④ 用的那台：翻转后 Bravo 应当升到在线段（sort1 → 排在 Charlie(sort2) 前面）。
-const EXPECT_FLIPPED = [1, 2, 3, 5, 4, 6]
+const EXPECT_FLIPPED = [1, 2, 3, 5, 4, 6, 7]
 
 const server = createServer((req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`)
@@ -107,14 +115,16 @@ const waitFor = async (expr, ms = 15000) => {
 }
 
 await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` })
-const loaded = await waitFor(`document.querySelectorAll('[data-node-card]').length === 6`, 20000)
-check('列表渲染出来了（六台都在）', loaded)
+const loaded = await waitFor(`document.querySelectorAll('[data-node-card]').length === 7`, 20000)
+check('列表渲染出来了（七台都在）', loaded)
 await sleep(600)
 
 const order = JSON.parse(await js(`JSON.stringify(${ORDER})`) ?? '[]')
 console.log(`    ① 列表顺序: ${order.join(', ')}（期望 ${EXPECT_ALL.join(', ')}）`)
-check('★ 离线机器沉底：在线按 sort 在前、离线的全在末尾（含「从未接入」那台）',
+check('★ 无实时数据的机器沉底：有数据按 sort 在前、其余全在末尾（含从未接入 / 连上未上报两台）',
   JSON.stringify(order) === JSON.stringify(EXPECT_ALL), order.join(','))
+check('★ 「连上但从未上报」（online 真 + metrics 空）与离线机同段沉底',
+  order.indexOf(7) === order.length - 1 && order.indexOf(7) > order.indexOf(5), order.join(','))
 
 // ② 分组页签「甲」：Alpha 在线、Bravo 离线 —— 组内离线也垫底。
 const clicked = await js(`(() => {
@@ -131,7 +141,7 @@ check('★ 分组页签内同样成立（离线在组内垫底）', clicked === 
 // ③ 紧凑档：一行一台的表格，同一口径。
 await send('Page.addScriptToEvaluateOnNewDocument', { source: "try{for(const k of ['jikasei:card_style','rakugaki:card_style'])localStorage.setItem(k,'compact')}catch(e){}" })
 await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/` })
-const compactReady = await waitFor(`document.querySelectorAll('tr[data-node-card]').length === 6`, 20000)
+const compactReady = await waitFor(`document.querySelectorAll('tr[data-node-card]').length === 7`, 20000)
 const cOrder = JSON.parse(await js(`JSON.stringify(${ORDER})`) ?? '[]')
 console.log(`    ③ 紧凑档顺序: ${cOrder.join(', ')}（期望 ${EXPECT_ALL.join(', ')}）`)
 check('★ 紧凑档同一口径（表格里的离线也在最末尾）',
