@@ -1,4 +1,4 @@
-// 备注落点护栏：hub 后台按节点填的「公开备注」（给访客）在五种卡片形态与「紧凑」就地展开上的位置、
+// 备注落点护栏：hub 后台按节点填的「公开备注」（给访客）在六种卡片形态与「紧凑」就地展开上的位置、
 // 「私有备注」（只下发给登录的管理员）在整页详情上拆成小卡片，外加「时间范围按保留天数生成」（见 @/lib/ranges）。
 //
 // 用法：node tools/verify_public_remark.mjs [端口]
@@ -11,7 +11,7 @@
 //     （主题设置里那份「服务器备注」清单 1.19.0 已删：备注只来自 hub 这两个字段）；
 //   · 「经典」「延迟」两档**右上角常驻**一枚信息图标：点开是在线时间/价格/到期，写了公开备注就多一排小卡片；
 //   · 「详细」档公开备注挂在标题行右端（多枚小卡片）；「简约」档不显示备注、也不挂那枚图标；
-//   · 「紧凑」档并排在展开行量程栏右端（手机收成一枚图标 + 浮层）；
+//   · 「宽卡」档公开备注摊在底注右端（最多 3 枚）；「紧凑」档并排在展开行量程栏右端（手机收成一枚图标 + 浮层）；
 //   · **整页详情不摊公开备注**（只留规格与图表），但**私有备注**在那里**整段展示**（探针原本的设定）：
 //     保留换行、不做逗号拆分，块顶带一行「私有备注 · 仅自己可见」标记；
 //   · 没写备注的机器该处零占位；时间范围按 hub 的 `history_days` 生成（老 hub 按 7 天）。
@@ -447,6 +447,72 @@ let detailedBase = null
     (nb.nameBox?.w ?? 0) > 0 && Math.abs((nb.nameBox?.w ?? 0) - (nn.nameBox?.w ?? 0)) <= 1 && nb.nameClipped === nn.nameClipped,
     `关 ${nb.nameBox?.w}px/截 ${nb.nameClipped} vs 开 ${nn.nameBox?.w}px/截 ${nn.nameClipped}`)
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1200, deviceScaleFactor: 1, mobile: false })
+}
+
+/* ──────────────── ③b 宽卡档：底注右端最多 3 枚（受「备注显示位置」管） ──────────────── */
+console.log('\n── 宽卡档：底注右端摊备注小卡片，最多 3 枚；「备注显示位置」四档都照管 ──')
+/**
+ * 宽卡那一档的备注探针：备注锚点是 `[data-remark="card"]`（底注右端那一串），
+ * 与详细档标题行的 `[data-remark="title"]` 是两个位置；高度取整卡。
+ */
+const WIDE_PROBE = (name) => `JSON.stringify((() => {
+  const card = ${CARD(name)}
+  if (!card) return { missing: true }
+  const rect = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.left), r: Math.round(b.right), mid: Math.round(b.top + b.height / 2), w: Math.round(b.width | 0) } }
+  const c = card.getBoundingClientRect()
+  const strip = card.querySelector('[data-remark="card"]')
+  const chips = strip ? [...strip.querySelectorAll('[data-slot="badge"]')] : []
+  const note = [...card.querySelectorAll('span')].find((s) => /^价格|^剩余|^今天到期|^已过期|^无期限/.test(s.textContent.trim()))
+  return {
+    cardH: Math.round(c.height),
+    anchors: card.querySelectorAll('[data-remark]').length,
+    chips: chips.map((b) => b.innerText.trim()),
+    variants: chips.map((b) => b.getAttribute('data-variant')),
+    stripBox: strip ? rect(strip) : null,
+    noteBox: note ? rect(note) : null,
+    overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    text: card.innerText.split(String.fromCharCode(10)).join(' | '),
+  }
+})())`
+{
+  privateNote = ''
+  remark = ''
+  await render({ cardStyle: 'wide' }, 'wide-base')
+  const base = await json(WIDE_PROBE('节点一'))
+  check('宽卡（没写备注）：底注只有价格那一截，卡面没有备注锚点（零占位）',
+    base.anchors === 0 && base.chips.length === 0 && !!base.noteBox, JSON.stringify({ anchors: base.anchors, chips: base.chips }))
+
+  remark = SHORT
+  await render({ cardStyle: 'wide' }, 'wide-note')
+  const on = await json(WIDE_PROBE('节点一'))
+  check('宽卡（写了备注）：底注右端三枚小卡片逐枚同序', SAME(on.chips, tagsOf(SHORT)), JSON.stringify(on.chips))
+  check('宽卡（写了备注）：这几枚都是公有的样式（实心 secondary、没有锁）',
+    SAME(on.variants, tagsOf(SHORT).map(() => 'secondary')), JSON.stringify(on.variants))
+  check('宽卡（写了备注）：备注那一串在价格那一截的右边（两截不重叠）',
+    !!on.stripBox && !!on.noteBox && on.stripBox.x >= on.noteBox.r - 1,
+    `备注左沿 ${on.stripBox?.x} / 价格右沿 ${on.noteBox?.r}`)
+  check('宽卡（写了备注）：卡片只高出一档（备注小卡片比那行小字高一档，≤ 8px）',
+    Math.abs(on.cardH - base.cardH) <= 8, `开 ${on.cardH} / 关 ${base.cardH}`)
+
+  remark = MANY
+  await render({ cardStyle: 'wide' }, 'wide-many')
+  const many = await json(WIDE_PROBE('节点一'))
+  check('★ 宽卡（六枚）：底注只摊前三枚（上限 3 枚——底注只有一行，贪多会把价格挤走）',
+    SAME(many.chips, tagsOf(MANY).slice(0, 3)) && many.chips.length === 3, JSON.stringify(many.chips))
+
+  // 「备注显示位置」四档都照管：只在详情 / 都不显示 → 卡面一枚不摊；只在卡片 → 照摊（反向对照）。
+  remark = SHORT
+  await render({ cardStyle: 'wide', remarkPlacement: 'detail' }, 'wide-detail-only')
+  const dOnly = await json(WIDE_PROBE('节点一'))
+  check('宽卡「只在详情页」：卡片这一侧一枚都不摊（连锚点都没有）',
+    dOnly.anchors === 0 && dOnly.chips.length === 0, JSON.stringify({ anchors: dOnly.anchors, chips: dOnly.chips }))
+  await render({ cardStyle: 'wide', remarkPlacement: 'none' }, 'wide-none')
+  const none = await json(WIDE_PROBE('节点一'))
+  check('宽卡「都不显示」：卡面同样一枚不摊', none.anchors === 0 && none.chips.length === 0, JSON.stringify(none.chips))
+  await render({ cardStyle: 'wide', remarkPlacement: 'card' }, 'wide-card-only')
+  const cOnly = await json(WIDE_PROBE('节点一'))
+  check('宽卡「只在卡片」：照摊三枚（对照组——证明上面两条不是恒真）', SAME(cOnly.chips, tagsOf(SHORT)), JSON.stringify(cOnly.chips))
+  await shot('wide-remark-1440')
 }
 
 /* ────────────────────────────── ④ 延迟档 ────────────────────────────── */

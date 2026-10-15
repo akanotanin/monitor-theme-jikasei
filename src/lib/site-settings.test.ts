@@ -25,12 +25,12 @@ function eq(got: unknown, want: unknown, what: string) {
 
 // ── cardStyle：旧名迁移 ───────────────────────────────────────────────
 eq(cardStyleOf("detail"), "latency", '旧值 "detail" 迁到 "latency"')
-for (const v of ["classic", "latency", "detailed", "plain", "compact"]) eq(cardStyleOf(v), v, `cardStyle 保留 ${v}`)
+for (const v of ["classic", "latency", "detailed", "plain", "wide", "compact"]) eq(cardStyleOf(v), v, `cardStyle 保留 ${v}`)
 eq(cardStyleOf("nope"), "detailed", "cardStyle 认不出的值回落 DEFAULTS.cardStyle（现为「详细」）")
 eq(cardStyleOf(undefined), "detailed", "cardStyle 没存过回落 DEFAULTS.cardStyle（现为「详细」）")
 
 // ── cardStyleOrNull：访客自己挑的那一档（认不出来是 null = 没挑过，不是回落默认）──
-eq(CARD_STYLES, ["classic", "plain", "latency", "detailed", "compact"], "五档的顺序（顶栏菜单按它排）")
+eq(CARD_STYLES, ["classic", "plain", "latency", "detailed", "wide", "compact"], "六档的顺序（顶栏菜单按它排）")
 for (const v of CARD_STYLES) eq(cardStyleOrNull(v), v, `cardStyleOrNull 保留 ${v}`)
 eq(cardStyleOrNull("detail"), "latency", "访客存过旧名 detail 也要迁到 latency")
 // ★ 差别就在这一条：站点设置读坏了要退回一个能用的值（cardStyleOf → plain），
@@ -40,7 +40,7 @@ eq(cardStyleOrNull(null), null, "没存过 → null")
 eq(cardStyleOrNull(""), null, "空串 → null")
 eq(cardStyleOrNull(3), null, "数字 → null（localStorage 里什么字符串都可能）")
 eq(cardStyleOf(undefined), cardStyleOrNull(undefined) ?? DEFAULTS.cardStyle, "cardStyleOf 与 cardStyleOrNull 是同一套判据")
-eq(CARD_STYLES.length, 5, "就是五种形态")
+eq(CARD_STYLES.length, 6, "就是六种形态")
 eq(DEFAULTS.cardStyle, "detailed", "默认档是「详细」")
 eq(DEFAULTS.listTop, "bothBudget", "列表页顶部默认「两个都显示·概览卡片价值版」")
 // ★「老站明确把两行都关掉」与「从没配过」必须是两种结果——否则改默认值会把老站的两行悄悄打开。

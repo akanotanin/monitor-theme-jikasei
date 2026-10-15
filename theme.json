@@ -1,8 +1,8 @@
 {
   "name": "jikasei",
   "short": "jikasei",
-  "description": "自家制の极简探针（Monitor）主题：五种卡片形态、节点地球、分组筛选、明暗双色。",
-  "version": "1.29.1",
+  "description": "自家制の极简探针（Monitor）主题：六种卡片形态、节点地球、分组筛选、明暗双色。",
+  "version": "1.30.0",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -71,6 +71,10 @@
         {
           "value": "detailed",
           "label": "详细：在延迟之上再加在线时长、价格与到期"
+        },
+        {
+          "value": "wide",
+          "label": "宽卡：一行两张的宽卡，四格读数 + 上传下载两栏 + 总流量条"
         },
         {
           "value": "compact",

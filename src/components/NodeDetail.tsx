@@ -568,6 +568,9 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
                   // 原来 recharts 的 Brush（22px 高的拖两端把手）换成「在图上横向拖选一段」+
                   // 一枚「重置」：手机上那对手指头太细，而且这样代码少一半。
                   onZoom={(from, to) => setZoom([from, to])}
+                  // 滚轮缩放延迟范围（2026-10-15）：光标在图上滚 = 收放 Y 轴、双击复位。
+                  // 只开在整页详情——紧凑展开的图在列表里，滚轮要留给翻列表。
+                  wheelZoom={!embedded}
                   label="节点延迟走势"
                   renderTooltip={(row) => (
                     <PingTooltip active label={row.ts} rowByTs={rowByTs} probes={shownProbes} smooth={smooth} style={style} />

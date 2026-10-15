@@ -1,4 +1,4 @@
-// 拍 README 画廊里那五张「卡片形态」预览图（preview-plain / -classic / -latency / -detailed / -compact）。
+// 拍 README 画廊里那六张「卡片形态」预览图（preview-plain / -classic / -latency / -detailed / -wide / -compact）。
 // 面板缩略图是 preview.png（tools/preview-cover.mjs 生成），地球与手机那几张是 tools/shot_preview_set.mjs。
 //
 // 用法：node tools/shot_preview_styles.mjs [nodes.json=tools/globe-nodes-fixture.json] [输出目录=.]
@@ -99,7 +99,7 @@ const SETTLED = `(() => {
   return true;
 })()`
 
-const STYLES = ['plain', 'classic', 'latency', 'detailed', 'compact']
+const STYLES = ['plain', 'classic', 'latency', 'detailed', 'wide', 'compact']
 for (const style of STYLES) {
   CONFIG = { ...CONFIG, cardStyle: style }
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }, { name: 'prefers-reduced-motion', value: 'reduce' }] })

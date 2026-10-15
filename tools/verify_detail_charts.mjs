@@ -311,9 +311,9 @@ check('没有控制台异常', errors.length === 0, errors.slice(0, 2).join(' | 
 // 真站那轮也出图：同一台机器、同一时刻，改前改后各拍一张才能比。
 await shot(REAL ? 'live-detail-charts' : 'detail-charts')
 
-// ── 二、延迟页签：拖选缩放（原来 recharts 的 Brush，现在是在图上横向拖一段 + 一枚重置） ──
+// ── 二、延迟页签：拖选 / 滚轮缩放（横向拖一段 + 滚轮调 Y 范围 + 一枚「重置」/ 双击复位） ──
 if (!REAL) {
-  console.log('\n二、延迟页签（拖选缩放 / 重置）:')
+  console.log('\n二、延迟页签（拖选 / 滚轮缩放 / 重置）:')
   await js(`(() => { const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === '网络延迟'); b && b.click(); return !!b })()`)
   let latency = null
   for (let i = 0; i < 30; i++) {
@@ -373,6 +373,136 @@ if (!REAL) {
     })()`)
     check('延迟图悬停出 tooltip（线路名 + 毫秒值）', !!tip && /北京电信/.test(tip) && /ms/.test(tip), JSON.stringify(tip))
     await shot('latency-chart', 'svg[aria-label="节点延迟走势"]')
+
+    // ── 滚轮缩放（2026-10-15 新增）：纵向范围随滚轮收放、锚点不漂、夹子有界、双击复位 ──
+    // 判据全部是相对量（刻度值 / 像素位置），夹具与真站两套数据同一套判法。
+    const readXY = async () => JSON.parse(await js(`(() => {
+      const svg = document.querySelector('svg[aria-label="节点延迟走势"]')
+      if (!svg) return 'null'
+      const plot = svg.querySelector('rect[fill="transparent"]')
+      const pr = plot ? plot.getBoundingClientRect() : null
+      const sr = svg.getBoundingClientRect()
+      const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '重置')
+      const host = svg.closest('[data-chart]')
+      const hb = host ? host.getBoundingClientRect() : null
+      const ticks = [...svg.querySelectorAll('text')].filter((t) => t.getAttribute('text-anchor') === 'end')
+        .map((t) => ({ v: parseFloat(t.textContent), cy: sr.top + parseFloat(t.getAttribute('y')) }))
+      return JSON.stringify({
+        plot: pr ? { x: pr.left, y: pr.top, w: pr.width, h: pr.height } : null,
+        ticks,
+        reset: !!btn,
+        resetBox: btn ? { r: btn.getBoundingClientRect().right, t: btn.getBoundingClientRect().top, w: btn.getBoundingClientRect().width } : null,
+        hostBox: hb ? { r: hb.right, t: hb.top } : null,
+        clipped: !!svg.querySelector('g[clip-path]'),
+      })
+    })()`))
+    const spanOf = (ticks) => (ticks.length ? Math.max(...ticks.map((t) => t.v)) - Math.min(...ticks.map((t) => t.v)) : 0)
+    // 刻度对 (值, 客户端 y) 就是这套线性映射的采样点：值→y、y→值 都能插出来。
+    const byVal = (ticks) => [...ticks].sort((a, b) => b.v - a.v)
+    const yOfVal = (ticks, v) => {
+      const p = byVal(ticks)
+      if (p.length < 2) return null
+      let i = p.length - 2
+      while (i > 0 && v > p[i].v) i--
+      const a = p[i]
+      const b = p[i + 1]
+      // ★别对负的跨度用 max(1e-9, …) 当除零保护：值降序排下来 b.v - a.v 本来就是负数，
+      //   被夹成 1e-9 后除出来是 ±1e9 级的天文数字（2026-10-15 第一版就这么错的）。
+      const d = b.v - a.v
+      if (Math.abs(d) < 1e-12) return null
+      return a.cy + ((v - a.v) / d) * (b.cy - a.cy)
+    }
+    const valAtY = (ticks, cy) => {
+      const p = byVal(ticks)
+      if (p.length < 2) return null
+      let i = 0
+      while (i < p.length - 2 && cy > p[i + 1].cy) i++
+      const a = p[i]
+      const b = p[i + 1]
+      const d = b.cy - a.cy
+      if (Math.abs(d) < 1e-12) return null
+      return a.v + ((cy - a.cy) / d) * (b.v - a.v)
+    }
+    const wheelAt = (x, y, deltaY) => send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX: 0, deltaY })
+    const dblAt = async (x, y) => {
+      for (const n of [1, 2]) {
+        await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: n })
+        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: n })
+      }
+    }
+    const base0 = await readXY()
+    if (base0?.plot && base0.ticks.length >= 2) {
+      const cx = Math.round(base0.plot.x + base0.plot.w / 2)
+      const cy = Math.round(base0.plot.y + base0.plot.h / 2)
+      const span0 = spanOf(base0.ticks)
+      const anchor0 = valAtY(base0.ticks, cy)
+      await wheelAt(cx, cy, -120)
+      await sleep(350)
+      const z1 = await readXY()
+      check('滚轮上滚：延迟范围收窄（Y 刻度跨度变小）', spanOf(z1.ticks) < span0, `${span0} → ${spanOf(z1.ticks)}`)
+      const drift = Math.abs((yOfVal(z1.ticks, anchor0) ?? 1e9) - cy)
+      check('★ 缩放以光标压着的值为锚点（那个值还钉在同一行像素上）', drift <= 6, `锚点 ${anchor0}ms 漂了 ${Math.round(drift)}px`)
+      check('滚轮缩放后出现「重置」', z1.reset === true, `reset=${z1.reset}`)
+      check('★ 「重置」贴在图表右上角（4px 内贴右缘、上缘贴顶）',
+        !!z1.resetBox && !!z1.hostBox && z1.hostBox.r - z1.resetBox.r <= 8 && z1.resetBox.t - z1.hostBox.t <= 8,
+        JSON.stringify({ resetBox: z1.resetBox, hostBox: z1.hostBox }))
+      check('绘图区裁剪框在（超范围的值画不出轴外）', z1.clipped === true, `clipped=${z1.clipped}`)
+      // 连滚到底：跨度夹在 1ms 下限（刻度只取范围内的整齐数，允许和 1 差半档）
+      for (let i = 0; i < 30; i++) { await wheelAt(cx, cy, -120); if (i % 10 === 9) await sleep(90) }
+      await sleep(350)
+      const z2 = await readXY()
+      const sp2 = spanOf(z2.ticks)
+      check('连滚到底：跨度收到 1ms 下限就不收了、刻度不为负', sp2 > 0 && sp2 <= 2 && Math.min(...z2.ticks.map((t) => t.v)) >= 0, `跨度 ${sp2}ms`)
+      await shot('latency-wheel-in', 'svg[aria-label="节点延迟走势"]')
+      // 反向拉爆：顶端封顶（夹具数据顶 42ms → 封顶 = 1000ms）。锚定缩放的跨度按
+      // (1-r)+r·f 的步长长：从 1ms 滚到 1000 要 ~52 拍（lo 先贴 0、hi 再上顶），给 70 拍余量。
+      for (let i = 0; i < 70; i++) { await wheelAt(cx, cy, 120); if (i % 10 === 9) await sleep(90) }
+      await sleep(350)
+      const z3 = await readXY()
+      const hi3 = Math.max(...z3.ticks.map((t) => t.v))
+      const lo3 = Math.min(...z3.ticks.map((t) => t.v))
+      check('反滚拉爆：顶端封顶（≈1000ms）、下沿不为负', hi3 >= 900 && hi3 <= 1125 && lo3 >= 0, `顶 ${hi3} 底 ${lo3}`)
+      // 双击复位：夹具数据是静止的，刻度应逐项回到和缩放前一模一样
+      await dblAt(cx, cy)
+      await sleep(400)
+      const z4 = await readXY()
+      check('★ 双击复位：Y 刻度回到自动量程（与缩放前逐项相同）',
+        JSON.stringify(z4.ticks.map((t) => t.v)) === JSON.stringify(base0.ticks.map((t) => t.v)),
+        `${JSON.stringify(base0.ticks.map((t) => t.v))} → ${JSON.stringify(z4.ticks.map((t) => t.v))}`)
+      check('复位之后「重置」自己收掉', z4.reset === false, `reset=${z4.reset}`)
+      // 滚轮被图收走：光标在图上页面不跟着滚（压低视口让页面可滚；图外一点做对照组）
+      await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 420, deviceScaleFactor: 1, mobile: false })
+      await sleep(700)
+      // 把图滚到视口中间再开滚：直接 scrollTo(0,0) 时图在折叠线以下，滚轮点落在视口外，
+      // 事件根本到不了图（2026-10-15 第一版就是这么假红的）。
+      await js(`document.querySelector('svg[aria-label="节点延迟走势"]').scrollIntoView({ block: 'center' })`)
+      await sleep(400)
+      const p5 = await readXY()
+      if (p5?.plot) {
+        const y0 = await js('window.scrollY')
+        const wx = Math.round(p5.plot.x + p5.plot.w / 2)
+        const wy = Math.round(Math.min(Math.max(p5.plot.y + p5.plot.h / 2, 30), 400))
+        await wheelAt(wx, wy, 120)
+        await sleep(350)
+        const s1 = await js('window.scrollY')
+        await wheelAt(20, 200, 120)
+        await sleep(350)
+        const s2 = await js('window.scrollY')
+        check('★ 光标在图上：滚轮被图收走、页面不合着滚', s1 === y0, `scrollY ${y0} → ${s1}`)
+        check('对照组：图外同一滚轮页面照常滚（证明刚才不是滚不动）', s2 > y0, `scrollY ${y0} → ${s2}`)
+        await js(`document.querySelector('svg[aria-label="节点延迟走势"]').scrollIntoView({ block: 'center' })`)
+        await sleep(300)
+        const p6 = await readXY()
+        await dblAt(Math.round(p6.plot.x + p6.plot.w / 2), Math.round(Math.min(Math.max(p6.plot.y + p6.plot.h / 2, 30), 400)))
+        await sleep(300)
+      } else {
+        check('压低视口后仍拿到绘图区', false, JSON.stringify(p5))
+      }
+      await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+      await sleep(500)
+    } else {
+      check('拿到延迟图的 Y 刻度与绘图区（滚轮缩放的前提）', false, JSON.stringify(base0))
+    }
   } else {
     check('拿到延迟图的绘图区（拖选的前提）', false, '没找到 rect')
   }

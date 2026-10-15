@@ -4,6 +4,7 @@ import { Globe as GlobeIcon, Moon, Sun, Wrench } from "lucide-react"
 import { CardStyleMenu } from "@/components/CardStyleMenu"
 import { NodeCard } from "@/components/NodeCard"
 import { CompactList } from "@/components/CompactList"
+import { WideCard } from "@/components/WideCard"
 import { Globe } from "@/components/Globe"
 import { SearchBox, SearchRow } from "@/components/SearchBox"
 import { SummaryCards } from "@/components/Summary"
@@ -295,6 +296,13 @@ export default function App() {
   //   不挂（见下面那段渲染条件）——关掉的整块不该在页面上留一枚点了没落点的按钮。
   const [globeOn, toggleGlobe] = useGlobeVisible(config.globeOn)
   const [cardStyle, chooseStyle] = useCardStyle(config.cardStyle)
+
+  // 「宽卡」档会把**整页容器**收一档（1280 → 1080，顶栏 / 主区 / 页脚三处共用同一条列线）：
+  // 这一档的六块版式按 1080 容器 × 两列校准（卡片 510，与参考站同尺寸）；1280 的容器会把
+  // 卡片拉成 610，四格读数与上传下载两栏都被抻空。只收列表那一块不行 —— 顶栏与卡片会各站
+  // 一条列线（实测错开 ~100px），整页同收才是一条栅格。窄屏（≲1104px）容器本来就被视口
+  // 卡住，这一档在那里不产生差别。
+  const shell = cardStyle === "wide" ? "max-w-[1080px]" : "max-w-[1280px]"
   // 收起搜索（Esc 在空框上按的那一下）。**不清词**：收起是「让出顶栏那点宽度」，不是「别筛了」
   // —— 词留着，点开一台机器看清了再回来，那几台还在（收起态会看不见词，所以那枚放大镜会提色、
   // 悬停说明里带上词与命中数，见 SearchBox）。
@@ -504,7 +512,7 @@ export default function App() {
             「**站名优先展开、图标自己滑**」分：站名那格 max-w-[55%]（正常名字完整显示，
             只有长到离谱才轮到 truncate），搜索钉在它右边，剩下几枚图标装进一条能横向滑动的
             条带里 —— 与下面那行分组标签同一套做法：装不下就滑，不裁字、也不把整页撑宽。 */}
-        <div className="mx-auto flex max-w-[1280px] items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6">
+        <div className={`mx-auto flex ${shell} items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6`}>
           {/* The site name is the way back to the list, so a node page needs
               no back button of its own. A 32px disc of the site's icon leads
               it — `/favicon.svg` is the one address that answers with the
@@ -597,7 +605,7 @@ export default function App() {
         )}
       </header>
 
-      <main className="mx-auto w-full max-w-[1280px] flex-1 space-y-5 px-4 py-4 sm:px-6">
+      <main className={`mx-auto w-full ${shell} flex-1 space-y-5 px-4 py-4 sm:px-6`}>
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         {open !== null ? (
@@ -615,11 +623,18 @@ export default function App() {
             </p>
           )
         ) : !nodes ? (
-          // 还在等节点列表：骨架按当前形态画。紧凑形态是一行一台，用几根细条比三张大卡片更像它。
+          // 还在等节点列表：骨架按当前形态画。紧凑形态是一行一台，用几根细条比三张大卡片更像它；
+          // 宽卡形态一行两张、卡片也矮一档（~216 高），网格与高度都照它来。
           cardStyle === "compact" ? (
             <div className="space-y-2">
               {[0, 1, 2, 3, 4, 5].map((i) => (
                 <Skeleton key={i} className="h-9" />
+              ))}
+            </div>
+          ) : cardStyle === "wide" ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-56" />
               ))}
             </div>
           ) : (
@@ -673,7 +688,7 @@ export default function App() {
            页脚回到这一行署名的最简形态。）
           「Jikasei」那截点开去本主题的源码仓库 —— 新标签页打开，别把访客从状态页带走
           （链接地址与 theme.json 的 url 是同一个，见上面的 REPO_URL）。样式见 index.css 的 .theme-credit。 */}
-      <footer className="mx-auto mt-2 w-full max-w-[1280px] border-t px-4 pb-5 pt-4 sm:mt-0 sm:border-t-0 sm:px-6 sm:pb-5 sm:pt-1">
+      <footer className={`mx-auto mt-2 w-full ${shell} border-t px-4 pb-5 pt-4 sm:mt-0 sm:border-t-0 sm:px-6 sm:pb-5 sm:pt-1`}>
         <p className="theme-credit text-center sm:pr-3 sm:text-right">
           Theme:{" "}
           <a href={REPO_URL} target="_blank" rel="noreferrer">
@@ -756,8 +771,8 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
   onWarm: () => void
   /** 卡片延迟块要显示哪几条线路（ping 任务名，换行分隔）；空串 = 自动。 */
   latencyLines: string
-  /** 卡片形态：compact = 一行一台的表格；detailed = 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟；plain 与 classic 版式相同、只换一套视觉处理。 */
-  cardStyle: "classic" | "latency" | "detailed" | "plain" | "compact"
+  /** 卡片形态：compact = 一行一台的表格；detailed = 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟；plain 与 classic 版式相同、只换一套视觉处理；wide = 一行两张的宽卡（六块版式，见 WideCard）。 */
+  cardStyle: "classic" | "latency" | "detailed" | "plain" | "wide" | "compact"
   /** hub 的历史保留天数：透给「紧凑」形态展开行里那块详情图（时间范围那排按钮按它生成）。 */
   historyDays?: number
   /** 主题设置里的「备注显示位置」：卡片那一侧要不要摊备注（见 @/lib/site-settings）。 */
@@ -809,6 +824,14 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
         <p className="py-16 text-center text-sm text-muted-foreground">还没有节点</p>
       ) : cardStyle === "compact" ? (
         <CompactList nodes={list} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} remarkPlacement={remarkPlacement} terms={terms} cursorId={cursorId} />
+      ) : cardStyle === "wide" ? (
+        // 「宽卡」：一行两张（768 起两列；窄屏一列）—— 卡片是按参考站校准过的六块版式，
+        // 见 @/components/WideCard。列表这一层不再有 lg / xl 那两档加列。
+        <div data-card-style="wide" className="grid items-start gap-3 md:grid-cols-2">
+          {list.map((n) => (
+            <WideCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} remarkPlacement={remarkPlacement} terms={terms} selected={n.id === cursorId} />
+          ))}
+        </div>
       ) : (
         <div data-card-style={cardStyle} className={`grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 ${cardStyle === "detailed" ? "" : "xl:grid-cols-4"}`}>
           {list.map((n) => (

@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, cpuName, daysUntil, despike, osName, pair, quarters, rate, timeTicks, uptime,
+  axisBytes, axisTop, bytes, CYCLE_SHORT, CYCLES, cpuName, daysUntil, despike, osName, pair, quarters, rate, timeTicks, uptime,
 } from "./format.ts"
 
 let failed = 0
@@ -138,6 +138,14 @@ eq(uptime(2 * 86400 + 5 * 3600), "2 天 5 小时", "超过一天不再写分钟"
 
 eq(osName("Debian GNU/Linux 12 (bookworm)"), "Debian 12", "发行版名去掉代号")
 eq(cpuName("Intel(R) Xeon(R) CPU E5-2680 8-Core Processor"), "Intel Xeon E5-2680", "CPU 名去掉商标和核数")
+
+// CYCLE_SHORT：卡片底注那一档的短写法（整页详情的 CYCLES 仍写「月付」）。两组键必须一致 ——
+// 卡片底注是在 CYCLES 的键上现查短写法的，缺一个键时同一台机器在详情页与卡片上就会一个写
+// 「月付」、一个印出「价格 ¥x/」这种断尾。
+eq(CYCLE_SHORT.monthly, "月", "月付短写法")
+eq(CYCLE_SHORT.yearly, "年", "年付短写法")
+eq(CYCLE_SHORT.once, "一次性", "一次性不缩")
+eq(Object.keys(CYCLE_SHORT).sort(), Object.keys(CYCLES).sort(), "短写法与 CYCLES 是同一组键")
 
 if (failed) {
   console.error(`\n${failed} 项不通过`)

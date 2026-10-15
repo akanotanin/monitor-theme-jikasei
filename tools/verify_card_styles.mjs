@@ -1,8 +1,8 @@
-// 验「卡片形态」五档（经典 / 简约 / 延迟 / 详细 / 紧凑）在真实渲染里各自的形状，以及旧值 detail → latency 的迁移。
+// 验「卡片形态」六档（经典 / 简约 / 延迟 / 详细 / 宽卡 / 紧凑）在真实渲染里各自的形状，以及旧值 detail → latency 的迁移。
 //
 // 用法：node tools/verify_card_styles.mjs [port]
 //
-// 为什么要它：各档的差别全在 NodeCard / CompactList 里的条件分支上，改一处分支很容易让另一档跟着变
+// 为什么要它：各档的差别全在 NodeCard / WideCard / CompactList 里的条件分支上，改一处分支很容易让另一档跟着变
 // （或让 classic 悄悄开始拉延迟数据）。这里用本机静态伺服 + 桩 /api/*（含带 ping 历史的
 // /api/nodes/{id}/metrics）跑真 React 组件，逐档断言 DOM 形状、访客端请求数与列表上的读数：
 //
@@ -12,6 +12,9 @@
 //             名字 600 / 格行距 12px；同样不发 ping 请求（两边都钉住，才叫「只换了这一套」）
 //   延迟   —— 网络合成一行 + 三网延迟块；每节点恰好 1 次 ping 请求；指定线路按填写顺序、名字对不上跳过
 //   详细   —— 元信息行 + 三枚读数盒 + 三网延迟块；标题行不再有状态点；网格不再有 xl 四列
+//   宽卡   —— 六块版式（旗子+名字 + 系统行 + 四格读数 + 上传下载两栏 + 总流量条 + 底注）；列表收成两列
+//             （768 起）、**整页容器收 1080**（顶栏 / 主区 / 卡列一条线，卡片 = 510）；读数 13px/600、
+//             条 3px（前景 70%）；不带状态点 / 徽章；不发 ping 请求。逐块细断见 tools/verify_card_form.mjs
 //   紧凑   —— 一张表、一行一台，表头与列随屏宽收放；不发 ping 请求
 //   旧值   —— 配置里存 detail（1.2.9 的值）时必须渲染成「延迟」，不能掉回经典
 //   非法值 —— 回落出厂默认档（theme.json 的 cardStyle.default，2026-10-06 起是「详细」）
@@ -192,6 +195,11 @@ const PROBE = `JSON.stringify((() => {
     grid: document.querySelector('.grid')?.className ?? '',
     netRow: q('[data-net="row"]'),
     netGrid: q('[data-net="grid"]'),
+    duo: q('[data-net="duo"]'),
+    metrics: q('[data-metrics]'),
+    status: q('[data-status]'),
+    meta: q('[data-meta]'),
+    latency: q('[data-latency]'),
     // 经典档底部那 2×2 四格：格子数 / 栅格列数 / 有没有 svg（箭头应该是文字）/ 两端配色。
     // 找不到时返回**空壳**而不是 null：否则旧构建上第一条断言就抛 TypeError，
     // 把后面几十条一起带走，反向自测时看不出到底该报哪些（这条踩过）。
@@ -549,6 +557,77 @@ let classicStyle = null
   check('详细：每节点恰好 1 次延迟请求', ping === 2, `实测 ${ping} 次`)
   check('详细：网格不再有四列（卡片更宽）', !dom.grid.includes('xl:grid-cols-4'), dom.grid)
   check('详细：经典的四格不在', dom.netRow === 0 && dom.netGrid === 0, `一行 ${dom.netRow} / 四格 ${dom.netGrid}`)
+}
+
+/* 3b) 宽卡（六块版式）：逐格量它的读数尺子；逐块细断在 tools/verify_card_form.mjs */
+// 四格读数取数**按结构**（card → [data-metrics] → 每格三个 div：表名 / 读数 / 条），不认 Tailwind 类名。
+const WIDE_CELLS = `JSON.stringify((() => {
+  const card = [...document.querySelectorAll('[role=button]')].find((c) => /CPU/.test(c.innerText))
+  if (!card) return null
+  const m = card.querySelector('[data-metrics]')
+  const cells = [...m.children]
+  const cs = (el) => el ? getComputedStyle(el) : null
+  const bar = cells[0].querySelectorAll('div')[2]
+  const fill = bar.firstElementChild
+  // 填色的**有效颜色**：合成到卡片底之后才是访客看到的那一笔（与上面几档同一手法）。
+  const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d')
+  x.fillStyle = cs(card).backgroundColor; x.fillRect(0, 0, 1, 1)
+  x.fillStyle = cs(fill).backgroundColor; x.fillRect(0, 0, 1, 1)
+  const d = x.getImageData(0, 0, 1, 1).data
+  return {
+    cols: cs(m).gridTemplateColumns.split(' ').filter(Boolean).length,
+    divider: cs(m).borderTopWidth,
+    labels: cells.map((el) => el.children[0].textContent),
+    value: cells[0].children[1].textContent,
+    valueSize: cs(cells[0].children[1]).fontSize,
+    valueWeight: cs(cells[0].children[1]).fontWeight,
+    barH: Math.round(bar.getBoundingClientRect().height),
+    fill: [d[0], d[1], d[2]],
+    // 原始样本（只填一层）：读 fill 自己的 alpha，判「半透明」口径
+    fillAlpha: (() => { const c2 = document.createElement('canvas'); c2.width = c2.height = 1; const y = c2.getContext('2d'); y.fillStyle = cs(fill).backgroundColor; y.fillRect(0, 0, 1, 1); return +(y.getImageData(0, 0, 1, 1).data[3] / 255).toFixed(2) })(),
+  }
+})())`
+{
+  const { dom, ping } = await render({ cardStyle: 'wide', listTop: 'none' }, 'wide')
+  check('宽卡：四读数格与上传下载两栏都在；其余几档的块一个都不在',
+    dom.metrics === 1 && dom.duo === 1 && dom.netRow === 0 && dom.netGrid === 0 && dom.meta === 0 && dom.latency === 0 && dom.infoBox === 0 && dom.polylines === 0,
+    `读数格 ${dom.metrics} / 两栏 ${dom.duo} / 四格 ${dom.netGrid} / 一行 ${dom.netRow} / 元信息 ${dom.meta} / 延迟 ${dom.latency} / 盒 ${dom.infoBox}`)
+  check('宽卡：身份行不带状态点（与其余形态同一口径，2026-10-15 起撤掉）', dom.status === 0, `点 ${dom.status}`)
+  const cells = JSON.parse(await evalJS(WIDE_CELLS))
+  check('宽卡：四格一列到底、四列、上面一条分隔线',
+    !!cells && cells.cols === 4 && Number.parseFloat(cells.divider) >= 1,
+    `cols=${cells?.cols} divider=${cells?.divider}`)
+  check('宽卡：表名依次 CPU / 内存 / 存储 / 负载',
+    !!cells && JSON.stringify(cells.labels) === JSON.stringify(['CPU', '内存', '存储', '负载']),
+    JSON.stringify(cells?.labels))
+  check('宽卡：读数是两小数百分比、13px / 600、条 3px',
+    !!cells && cells.value === '12.50%' && cells.valueSize === '13px' && cells.valueWeight === '600' && cells.barH === 3,
+    JSON.stringify({ value: cells?.value, size: cells?.valueSize, weight: cells?.valueWeight, barH: cells?.barH }))
+  check('★ 宽卡：条的填色是前景色 70%（灰、半透明 —— 与经典 / 简约同一族，不是那支绿）',
+    !!cells && cells.fillAlpha < 1 && Math.max(...cells.fill) - Math.min(...cells.fill) <= 12 &&
+    !(cells.fill[1] > cells.fill[0] + 15 && cells.fill[1] > cells.fill[2] + 15),
+    JSON.stringify({ fill: cells?.fill, alpha: cells?.fillAlpha }))
+  check('宽卡：底注里价格 / 到期那一截在（价格 ¥12.50/月 · 剩余 95 天）',
+    /价格 ¥12\.50\/月/.test(dom.text) && /剩余 95[\s\u00A0]天/.test(dom.text), dom.text)
+  check('宽卡：不发延迟请求（这一档不含三网延迟）', ping === 0, `实测 ${ping} 次`)
+  check('宽卡：列表收成两列（768 起）——不再是三列 / 四列',
+    dom.grid.includes('md:grid-cols-2') && !dom.grid.includes('lg:grid-cols-3') && !dom.grid.includes('xl:grid-cols-4'), dom.grid)
+  // 宽度与列线：这一档把**整页容器**收 1080（顶栏 / 主区 / 卡列同一条线），卡片 = 510。
+  //   「只收列表那一块」的方案在这里会红：顶栏还是 1280、与卡列错开 ~100px。
+  const shellInfo = JSON.parse(await evalJS(`(() => {
+    const r = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.x), w: Math.round(b.width) } }
+    const h = document.querySelector('header > div')
+    const m = document.querySelector('main')
+    const g = document.querySelector('[data-card-style="wide"]')
+    const cards = [...document.querySelectorAll('[data-node-card]')]
+    return JSON.stringify({ header: h ? r(h) : null, main: m ? r(m) : null, grid: g ? r(g) : null, card: cards[0] ? r(cards[0]) : null, win: innerWidth })
+  })()`))
+  check('★ 宽卡：整页容器收 1080 —— 顶栏与主区同一条列线，卡片网格紧贴主区左内缘',
+    shellInfo.header?.w === 1080 && shellInfo.main?.w === 1080 &&
+    shellInfo.header?.x === shellInfo.main?.x && Math.abs((shellInfo.grid?.x ?? -99) - ((shellInfo.main?.x ?? 0) + 24)) <= 1,
+    JSON.stringify(shellInfo))
+  check('★ 宽卡：卡片宽 510（1080 容器 × 两列 − 12 间距），不再是 1280 容器下的 610',
+    Math.abs((shellInfo.card?.w ?? 0) - 510) <= 2, `卡宽 ${shellInfo.card?.w}`)
 }
 
 

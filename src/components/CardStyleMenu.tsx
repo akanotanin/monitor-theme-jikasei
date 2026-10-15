@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { Activity, AlignJustify, Check, Grid2x2, LayoutGrid, Rows3, Table } from "lucide-react"
+import { Activity, AlignJustify, Check, Grid2x2, LayoutGrid, RectangleHorizontal, Rows3, Table } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import type { ThemeConfig } from "@/lib/site-settings"
@@ -8,7 +8,7 @@ import type { ThemeConfig } from "@/lib/site-settings"
 type CardStyle = ThemeConfig["cardStyle"]
 
 /**
- * 顶栏那枚「卡片形态」菜单：访客自己挑列表用哪一种排法（五种与后台设置里那五档一一对应、
+ * 顶栏那枚「卡片形态」菜单：访客自己挑列表用哪一种排法（六种与后台设置里那六档一一对应、
  * 名字也照抄，站长在后台选了哪档，访客在这儿的同一行上会看到一枚「默认」）。
  *
  * 为什么是"图标 + 菜单"而不是页面上摆一行分段控件：这一行属于**看的人**的偏好，不是内容；
@@ -23,6 +23,7 @@ const STYLES: { value: CardStyle; label: string; hint: string; Icon: typeof Grid
   { value: "plain", label: "简约", hint: "网络合成一行，标签提亮、进度条更细，不含延迟", Icon: Rows3 },
   { value: "latency", label: "延迟", hint: "网络一行，下方带三网延迟", Icon: Activity },
   { value: "detailed", label: "详细", hint: "在延迟之上再加在线时长、价格与到期", Icon: AlignJustify },
+  { value: "wide", label: "宽卡", hint: "一行两张的宽卡：四格读数、上传下载两栏与总流量条，底注摊价格与备注", Icon: RectangleHorizontal },
   { value: "compact", label: "紧凑", hint: "一行一台的表格，密度最高", Icon: Table },
 ]
 

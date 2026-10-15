@@ -415,6 +415,11 @@
    地区列表（.globe-reg）行距只有 8px，上下各撑 4px 到 28px 就不重叠了，再大就得动视觉。 */
 .tap { position: relative; }
 .tap::before { content: ""; position: absolute; border-radius: inherit; }
+/* ★ 同一个元素同时戴 `tap` 和 `absolute` 时，`absolute` 必须赢 —— 与上面 search-clear 那条
+   是同一类问题（2026-10-12）的镜像：两个都是单类选择器、`.tap` 又在 Tailwind 层之后，靠顺序
+   裁决必输。本轮受害者是延迟图右上角那枚「重置」：它因此掉回文档流、落在图下方左缘
+   （2026-10-15 在护栏里量到 y 比图表容器顶低 700+px）。双类选择器（0,2,0）与顺序无关。 */
+.tap.absolute { position: absolute; }
 .tap-9::before { inset: -4px; }
 .tap-8::before { inset: -6px; }
 .tap-10::before { inset: -2px; }

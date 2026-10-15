@@ -14,7 +14,7 @@ for t in verify_globe_colors verify_globe_coverage verify_globe_land verify_glob
          verify_appearance verify_icons verify_touch_targets verify_footer_credit \
          verify_search verify_detail_charts verify_title verify_farm_entry \
          verify_latency_range verify_peek_latency verify_detail_preload \
-         verify_public_remark verify_card_style_menu verify_card_styles \
+         verify_public_remark verify_card_style_menu verify_card_styles verify_card_form \
          verify_card_expiry_fit verify_offline_last \
          verify_globe_layout verify_summary verify_globe \
          verify_globe_scale verify_offline_time verify_visibility \

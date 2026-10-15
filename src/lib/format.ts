@@ -135,6 +135,22 @@ export const CYCLES: Record<string, string> = {
   once: "一次性",
 }
 
+/**
+ * 同一组周期的**短写法**，给卡片底注那种一行小字用：`价格 ¥47.00/年`（「宽卡」形态的
+ * 底注、以及整页详情里那些一行就写完的地方）。
+ * 与 CYCLES 是同一组键（两处一起改，format.test.ts 钉住了这一点）；键认不出来时不写周期，
+ * 只留金额 —— 老 hub 或手填的值不该把「/undefined」印到卡片上。
+ */
+export const CYCLE_SHORT: Record<string, string> = {
+  monthly: "月",
+  quarterly: "季",
+  semiannual: "半年",
+  yearly: "年",
+  biennial: "两年",
+  triennial: "三年",
+  once: "一次性",
+}
+
 // Hoisted out of `clock`: recharts calls a tickFormatter for every sample when
 // laying out an axis rather than once per tick drawn, and constructing an Intl
 // formatter per call was the largest single cost on the detail page -- 348 ms of

@@ -191,6 +191,37 @@ if (has7) {
   check('7 天窗口画出了曲线', d.curves > 0, `curves=${d.curves}`)
   check('x 轴按日期打刻度（不是 24 小时内的时刻）', d.ticks.length > 0 && d.ticks.every(hasDate) && !d.ticks.some(clockOnly), `ticks=${d.ticks.join(' ')} | 全部文本=${d.texts.join(' ')}`)
   check('y 轴有 ms 刻度', d.ytick.length > 0 && d.ytick.every((t) => t.endsWith('ms')), `y=${d.ytick.join(' ')}`)
+  // ── 滚轮缩放冒烟（2026-10-15 新增）：真站只断相对量——收窄、复位、按钮收掉 ──
+  const yTicksOf = async () => JSON.parse(await evalJS(`(() => {
+    const svg = document.querySelector('svg[aria-label="节点延迟走势"]')
+    if (!svg) return 'null'
+    const sr = svg.getBoundingClientRect()
+    return JSON.stringify([...svg.querySelectorAll('text')].filter((t) => t.getAttribute('text-anchor') === 'end')
+      .map((t) => ({ v: parseFloat(t.textContent), y: sr.top + parseFloat(t.getAttribute('y')) })))
+  })()`))
+  const plotPt = await evalJS(`(() => { const r = document.querySelector('svg[aria-label="节点延迟走势"] rect[fill="transparent"]')?.getBoundingClientRect(); return r ? JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }) : '' })()`)
+  if (plotPt) {
+    const pt = JSON.parse(plotPt)
+    const ta = await yTicksOf()
+    const spanA = Math.max(...ta.map((t) => t.v)) - Math.min(...ta.map((t) => t.v))
+    await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: pt.x, y: pt.y, deltaX: 0, deltaY: -120 })
+    await sleep(350)
+    const tb = await yTicksOf()
+    const spanB = Math.max(...tb.map((t) => t.v)) - Math.min(...tb.map((t) => t.v))
+    check('滚轮上滚：延迟范围收窄', spanB < spanA, `${spanA}ms → ${spanB}ms`)
+    check('滚轮缩放后出现「重置」', await evalJS(`!![...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '重置')`) === true)
+    for (const n of [1, 2]) {
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pt.x, y: pt.y, button: 'left', buttons: 1, clickCount: n })
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pt.x, y: pt.y, button: 'left', buttons: 0, clickCount: n })
+    }
+    await sleep(450)
+    const tc = await yTicksOf()
+    const spanC = Math.max(...tc.map((t) => t.v)) - Math.min(...tc.map((t) => t.v))
+    const resetGone = await evalJS(`![...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '重置')`)
+    check('双击复位：回到自动量程（刻度跨度回来、按钮收掉）', resetGone === true && spanC > spanB, `spanB=${spanB} spanC=${spanC} resetGone=${resetGone}`)
+  } else {
+    check('拿到延迟图绘图区（滚轮缩放的前提）', false)
+  }
   // 错误文案与「这段时间没有延迟数据」都是失败态。
   const bad = await evalJS(`document.body.innerText.includes('读取历史数据失败') || document.body.innerText.includes('这段时间没有延迟数据')`)
   check('没有失败/空数据文案', !bad)

@@ -1,5 +1,5 @@
 // 「卡片形态」那枚菜单的验收：本机伺服 dist/ + 桩 /api/*（含延迟数据），用 headless Chrome
-// 把「访客自己切换五种形态」这条路走一遍。
+// 把「访客自己切换六种形态」这条路走一遍。
 //
 // 用法：node tools/verify_card_style_menu.mjs [截图目录=shots/card-style]
 //   先 `npm run build` —— 验的是 dist/，不是源码。
@@ -7,6 +7,7 @@
 // 五条最要紧的断言：
 //   · **点了哪一档，卡片真的换成了那一档**（不是只把菜单打个勾）。判据用**结构**：
 //     经典 = 2×2 四格（`[data-net=grid]`）、简约/延迟 = 一行两段（`[data-net=row]`）、
+//     宽卡 = 四读数格 + 上传下载两栏（`[data-metrics]` / `[data-net=duo]`；**不带**状态点）、
 //     延迟与详细才摊三网延迟（`[data-latency]`）、详细才多那一行元信息（`[data-meta]`）、
 //     紧凑 = 一行一台的表格。任何一条只按类名找，改版后会静默失配。
 //   · **访客的选择一个字节都不进 hub**（桩服务器数着非 GET 请求）：它是访客偏好（localStorage），
@@ -168,6 +169,9 @@ const READ = `(() => {
     cards: document.querySelectorAll('[data-slot="card"][role="button"]').length,
     netGrid: document.querySelectorAll('[data-net="grid"]').length,
     netRow: document.querySelectorAll('[data-net="row"]').length,
+    duo: document.querySelectorAll('[data-net="duo"]').length,
+    metrics: document.querySelectorAll('[data-metrics]').length,
+    status: document.querySelectorAll('[data-status]').length,
     latency: document.querySelectorAll('[data-latency]').length,
     meta: document.querySelectorAll('[data-meta]').length,
     tableHead: table ? table.querySelector('thead').innerText.replace(/\\s+/g, ' ').trim() : null,
@@ -193,7 +197,7 @@ const open = async (opts = {}) => {
 }
 
 /**
- * ★ 五种形态各自的**结构判据**：`all` = 每一张卡片都有它，`none` = 一张都没有。
+ * ★ 六种形态各自的**结构判据**：`all` = 每一张卡片都有它，`none` = 一张都没有。
  * 写成"每张都有"而不是写死个数：整页有几张卡是数据决定的，写死 1 会在节点数一变就假失败
  * （第一版就是这么写的，三张卡时 net-row 是 3，于是每一条都红）。
  */
@@ -202,7 +206,8 @@ const SHAPE = {
   plain: { all: ['netRow'], none: ['netGrid', 'latency', 'meta'] },
   latency: { all: ['netRow', 'latency'], none: ['netGrid', 'meta'] },
   detailed: { all: ['latency', 'meta'], none: ['netGrid', 'netRow'] },
-  compact: { all: [], none: ['netGrid', 'netRow', 'latency', 'meta'], table: true },
+  wide: { all: ['metrics', 'duo'], none: ['status', 'netGrid', 'netRow', 'latency', 'meta'] },
+  compact: { all: [], none: ['netGrid', 'netRow', 'duo', 'latency', 'meta'], table: true },
 }
 const shapeOk = (st, style) => {
   const want = SHAPE[style]
@@ -213,8 +218,8 @@ const shapeOk = (st, style) => {
   if (want.table && !st.tableHead) return false
   return true
 }
-const shapeWhy = (st) => `卡 ${st.cards} 张 / net-grid=${st.netGrid} net-row=${st.netRow} latency=${st.latency} meta=${st.meta} table=${!!st.tableHead}`
-const LABELS = { classic: '经典', plain: '简约', latency: '延迟', detailed: '详细', compact: '紧凑' }
+const shapeWhy = (st) => `卡 ${st.cards} 张 / net-grid=${st.netGrid} net-row=${st.netRow} duo=${st.duo} 读数格=${st.metrics} 状态点=${st.status} latency=${st.latency} meta=${st.meta} table=${!!st.tableHead}`
+const LABELS = { classic: '经典', plain: '简约', latency: '延迟', detailed: '详细', wide: '宽卡', compact: '紧凑' }
 
 console.log('\n=== 一、站长设置 = 简约（默认档），访客没选过 ===')
 let s = await open()
@@ -225,7 +230,7 @@ check('★ 访客没选过 → 列表就是站长设置的那一档（简约）'
 check('顶栏顺序：登录 → 卡片形态 → 地球 → 切换主题', JSON.stringify(s.icons) === JSON.stringify(['登录', '卡片形态', '隐藏节点地球', '切换主题']), JSON.stringify(s.icons))
 check('访客还没选择，localStorage 里没有记录', s.stored === null, String(s.stored))
 
-console.log('\n=== 二、打开菜单：五档、名字与顺序、默认标在哪 ===')
+console.log('\n=== 二、打开菜单：六档、名字与顺序、默认标在哪 ===')
 await js(`document.querySelector('.card-style-toggle').click()`)
 await sleep(250)
 s = JSON.parse(await js(READ))
@@ -235,10 +240,10 @@ check('点一下打开', s.toggle?.expanded === 'true' && s.menu === true)
 check('★ 菜单整块可见（没有被任何 overflow 祖先裁掉，也没有被盖住）',
   !!s.menu && !!s.menuKept && s.menuKept.w === s.menuBox.w && s.menuKept.h === s.menuBox.h && s.menuHit === true,
   `露出 ${s.menuKept?.w}×${s.menuKept?.h} / 应为 ${s.menuBox?.w}×${s.menuBox?.h}；最上层是菜单自己=${s.menuHit}${s.menuKept?.cut?.length ? '；裁剪者 ' + s.menuKept.cut.join(', ') : ''}`)
-check('五种形态一个不多一个不少，顺序与 CARD_STYLES 一致',
-  JSON.stringify(s.options.map((o) => o.value)) === JSON.stringify(['classic', 'plain', 'latency', 'detailed', 'compact']),
+check('六种形态一个不多一个不少，顺序与 CARD_STYLES 一致',
+  JSON.stringify(s.options.map((o) => o.value)) === JSON.stringify(['classic', 'plain', 'latency', 'detailed', 'wide', 'compact']),
   JSON.stringify(s.options.map((o) => o.value)))
-check('名字与后台设置里那五档逐字一致',
+check('名字与后台设置里那六档逐字一致',
   JSON.stringify(s.options.map((o) => o.label)) === JSON.stringify(Object.values(LABELS)),
   JSON.stringify(s.options.map((o) => o.label)))
 check('每一行都有图标与悬停说明', s.options.every((o) => o.icons >= 1 && o.hint), JSON.stringify(s.options.map((o) => [o.icons, o.hint])))
@@ -248,7 +253,7 @@ await shot('01-menu-open.png')
 
 console.log('\n=== 三、逐档点一遍：卡片真的换成那一档 ===')
 const pick = (v) => js(`(() => { const b = document.querySelector('[data-style-option="${v}"]'); if (!b) return false; b.click(); return true })()`)
-for (const style of ['classic', 'plain', 'latency', 'detailed', 'compact']) {
+for (const style of ['classic', 'plain', 'latency', 'detailed', 'wide', 'compact']) {
   writes = []
   pings = 0
   // 菜单可能还开着（上一段就是开着收尾的）：只在"没开"时才点开，否则这一下会把它关掉。
@@ -273,6 +278,7 @@ for (const style of ['classic', 'plain', 'latency', 'detailed', 'compact']) {
   if (style === 'compact') { check('  紧凑档的表头是那一行（名称/系统/在线…）', (s.tableHead || '').indexOf('名称') === 0, String(s.tableHead)); await shot('02-compact.png') }
   if (style === 'classic') await shot('03-classic.png')
   if (style === 'detailed') await shot('04-detailed.png')
+  if (style === 'wide') await shot('06-wide.png')
 }
 
 console.log('\n=== 四、挑成与站长设置相同的那一档 = 删掉记录（重新跟着站长走） ===')
