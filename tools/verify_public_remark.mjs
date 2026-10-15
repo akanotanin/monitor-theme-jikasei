@@ -11,7 +11,7 @@
 //     （主题设置里那份「服务器备注」清单 1.19.0 已删：备注只来自 hub 这两个字段）；
 //   · 「经典」「延迟」两档**右上角常驻**一枚信息图标：点开是在线时间/价格/到期，写了公开备注就多一排小卡片；
 //   · 「详细」档公开备注挂在标题行右端（多枚小卡片）；「简约」档不显示备注、也不挂那枚图标；
-//   · 「宽卡」档公开备注摊在底注右端（最多 3 枚）；「紧凑」档并排在展开行量程栏右端（手机收成一枚图标 + 浮层）；
+//   · 「宽卡」档公开备注摊在底注右端（最多 3 枚），底注恒定占位（卡片高度与有没有备注无关）；「紧凑」档并排在展开行量程栏右端（手机收成一枚图标 + 浮层）；
 //   · **整页详情不摊公开备注**（只留规格与图表），但**私有备注**在那里**整段展示**（探针原本的设定）：
 //     保留换行、不做逗号拆分，块顶带一行「私有备注 · 仅自己可见」标记；
 //   · 没写备注的机器该处零占位；时间范围按 hub 的 `history_days` 生成（老 hub 按 7 天）。
@@ -479,8 +479,8 @@ const WIDE_PROBE = (name) => `JSON.stringify((() => {
   remark = ''
   await render({ cardStyle: 'wide' }, 'wide-base')
   const base = await json(WIDE_PROBE('节点一'))
-  check('宽卡（没写备注）：底注只有价格那一截，卡面没有备注锚点（零占位）',
-    base.anchors === 0 && base.chips.length === 0 && !!base.noteBox, JSON.stringify({ anchors: base.anchors, chips: base.chips }))
+  check('宽卡（没写备注）：底注只有价格那一截，备注槽在但一枚不摊（恒定占位）',
+    base.anchors === 1 && base.chips.length === 0 && !!base.noteBox, JSON.stringify({ anchors: base.anchors, chips: base.chips }))
 
   remark = SHORT
   await render({ cardStyle: 'wide' }, 'wide-note')
@@ -491,8 +491,8 @@ const WIDE_PROBE = (name) => `JSON.stringify((() => {
   check('宽卡（写了备注）：备注那一串在价格那一截的右边（两截不重叠）',
     !!on.stripBox && !!on.noteBox && on.stripBox.x >= on.noteBox.r - 1,
     `备注左沿 ${on.stripBox?.x} / 价格右沿 ${on.noteBox?.r}`)
-  check('宽卡（写了备注）：卡片只高出一档（备注小卡片比那行小字高一档，≤ 8px）',
-    Math.abs(on.cardH - base.cardH) <= 8, `开 ${on.cardH} / 关 ${base.cardH}`)
+  check('★ 宽卡（写了备注）：卡片高度与没写时完全相同（底注恒定占位；小卡片收进那一行）',
+    Math.abs(on.cardH - base.cardH) <= 1, `开 ${on.cardH} / 关 ${base.cardH}`)
 
   remark = MANY
   await render({ cardStyle: 'wide' }, 'wide-many')
@@ -504,11 +504,11 @@ const WIDE_PROBE = (name) => `JSON.stringify((() => {
   remark = SHORT
   await render({ cardStyle: 'wide', remarkPlacement: 'detail' }, 'wide-detail-only')
   const dOnly = await json(WIDE_PROBE('节点一'))
-  check('宽卡「只在详情页」：卡片这一侧一枚都不摊（连锚点都没有）',
-    dOnly.anchors === 0 && dOnly.chips.length === 0, JSON.stringify({ anchors: dOnly.anchors, chips: dOnly.chips }))
+  check('宽卡「只在详情页」：卡片这一侧一枚都不摊（备注槽空着，卡片照样等高）',
+    dOnly.anchors === 1 && dOnly.chips.length === 0, JSON.stringify({ anchors: dOnly.anchors, chips: dOnly.chips }))
   await render({ cardStyle: 'wide', remarkPlacement: 'none' }, 'wide-none')
   const none = await json(WIDE_PROBE('节点一'))
-  check('宽卡「都不显示」：卡面同样一枚不摊', none.anchors === 0 && none.chips.length === 0, JSON.stringify(none.chips))
+  check('宽卡「都不显示」：卡面同样一枚不摊', none.anchors === 1 && none.chips.length === 0, JSON.stringify(none.chips))
   await render({ cardStyle: 'wide', remarkPlacement: 'card' }, 'wide-card-only')
   const cOnly = await json(WIDE_PROBE('节点一'))
   check('宽卡「只在卡片」：照摊三枚（对照组——证明上面两条不是恒真）', SAME(cOnly.chips, tagsOf(SHORT)), JSON.stringify(cOnly.chips))

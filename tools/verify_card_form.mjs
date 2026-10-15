@@ -7,7 +7,8 @@
 //      负载的读数是一分钟均值、条按「满载的几成」（load / 核数）；
 //   ④ 上传 / 下载两栏（左上传右下载、中间竖线）：累计总量 + 实时速率；
 //   ⑤ 总流量：左「已用 / 额度」、右「流量重置：每月 N 日」（无额度写 N/A），下面一条全宽带；
-//   ⑥ 底注：价格 / 到期在左、备注小卡片在右（**最多 3 枚**；没写就整行不占位）。
+//   ⑥ 底注：价格 / 到期在左、备注小卡片在右（**最多 3 枚**；整行恒定占位）；
+//   全卡高度不随内容变（有备注 / 没备注 / 没价格 / 掉线一律等高，见 ⑦）。
 //
 // 「备注显示位置」那一层（只在详情 / 都不显示 等）在 tools/verify_public_remark.mjs 的宽卡段；
 // 档位菜单/存储那一路在 tools/verify_card_style_menu.mjs；形状第一层在 tools/verify_card_styles.mjs。
@@ -277,15 +278,24 @@ check('备注小卡片与底注同一行（右侧、不与价格那截重叠）'
 // ⑦ 从未接入 + 版面
 console.log('\n⑦ 从未接入与版面')
 check('从未接入那台：只有身份行 + 一行说明，没有读数区', never?.hint === true && never.cells === null, `hint=${never?.hint}`)
-// 底注「有哪截写哪截」：没有价格 / 到期 / 备注的那台整行不占位，所以它比邻居矮；有底注的那几台
-// 高度几乎一致 —— 差出来的几像素来自两处：备注小卡片自己 22px 比那行小字高一档（+6）、
-// 离线徽章比名字行高 2px（+2）。
+// ★底注**恒定占位**（2026-10-16 站长定的新口径，与 kanso 看齐）：有备注 / 没备注、有价格 / 没价格，
+// 卡片一律等高 —— 从前那几像素差来自两处：备注小卡片自己 22px 比底注那行小字高一档（+6）、
+// 没底注的那台整行不占位（-22）。现在小卡片收成 16px 紧凑档、底注行恒定占位（h-4），两处都钉平。
+// 从未接入那台（没有读数区）本来就是另一种卡型，不参与这条判据。
 {
-  const withFoot = cards.filter((c) => c.cells && (c.note || c.chips.length > 0)).map((c) => c.box.h)
-  const withoutFoot = cards.filter((c) => c.cells && !c.note && !c.chips.length).map((c) => c.box.h)
-  check('底注有哪截写哪截：没底注的那台更矮，有底注的几台高度几乎一致（相差 ≤ 8px）',
-    Math.max(...withFoot) - Math.min(...withFoot) <= 8 && withoutFoot.length > 0 && Math.max(...withoutFoot) < Math.min(...withFoot),
+  const hs = cards.filter((c) => c.cells).map((c) => c.box.h)
+  check('★ 有备注 / 无备注 / 没价格 / 掉线几种卡片高度完全相同（底注恒定占位）',
+    hs.length >= 5 && new Set(hs).size === 1,
     JSON.stringify(cards.map((c) => `${c.name}:${c.box.h}`)))
+}
+{
+  // 找不到元素要**报红**（探针返回 -1），别写成 `b ? h : 0` 静默通过。
+  const chipH = await js(`(() => {
+    const b = document.querySelector('[data-remark="card"] [data-slot="badge"]')
+    return b ? Math.round(b.getBoundingClientRect().height * 10) / 10 : -1
+  })()`)
+  check('★ 备注小卡片收成紧凑档（高 10–16px：塞得进底注那行，不把卡片撑高）',
+    typeof chipH === 'number' && chipH >= 10 && chipH <= 16, `实测 ${chipH}px`)
 }
 check('★ 列表是一行两张宽卡（768 起两列，1440 上两列）', cards[0]?.listCols === 2, `listCols=${cards[0]?.listCols}`)
 check('★ 卡片是宽扁的（宽 ≥ 2×高）',

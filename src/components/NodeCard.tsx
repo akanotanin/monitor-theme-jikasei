@@ -202,7 +202,7 @@ function trafficFoot(node: Node) {
  * 卡片（详细档标题行、经典/延迟的浮层）与整页详情、紧凑展开行共用这一套——写法只有一处，
  * 合并后的次序（私有在前、公有在后）也由 `@/lib/notes` 的 `remarkChips` 一处决定。
  */
-export function RemarkChips({ chips, max = "full", keep = false }: { chips: RemarkChip[]; max?: string; keep?: boolean }) {
+export function RemarkChips({ chips, max = "full", keep = false, compact = false }: { chips: RemarkChip[]; max?: string; keep?: boolean; compact?: boolean }) {
   return (
     <>
       {chips.map((c, i) => (
@@ -211,7 +211,12 @@ export function RemarkChips({ chips, max = "full", keep = false }: { chips: Rema
           variant={c.own ? "outline" : "secondary"}
           // keep（详细档标题行那一格）：小卡片保持自然宽度、不许被挤扁 —— 否则四枚会各自缩成
           // 「仅自…」这种两个字的残片（实测踩过）。放不下的部分由外层裁掉、在悬浮层里看全。
-          className={(keep ? "shrink-0 " : "min-w-0 shrink ") + "font-normal " + (c.own ? "gap-1 text-muted-foreground" : "")}
+          // compact（「宽卡」底注那一档，2026-10-16）：收成 11px 字 + 14px 行盒 + 无内边距 = 16px 高，
+          // 正好塞进底注那行（h-4）——卡片高度不因有没有备注而变（其余几档照旧用默认档）。
+          // ★行盒给到 14px（leading-3.5）而不是 11px：11px 的行盒会把中文字形上下各裁掉半像素
+          //   （Inter 11px 的字体框 ascent+descent ≈ 13.3px）；py 用 [0px] 这种任意值压掉基类的
+          //   py-0.5（Tailwind 把任意值排在后面，可靠）。两者一凑，高度还是 16px。
+          className={(keep ? "shrink-0 " : "min-w-0 shrink ") + "font-normal " + (c.own ? "gap-1 text-muted-foreground " : "") + (compact ? "px-1.5 py-[0px] text-[11px] leading-3.5" : "")}
           style={{ maxWidth: max === "full" ? undefined : max }}
           title={c.own ? "仅自己可见：" + c.text : c.text}
         >

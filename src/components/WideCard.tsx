@@ -16,13 +16,17 @@ import { remarksOnCards, type RemarkPlacement } from "@/lib/site-settings"
  *   ③ 四个读数格：CPU / 内存 / 存储 / 负载（上面一条分隔线，见 Readout）；
  *   ④ 上传 / 下载：左右两栏，各带累计总量与实时速率，中间一道竖线；
  *   ⑤ 总流量：左边「已用 / 额度」、右边「流量重置」，下面一条全宽进度条；
- *   ⑥ 底注：价格 / 到期（左）＋ 备注小卡片（最多 CHIPS 枚，右）。
+ *   ⑥ 底注：价格 / 到期（左）＋ 备注小卡片（最多 CHIPS 枚，右）——**恒定占位**（见下）。
  *
  * ★ 风格与其余几档同一套口径（2026-10-15 按站长要求收齐）：**不带状态点、不带「已离线」
  *   徽章**（在线与否写在②那行文字里——「已离线 / 未接入 / 在线」，与详细档的「离线 …」同一
  *   口径）；读数条用**前景色的 70%**（与经典 / 简约那两档同一族），绿条与红点只属于源形态，
  *   不在本主题的配色语言里。卡面**不含延迟**——延迟在整页详情里看（点卡片进去）；也不挂经典 /
  *   延迟两档右上角那枚信息图标：在线时间与价格 / 到期本来就写在②与⑥的那两行里。
+ *
+ * ★ 卡片高度**不随内容变**（2026-10-16 站长要求与 kanso 保持一致）：底注那一行恒定占位
+ *   （h-4 = 16px）、小卡片收成紧凑档（16px 塞得进那一行）——有备注 / 没备注 / 没价格这几台
+ *   凑成一列是同一高度（从前的差在：小卡片 22px 比那行小字高一档 +6px、没底注的整行不占位 -22px）。
  *
  * 护栏锚点：`data-node-card`（卡片，值是 id）· `data-metrics`（四读数格容器）·
  * `data-net="duo"`（上传下载两栏——与经典 / 简约那两档的 `data-net` 是**不同**的两块：那边是
@@ -51,7 +55,8 @@ function loadPct(node: Node): number | null {
 }
 
 /**
- * 底注那行小字：`价格 ¥47.00/年 · 剩余 179 天`（有哪截写哪截，都没有就整条不占位）。
+ * 底注那行小字：`价格 ¥47.00/年 · 剩余 179 天`（有哪截写哪截；都没有字是空的，那一行**照样
+ * 占位**——卡片高度不因它变，见 ⑥ 的恒定占位）。
  *
  * · 价格 0 不写：hub 后台那一格写着「留空或 0 为免费」，把「没填」也印成「免费」是在替站长断言。
  * · 到期优先用 hub 算好的 `expires_in`（按 hub 的时区算、在线机器还会顺延），只有旧 hub 没这个
@@ -228,18 +233,16 @@ export function WideCard({ node, onOpen, onWarm, terms, remarkPlacement, selecte
             />
           </div>
 
-          {/* ⑥ 底注：价格 / 到期在左、备注小卡片在右；两截都没有就整行不占位。
+          {/* ⑥ 底注：价格 / 到期在左、备注小卡片在右。★这一行**恒定占位**（h-4 = 16px）：有没有
+              备注、有没有价格，卡片都一样高（2026-10-16 站长要求「卡片大小与 kanso 保持一致」）；
+              小卡片也收成紧凑档（16px），塞得进这一行、不再把整卡撑高 6px。
               `data-remark="card"` 是护栏的锚点（与详细档标题行的 `data-remark="title"` 分开）。 */}
-          {(note || chips.length > 0) && (
-            <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2">
-              <span className="tnum min-w-0 truncate text-[11px] leading-4 text-muted-foreground">{note}</span>
-              {chips.length > 0 && (
-                <span data-remark="card" className="flex min-w-0 shrink items-center justify-end gap-1">
-                  <RemarkChips chips={chips} />
-                </span>
-              )}
-            </div>
-          )}
+          <div className="mt-1.5 flex h-4 min-w-0 items-center justify-between gap-2">
+            <span className="tnum min-w-0 truncate text-[11px] leading-4 text-muted-foreground">{note}</span>
+            <span data-remark="card" className="flex min-w-0 shrink items-center justify-end gap-1">
+              <RemarkChips chips={chips} compact />
+            </span>
+          </div>
         </>
       ) : (
         /* Never connected: nothing to plot, so the card stays short rather than
