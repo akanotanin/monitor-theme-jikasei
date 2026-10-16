@@ -1,6 +1,6 @@
 # jikasei
 
-![jikasei](preview.png?v=3)
+![jikasei](preview.png?v=4)
 
 极简探针（[Monitor](https://github.com/monitor-probe/monitor)）的第三方主题，源码基于上游默认主题
 `monitor-theme-default` v1.1.0 改造。纯静态前端，只读 hub 的公开接口，

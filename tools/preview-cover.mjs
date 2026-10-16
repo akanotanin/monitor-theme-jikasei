@@ -35,9 +35,12 @@ if (!existsSync(MASCOT)) {
   throw new Error(`缺少 ${MASCOT}（角色图）。用 tools/mascot-cutout.py 从白底原图抠出来，或者把已有的透明 PNG 放到这个路径。`)
 }
 
-// 角色与文案的尺寸：改这里就能重新出图，数字都是按「文字右沿 ↔ 角色左轮廓」实测空档定的
-// （pure 版实测空档 101px；正文块宽 740 是给最长那行繁体级中文留的安全边）
-const PURE = { ch: 700, h1: 200, kicker: 18, sub: 36, feats: 25, block: 740 }
+// 角色与文案的尺寸：改这里就能重新出图。
+// ★ch=773（2026-10-16）：人物放大到与 kanso 封面看齐——实测两边头顶 y=123px、可见高
+//   1497px @DPR2，完全一致（对齐前 ch=700：头顶 266、可见高 1354，明显小一档）。此时
+//   「文字右沿 ↔ 角色左轮廓」空档 ~31px（kanso 同量法 35px）。正文块宽 740 是给最长那行
+//   繁体级中文留的安全边。
+const PURE = { ch: 773, h1: 200, kicker: 18, sub: 36, feats: 25, block: 740 }
 // 带长条的三种形态：长条高度 = 截图的自然比例，角色底边压在长条上沿
 const BANDS = {
   classic: { file: 'preview-classic.png', top: 0, height: 345, ch: 350 },
