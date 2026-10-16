@@ -16,7 +16,7 @@ import { clockFor, innerTicks, quarters, timeTicks, zoomSpan } from "@/lib/forma
  *   · 悬停时画一条竖线 + 那枚自绘 tooltip（`ChartTooltip`，本来就跟 recharts 解耦，
  *     只是 props 恰好同形）。
  *
- * 尺寸跟着父容器走（`ResizeObserver`）：四张资源图挂在 `Panel` 的 `h-40` 里，
+ * 尺寸跟着父容器走（`ResizeObserver`）：资源图挂在 `Panel` 的 `h-40` 里，
  * 延迟图挂在 `flex-1` 里，两条路都得撑满。
  */
 export type ChartSeries = {
@@ -32,7 +32,7 @@ export type ChartSeries = {
 
 export type ChartRow = { ts: number } & Record<string, number | [number, number] | null | undefined>
 
-/** 左边留给 Y 轴刻度的宽度，与四张资源图原来的 `Y_WIDTH` 一致（否则各图 x 会错位）。 */
+/** 左边留给 Y 轴刻度的宽度，与资源图原来的 `Y_WIDTH` 一致（否则各图 x 会错位）。 */
 const LEFT = 68
 const RIGHT = 8
 const TOP = 6
@@ -125,12 +125,12 @@ export function TimeChart({
   /** 给读屏用的一句话（这张图画的是什么）。 */
   label?: string
   /**
-   * `zero`：Y 轴从 0 起、刻度是 `quarters(top)`（四张资源图）。
+   * `zero`：Y 轴从 0 起、刻度是 `quarters(top)`（资源图）。
    * `auto`：Y 轴按数据自身的量程取整齐刻度（延迟轴 —— 那些线路活在一条窄带里，
    *         锚到 0 会把抖动压平；这就是原来 `domain={["auto","auto"]}` 的意思）。
    */
   domain?: "zero" | "auto"
-  /** 左边留给 Y 轴刻度的宽度（四张资源图 68，延迟图 52，与原来逐像素一致）。 */
+  /** 左边留给 Y 轴刻度的宽度（资源图 68，延迟图 52，与原来逐像素一致）。 */
   left?: number
   /**
    * 给了它（且 `domain="auto"`）就能**用滚轮调整 Y 轴（纵向）范围**：以光标压着的那个
@@ -153,7 +153,7 @@ export function TimeChart({
   const panRef = useRef<{ y0: number; lo: number; hi: number; moved: boolean } | null>(null)
   // 滚轮缩放出来的手动 Y 范围（null = 自动量程）。
   const [yZoom, setYZoom] = useState<{ lo: number; hi: number } | null>(null)
-  // clipPath 的 id：每张图一个（延迟图与四张资源图会同页共存），`useId` 的冒号等字符剔掉。
+  // clipPath 的 id：每张图一个（延迟图与资源图会同页共存），`useId` 的冒号等字符剔掉。
   const cid = useId().replace(/[^a-zA-Z0-9_-]/g, "")
   // 换量程（`hours`）＝整页重新取数：横向缩放由调用方（NodeDetail）复位，纵向缩放归本组件管，
   // 跟它一起回自动。

@@ -780,14 +780,15 @@ const hoursRequested = async () => {
     SAME(pills365, ['1 小时', '6 小时', '24 小时', '7 天', '30 天', '365 天']), JSON.stringify(pills365))
   await clickPill('365 天')
   await sleep(1800)
-  // 详情页有四张资源图，每张各有自己的 x 轴 —— 刻度会重复四遍，所以判据取**去重后**的条数。
+  // 详情页有五张资源图（2026-10-16 起），每张各有自己的 x 轴 —— 刻度会重复五遍，所以判据取
+  // **去重后**的条数。★（原来硬编码 ≤ 去重数 × 4：加第五张图后 30 条 > 6×4，这条会假红。）
   // ★原来这里读的是 recharts 的 `.recharts-xAxis-tick-labels text` —— 延迟图换成自绘 SVG
   //   （src/components/Chart.tsx）之后那个类名整批消失，判据就静默变成「0 条」。改读自家图表里
   //   的 X 轴标签（`svg[role="img"]` 里 `text-anchor="middle"` 的那些），不再绑在别人的 DOM 上。
   const ticks = (await json(`JSON.stringify([...document.querySelectorAll('svg[role="img"] text')].filter((t) => t.getAttribute('text-anchor') === 'middle').map((t) => t.textContent.trim()))`)) || []
   const uniq = [...new Set(ticks)]
   check('保留 365 天：x 轴刻度去重后仍是稀疏的几条（不是每张 52 条糊成一片），且只写到日',
-    uniq.length >= 3 && uniq.length <= 12 && uniq.every((t) => /^[0-9]{2}\/[0-9]{2}$/.test(t)) && ticks.length <= uniq.length * 4,
+    uniq.length >= 3 && uniq.length <= 12 && uniq.every((t) => /^[0-9]{2}\/[0-9]{2}$/.test(t)) && ticks.length <= uniq.length * 5,
     `共 ${ticks.length} 条 / 去重 ${uniq.length} 条：${JSON.stringify(uniq)}`)
   await shot('detail-range-365d-1440')
   delete meExtra.history_days

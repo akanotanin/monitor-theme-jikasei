@@ -45,23 +45,24 @@ const loadDetail = () => import("@/components/NodeDetail").then((m) => ({ defaul
 const NodeDetail = lazy(loadDetail)
 
 /**
- * 详情页的骨架：按详情页真实的那几块摆（标题行 + 规格格 + 备注块 + 页签行 + 四张图），
+ * 详情页的骨架：按详情页真实的那几块摆（标题行 + 规格格 + 备注块 + 页签行 + 五张图），
  * 不是一枚 `h-96`。它露面的场景只有一个 —— 点开时图表 chunk 还没到（见下面 warmDetail），
  * 所以它的高度必须跟加载完的内容一样，否则那一下会「先塌再撑」。
  *
  * 尺寸不另立一套，全跟着详情页自己那几块的类走：`dt` text-xs(16) + `dd` text-sm(20)、
- * 页签 py-1 + text-xs = 24、图块 = 小标题 mb-2 + `h-40`、四张图之间 space-y-5、
+ * 页签 py-1 + text-xs = 24、图块 = 小标题 mb-2 + `h-40`、五张图之间 space-y-5、
  * 规格格那层用同一套 grid 断点。于是手机上（一列）与桌面上（三列）都自动对上。
  *
  * ★三处「差一块就差几十 px」的地方（都踩过，护栏 verify_detail_preload 会照出来）：
  *   ① **备注块**（22px）—— 真实页里那台机器有备注才占位，所以这里得按 `hasRemarks` 判一次，
  *      不能无条件画（没备注的机器会反过来高出 38px）；（2026-10-06 修）
- *   ② **四张图是页签块的兄弟、不是孩子** —— 嵌进去的话，页签与图之间那 16px 变成 8px，
+ *   ② **五张图是页签块的兄弟、不是孩子** —— 嵌进去的话，页签与图之间那 16px 变成 8px，
  *      整页少 8px。①+② = 22+16+8 = 46px，正是当年那 46px 的差额；（2026-10-06 修）
- *   ③ **TCP/UDP 连接数两格**（2026-10-15 修）—— 详情页 2026-10-14 加了这两格（真实页 8 格），
- *      骨架还画 6 格：桌面三列多出一行（+48px）、手机一列多出两行（+96px）。判法与真实页
- *      同源（那边 `const m = node.metrics`）：`metrics` 在才画这两格（离线机器两格隐身、
- *      真实页也是 6 格），所以由调用方按 `node.metrics` 传入，照 ① 的同一手法。
+ *   ③ **TCP / UDP 连接那一格**（2026-10-15 修）—— 详情页 2026-10-14 加了连接数、2026-10-16
+ *      与 kanso 同步合成**一格**（真实页 7 格），骨架还画 6 格：桌面三列多出一行（+48px）、
+ *      手机一列多出一行（+48px）。判法与真实页同源（那边 `const m = node.metrics`）：
+ *      `metrics` 在才画这一格（离线机器它隐身、真实页也是 6 格），所以由调用方按
+ *      `node.metrics` 传入，照 ① 的同一手法。
  */
 function DetailSkeleton({ hasRemarks = false, hasConnections = false }: { hasRemarks?: boolean; hasConnections?: boolean }) {
   return (
@@ -71,7 +72,7 @@ function DetailSkeleton({ hasRemarks = false, hasConnections = false }: { hasRem
         <Skeleton className="h-7 w-44" />
       </div>
       <div className="grid gap-x-6 gap-y-3 md:grid-cols-2 lg:grid-cols-3">
-        {(hasConnections ? [0, 1, 2, 3, 4, 5, 6, 7] : [0, 1, 2, 3, 4, 5]).map((i) => (
+        {(hasConnections ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5]).map((i) => (
           <div key={i} className="min-w-0">
             <Skeleton className="h-4 w-12" />
             <Skeleton className="h-5 w-28" />
@@ -97,10 +98,11 @@ function DetailSkeleton({ hasRemarks = false, hasConnections = false }: { hasRem
           <Skeleton className="h-6 w-16" />
         </div>
       </div>
-      {/* 四张资源图：整页详情的默认页签就是它，所以骨架照它的高度来。
+      {/* 五张资源图：整页详情的默认页签就是它，所以骨架照它的高度来
+          （2026-10-16 与 kanso 同步：网络速率 / TCP·UDP 连接 / CPU / 内存 / 硬盘）。
           ★它是上面那个页签块的**兄弟**（真实页里也是），别嵌进去。 */}
       <div className="space-y-5">
-        {[0, 1, 2, 3].map((i) => (
+        {[0, 1, 2, 3, 4].map((i) => (
           <div key={i}>
             <Skeleton className="mb-2 h-4 w-16" />
             <Skeleton className="h-40 w-full" />
