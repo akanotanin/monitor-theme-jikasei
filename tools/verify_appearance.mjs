@@ -9,6 +9,7 @@
 //   · 访客自己的选择优先：站点设 light、访客 localStorage 记着 dark → 页面是暗的；
 //     站点设 globeOn=开、访客自己关过 → 地球不渲染但**开关还在**（他自己能开回来）
 //   · 暗色：卡片/底、卡缘线/底分得开（2026-10-17 口径；防「卡面调回去」的回退）
+//   · 「出错了」红：错误文字色偏红、对卡片 ≥ 4.5:1、不再与正文同色（2026-10-17）
 //
 // 用法：node tools/verify_appearance.mjs
 import { spawn } from 'node:child_process'
@@ -223,6 +224,32 @@ check('暗色：卡/底 ≥ 1.14 且 ≤ 1.35、卡缘线/底 ≥ 1.62 且 ≤ 2
   !!(sf && contrast(sf.card, s.bodyBg) >= 1.14 && contrast(sf.card, s.bodyBg) <= 1.35 &&
     contrast(sf.line, s.bodyBg) >= 1.62 && contrast(sf.line, s.bodyBg) <= 2.2),
   sf ? `卡/底 ${contrast(sf.card, s.bodyBg)} 线/底 ${contrast(sf.line, s.bodyBg)}（卡 ${sf.card} 线 ${sf.line} 底 ${s.bodyBg}）` : '没找到卡片')
+
+console.log('\n=== 「出错了」红（错误文字色）===')
+/**
+ * 2026-10-17：destructive 改前是「≈正文色」——亮色 oklch(0.3 0 0)（灰）、暗色与 --foreground
+ * 逐字相同；读失败那行看起来跟普通文字没两样。判据三条：偏红（r 明显高于 g/b）、
+ * 对其所在卡片合成对比 ≥ 4.5:1（12px 小字 AA）、且不与正文色是同一种合成色。亮 / 暗各断一遍。
+ */
+const destructOf = async () => JSON.parse(await js(`(() => {
+  const paint = (under, top) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d'); if (under) { x.fillStyle = under; x.fillRect(0, 0, 1, 1) } x.fillStyle = top; x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')' }
+  const body = getComputedStyle(document.body).backgroundColor
+  const card = document.querySelector('main [data-node-card], [data-slot=card]')
+  const cardEff = paint(body, getComputedStyle(card).backgroundColor)
+  const destr = getComputedStyle(document.documentElement).getPropertyValue('--destructive').trim()
+  return JSON.stringify({ destr: paint(cardEff, destr), fg: paint(cardEff, getComputedStyle(document.body).color), card: cardEff })
+})()`))
+const isRed = (s2) => { const [r, g, b] = s2.slice(4, -1).split(',').map(Number); return r > g + 20 && r > b + 20 }
+s = await load({ config: { themeMode: 'light', globeOn: true } })
+const ddL = await destructOf()
+check('亮色：错误文字偏红、对卡片 ≥ 4.5:1、不与正文同色',
+  isRed(ddL.destr) && contrast(ddL.destr, ddL.card) >= 4.5 && ddL.destr !== ddL.fg,
+  `destructive ${ddL.destr} 对卡 ${contrast(ddL.destr, ddL.card)}:1 / 正文 ${ddL.fg}`)
+s = await load({ config: { themeMode: 'dark', globeOn: true } })
+const ddD = await destructOf()
+check('暗色：同上（改前与 --foreground 逐字相同，单独断）',
+  isRed(ddD.destr) && contrast(ddD.destr, ddD.card) >= 4.5 && ddD.destr !== ddD.fg,
+  `destructive ${ddD.destr} 对卡 ${contrast(ddD.destr, ddD.card)}:1 / 正文 ${ddD.fg}`)
 
 console.log('\n=== 节点地球开关 ===')
 s = await load({ config: { themeMode: 'light', globeOn: true } })
