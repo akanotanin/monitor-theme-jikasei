@@ -8,6 +8,7 @@
 //     访客存在自己浏览器里的旧偏好也不许把站长关掉的整块顶回来。
 //   · 访客自己的选择优先：站点设 light、访客 localStorage 记着 dark → 页面是暗的；
 //     站点设 globeOn=开、访客自己关过 → 地球不渲染但**开关还在**（他自己能开回来）
+//   · 暗色：卡片/底、卡缘线/底分得开（2026-10-17 口径；防「卡面调回去」的回退）
 //
 // 用法：node tools/verify_appearance.mjs
 import { spawn } from 'node:child_process'
@@ -124,6 +125,20 @@ async function load({ config, systemDark = false, visitor = null, globePref = un
         card: cardEff,
       }
     })(),
+    // 卡面与卡缘线（2026-10-17「暗色下卡片与页面底分得开」那条判据用）：同样取**合成后**的有效色。
+    surface: (() => {
+      const paint = (under, top) => {
+        const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d')
+        if (under) { x.fillStyle = under; x.fillRect(0, 0, 1, 1) }
+        x.fillStyle = top; x.fillRect(0, 0, 1, 1)
+        const d = x.getImageData(0, 0, 1, 1).data
+        return 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')'
+      }
+      const card = document.querySelector('main [data-node-card], [data-slot=card]')
+      if (!card) return null
+      const cardEff = paint(getComputedStyle(document.body).backgroundColor, getComputedStyle(card).backgroundColor)
+      return { card: cardEff, line: paint(cardEff, getComputedStyle(card).borderTopColor) }
+    })(),
     bodyBg: (() => {
       const c = document.createElement('canvas'); c.width = c.height = 1
       const x = c.getContext('2d'); if (!x) return null
@@ -192,6 +207,22 @@ check('暗色：同上（暗底上的有效对比度与亮色不是一回事，�
   s.meter && s.meter.alpha < 1 && contrast(s.meter.fill, s.meter.card) >= 3.5 && contrast(s.meter.fill, s.meter.card) <= 8 &&
   contrast(s.meter.fill, s.meter.card) < contrast(s.meter.text, s.meter.card),
   JSON.stringify(s.meter) + ` 填色 ${s.meter && contrast(s.meter.fill, s.meter.card)}:1 / 站名 ${s.meter && contrast(s.meter.text, s.meter.card)}:1`)
+
+console.log('\n=== 暗色：卡片与页面底分得开（2026-10-17 口径）===')
+/**
+ * 「暗色下卡片与页面底区分不明显」的反馈后的口径：卡片面 --card 0.21→0.23、描边 13%→15%。
+ * 判据只针对暗色（亮色那套没动）：卡/底、卡缘线/底都要立得住，又都不许过界 ——
+ *   · 卡片/底 合成对比 ≥ 1.14（抬升前 1.10 就是「分不开」的那一档；现在实测 1.16），封顶 1.35
+ *     （再往上卡片开始"浮灰"）；
+ *   · 卡缘线/底 ≥ 1.62（抬升前 1.49；卡面 0.23 配旧 13% 描边只有 1.60 —— 两档必须一起抬，
+ *     现在 1.67），封顶 2.2（线再亮就变成"画框"）。
+ */
+s = await load({ config: { themeMode: 'dark', globeOn: true } })
+const sf = s.surface
+check('暗色：卡/底 ≥ 1.14 且 ≤ 1.35、卡缘线/底 ≥ 1.62 且 ≤ 2.2',
+  !!(sf && contrast(sf.card, s.bodyBg) >= 1.14 && contrast(sf.card, s.bodyBg) <= 1.35 &&
+    contrast(sf.line, s.bodyBg) >= 1.62 && contrast(sf.line, s.bodyBg) <= 2.2),
+  sf ? `卡/底 ${contrast(sf.card, s.bodyBg)} 线/底 ${contrast(sf.line, s.bodyBg)}（卡 ${sf.card} 线 ${sf.line} 底 ${s.bodyBg}）` : '没找到卡片')
 
 console.log('\n=== 节点地球开关 ===')
 s = await load({ config: { themeMode: 'light', globeOn: true } })
