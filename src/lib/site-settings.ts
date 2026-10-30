@@ -13,8 +13,8 @@ export type ThemeConfig = {
   /**
    * 卡片形态：classic = 速率与总量各一行（2×2 四格）、不含延迟；plain = 网络合成一行，
    * 读数窗另换一套视觉处理（标签提亮、条压细、底注变小）、不含延迟；latency = 网络一行 +
-   * 三网延迟；detailed = 再加在线时长、价格与到期；wide = 一行两张的宽卡（系统行 +
-   * 四格读数 + 上传下载两栏 + 总流量条 + 底注，列表收成两列）；compact = 一行一台的表格（密度最高）。
+   * 三网延迟；detailed = 再加在线时长、价格与到期；wide = 一行三张的宽卡（系统行 +
+   * 四格读数 + 上传下载两栏 + 总流量条 + 底注，与其余几档同一条列线）；compact = 一行一台的表格（密度最高）。
    * 默认「详细」（2026-10-06 站长定的）。
    */
   cardStyle: "classic" | "latency" | "detailed" | "plain" | "wide" | "compact"
@@ -55,7 +55,7 @@ export type RemarkPlacement = "both" | "card" | "detail" | "none"
 export const REMARK_PLACEMENTS: RemarkPlacement[] = ["both", "card", "detail", "none"]
 
 /**
- * 卡片那一侧（含「紧凑」就地展开行、经典/延迟右上角那枚浮层、详细档标题行）要不要摊备注。
+ * 卡片那一侧（含「紧凑」就地展开行、经典/延迟/详细三档的标题行右端）要不要摊备注。
  * 与 `remarksOnDetail` 是一对，两处合起来恰好覆盖「备注的落点」那四档口径。
  *
  * ★写成**白名单**（只认 `both`/`card`）而不是「不等于 detail」：后者在新增第四档「都不显示」时会

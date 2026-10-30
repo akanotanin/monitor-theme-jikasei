@@ -19,11 +19,11 @@ type CardStyle = ThemeConfig["cardStyle"]
  * 只写访客自己的浏览器。
  */
 const STYLES: { value: CardStyle; label: string; hint: string; Icon: typeof Grid2x2 }[] = [
-  { value: "classic", label: "经典", hint: "速率与总量各一行，底部是 2×2 四格；延迟收在右上角的浮层里", Icon: Grid2x2 },
+  { value: "classic", label: "经典", hint: "速率与总量各占一行，底部是 2×2 四格；不含延迟", Icon: Grid2x2 },
   { value: "plain", label: "简约", hint: "网络合成一行，标签提亮、进度条更细，不含延迟", Icon: Rows3 },
   { value: "latency", label: "延迟", hint: "网络一行，下方带三网延迟", Icon: Activity },
   { value: "detailed", label: "详细", hint: "在延迟之上再加在线时长、价格与到期", Icon: AlignJustify },
-  { value: "wide", label: "宽卡", hint: "一行两张的宽卡：四格读数、上传下载两栏与总流量条，底注摊价格与备注", Icon: RectangleHorizontal },
+  { value: "wide", label: "宽卡", hint: "一行三张的宽卡：四格读数、上传下载两栏与总流量条，底注摊价格与备注", Icon: RectangleHorizontal },
   { value: "compact", label: "紧凑", hint: "一行一台的表格，密度最高", Icon: Table },
 ]
 

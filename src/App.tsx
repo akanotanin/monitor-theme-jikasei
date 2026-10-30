@@ -45,26 +45,37 @@ const loadDetail = () => import("@/components/NodeDetail").then((m) => ({ defaul
 const NodeDetail = lazy(loadDetail)
 
 /**
- * 详情页的骨架：按详情页真实的那几块摆（标题行 + 规格格 + 备注块 + 页签行 + 五张图），
+ * 详情页的骨架：按详情页真实的那几块摆（标题行 + 规格格 + 备注块 + 页签行 + 六张图），
  * 不是一枚 `h-96`。它露面的场景只有一个 —— 点开时图表 chunk 还没到（见下面 warmDetail），
  * 所以它的高度必须跟加载完的内容一样，否则那一下会「先塌再撑」。
  *
  * 尺寸不另立一套，全跟着详情页自己那几块的类走：`dt` text-xs(16) + `dd` text-sm(20)、
- * 页签 py-1 + text-xs = 24、图块 = 小标题 mb-2 + `h-40`、五张图之间 space-y-5、
+ * 页签 py-1 + text-xs = 24、图块 = 小标题 mb-2 + `h-40`、六张图之间 `grid gap-5`（lg 起两列）、
  * 规格格那层用同一套 grid 断点。于是手机上（一列）与桌面上（三列）都自动对上。
  *
- * ★三处「差一块就差几十 px」的地方（都踩过，护栏 verify_detail_preload 会照出来）：
+ * ★四处「差一块就差几十 px」的地方（都踩过，护栏 verify_detail_preload 会照出来）：
  *   ① **备注块**（22px）—— 真实页里那台机器有备注才占位，所以这里得按 `hasRemarks` 判一次，
  *      不能无条件画（没备注的机器会反过来高出 38px）；（2026-10-06 修）
- *   ② **五张图是页签块的兄弟、不是孩子** —— 嵌进去的话，页签与图之间那 16px 变成 8px，
+ *   ② **六张图是页签块的兄弟、不是孩子** —— 嵌进去的话，页签与图之间那 16px 变成 8px，
  *      整页少 8px。①+② = 22+16+8 = 46px，正是当年那 46px 的差额；（2026-10-06 修）
  *   ③ **TCP / UDP 连接那一格**（2026-10-15 修）—— 详情页 2026-10-14 加了连接数、2026-10-16
  *      与 kanso 同步合成**一格**（真实页 7 格），骨架还画 6 格：桌面三列多出一行（+48px）、
  *      手机一列多出一行（+48px）。判法与真实页同源（那边 `const m = node.metrics`）：
  *      `metrics` 在才画这一格（离线机器它隐身、真实页也是 6 格），所以由调用方按
  *      `node.metrics` 传入，照 ① 的同一手法。
+ *   ④ **「价格 / 到期」两格**（2026-10-30 修）—— 它们从「经典 / 延迟」两档的 ⓘ 浮层搬进信息格：
+ *      「到期」那一格恒在（没设到期就写「无期限」），「价格」只在填了价格时出现（`hasPrice`）。
+ *      于是格数 = 7（系统 / 架构 / CPU / 内存·硬盘 / 今日流量 / 在线时间 / 到期）
+ *      +「TCP / UDP 连接」+「价格」；**从没接入过**的那台少「系统 / 架构」两格（真实页里它们
+ *      是空值、整格隐身），所以基数是 5（`hasSpecs`）。
  */
-function DetailSkeleton({ hasRemarks = false, hasConnections = false }: { hasRemarks?: boolean; hasConnections?: boolean }) {
+function DetailSkeleton({ hasRemarks = false, hasConnections = false, hasPrice = false, hasSpecs = true }: { hasRemarks?: boolean; hasConnections?: boolean; hasPrice?: boolean; hasSpecs?: boolean }) {
+  // 规格格的格数按真实页那几条条件算（见上面 ④）：恒在的 7 格（从未接入过的机器 5 格：系统 / 架构隐身）
+  // +「TCP / UDP 连接」+「价格」。
+  const factCells = Array.from(
+    { length: (hasSpecs ? 7 : 5) + (hasConnections ? 1 : 0) + (hasPrice ? 1 : 0) },
+    (_, i) => i,
+  )
   return (
     <div className="detail-skeleton space-y-4" aria-busy="true">
       <div className="flex items-center gap-2">
@@ -72,7 +83,7 @@ function DetailSkeleton({ hasRemarks = false, hasConnections = false }: { hasRem
         <Skeleton className="h-7 w-44" />
       </div>
       <div className="grid gap-x-6 gap-y-3 md:grid-cols-2 lg:grid-cols-3">
-        {(hasConnections ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 5]).map((i) => (
+        {factCells.map((i) => (
           <div key={i} className="min-w-0">
             <Skeleton className="h-4 w-12" />
             <Skeleton className="h-5 w-28" />
@@ -98,11 +109,12 @@ function DetailSkeleton({ hasRemarks = false, hasConnections = false }: { hasRem
           <Skeleton className="h-6 w-16" />
         </div>
       </div>
-      {/* 五张资源图：整页详情的默认页签就是它，所以骨架照它的高度来
-          （2026-10-16 与 kanso 同步：网络速率 / TCP·UDP 连接 / CPU / 内存 / 硬盘）。
+      {/* 六张资源图：整页详情的默认页签就是它，所以骨架照它的高度来
+          （2026-10-30 与 kanso 同轮：网络速率 / TCP·UDP 连接 / 进程 / CPU / 内存 / 硬盘）。
+          ★网格与真实页同款（`grid gap-5 lg:grid-cols-2`：每排两张、一共三排）；
           ★它是上面那个页签块的**兄弟**（真实页里也是），别嵌进去。 */}
-      <div className="space-y-5">
-        {[0, 1, 2, 3, 4].map((i) => (
+      <div className="grid gap-5 lg:grid-cols-2">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
           <div key={i}>
             <Skeleton className="mb-2 h-4 w-16" />
             <Skeleton className="h-40 w-full" />
@@ -299,12 +311,11 @@ export default function App() {
   const [globeOn, toggleGlobe] = useGlobeVisible(config.globeOn)
   const [cardStyle, chooseStyle] = useCardStyle(config.cardStyle)
 
-  // 「宽卡」档会把**整页容器**收一档（1280 → 1080，顶栏 / 主区 / 页脚三处共用同一条列线）：
-  // 这一档的六块版式按 1080 容器 × 两列校准（卡片 510，与参考站同尺寸）；1280 的容器会把
-  // 卡片拉成 610，四格读数与上传下载两栏都被抻空。只收列表那一块不行 —— 顶栏与卡片会各站
-  // 一条列线（实测错开 ~100px），整页同收才是一条栅格。窄屏（≲1104px）容器本来就被视口
-  // 卡住，这一档在那里不产生差别。
-  const shell = cardStyle === "wide" ? "max-w-[1080px]" : "max-w-[1280px]"
+  // 整页容器宽：**所有六档共用一条列线**（顶栏 / 主区 / 页脚三处同一个 max-w）。
+  // ★2026-10-30 站长要求：宽卡从「1080 容器 × 两列（卡片 510）」改成「1280 容器 × 三列」
+  //   ——每一档的卡片区总宽一致，宽卡不再单独把整页收窄（收窄会让顶栏与页脚跟着站到另一条
+  //   列线上，看图一眼就错位）。三列的卡片约 402 宽，见 NodeList 那一段。
+  const shell = "max-w-[1280px]"
   // 收起搜索（Esc 在空框上按的那一下）。**不清词**：收起是「让出顶栏那点宽度」，不是「别筛了」
   // —— 词留着，点开一台机器看清了再回来，那几台还在（收起态会看不见词，所以那枚放大镜会提色、
   // 悬停说明里带上词与命中数，见 SearchBox）。
@@ -614,7 +625,7 @@ export default function App() {
           !nodes ? (
             <DetailSkeleton />
           ) : selected ? (
-            <Suspense fallback={<DetailSkeleton hasRemarks={hasDetailRemarks(selected, config.remarkPlacement)} hasConnections={!!selected.metrics} />}>
+            <Suspense fallback={<DetailSkeleton hasRemarks={hasDetailRemarks(selected, config.remarkPlacement)} hasConnections={!!selected.metrics} hasPrice={selected.price > 0} hasSpecs={selected.cpu_cores > 0 || selected.mem_total > 0} />}>
               {/* 整页详情与紧凑展开里是同一个组件：保留天数也要一起给它，
                   否则「展开里有 30 天、点进去只有 7 天」会显得不一致。 */}
               <NodeDetail node={selected} historyDays={me.history_days} remarkPlacement={config.remarkPlacement} />
@@ -626,7 +637,7 @@ export default function App() {
           )
         ) : !nodes ? (
           // 还在等节点列表：骨架按当前形态画。紧凑形态是一行一台，用几根细条比三张大卡片更像它；
-          // 宽卡形态一行两张、卡片也矮一档（~216 高），网格与高度都照它来。
+          // 宽卡形态卡片矮一档（~216 高）、与列表同一套列数（sm 两列 / lg 三列），网格与高度都照它来。
           cardStyle === "compact" ? (
             <div className="space-y-2">
               {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -634,8 +645,8 @@ export default function App() {
               ))}
             </div>
           ) : cardStyle === "wide" ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              {[0, 1, 2, 3].map((i) => (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
                 <Skeleton key={i} className="h-56" />
               ))}
             </div>
@@ -773,7 +784,7 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
   onWarm: () => void
   /** 卡片延迟块要显示哪几条线路（ping 任务名，换行分隔）；空串 = 自动。 */
   latencyLines: string
-  /** 卡片形态：compact = 一行一台的表格；detailed = 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟；plain 与 classic 版式相同、只换一套视觉处理；wide = 一行两张的宽卡（六块版式，见 WideCard）。 */
+  /** 卡片形态：compact = 一行一台的表格；detailed = 在延迟形态上再加在线时长与元信息；latency 网络单行 + 延迟；classic 网络两行、无延迟；plain 与 classic 版式相同、只换一套视觉处理；wide = 一行三张的宽卡（六块版式，见 WideCard）。 */
   cardStyle: "classic" | "latency" | "detailed" | "plain" | "wide" | "compact"
   /** hub 的历史保留天数：透给「紧凑」形态展开行里那块详情图（时间范围那排按钮按它生成）。 */
   historyDays?: number
@@ -827,9 +838,10 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
       ) : cardStyle === "compact" ? (
         <CompactList nodes={list} onOpen={onOpen} onWarm={onWarm} historyDays={historyDays} remarkPlacement={remarkPlacement} terms={terms} cursorId={cursorId} />
       ) : cardStyle === "wide" ? (
-        // 「宽卡」：一行两张（768 起两列；窄屏一列）—— 卡片是按参考站校准过的六块版式，
-        // 见 @/components/WideCard。列表这一层不再有 lg / xl 那两档加列。
-        <div data-card-style="wide" className="grid items-start gap-3 md:grid-cols-2">
+        // 「宽卡」：一行三张（sm 起两列、lg 起三列；窄屏一列）—— 卡片是六块版式，见
+        // @/components/WideCard。★2026-10-30 站长要求：与其余五档共用 1280 容器（每一档的
+        // 卡片区总宽一致），所以这一档最多三列、不再单独收窄整页。
+        <div data-card-style="wide" className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((n) => (
             <WideCard key={n.id} node={n} onOpen={() => onOpen(n.id)} onWarm={onWarm} remarkPlacement={remarkPlacement} terms={terms} selected={n.id === cursorId} />
           ))}

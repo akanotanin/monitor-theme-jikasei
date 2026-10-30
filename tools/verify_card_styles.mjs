@@ -12,7 +12,7 @@
 //             名字 600 / 格行距 12px；同样不发 ping 请求（两边都钉住，才叫「只换了这一套」）
 //   延迟   —— 网络合成一行 + 三网延迟块；每节点恰好 1 次 ping 请求；指定线路按填写顺序、名字对不上跳过
 //   详细   —— 元信息行 + 三枚读数盒 + 三网延迟块；标题行不再有状态点；网格不再有 xl 四列
-//   宽卡   —— 六块版式（旗子+名字 + 系统行 + 四格读数 + 上传下载两栏 + 总流量条 + 底注）；列表收成两列
+//   宽卡   —— 六块版式（旗子+名字 + 系统行 + 四格读数 + 上传下载两栏 + 总流量条 + 底注）；与其余五档同一条 1280 列线，一行三张
 //             （768 起）、**整页容器收 1080**（顶栏 / 主区 / 卡列一条线，卡片 = 510）；读数 13px/600、
 //             条 3px（前景 70%）；不带状态点 / 徽章；不发 ping 请求。逐块细断见 tools/verify_card_form.mjs
 //   紧凑   —— 一张表、一行一台，表头与列随屏宽收放；不发 ping 请求
@@ -610,10 +610,10 @@ const WIDE_CELLS = `JSON.stringify((() => {
   check('宽卡：底注里价格 / 到期那一截在（价格 ¥12.50/月 · 剩余 95 天）',
     /价格 ¥12\.50\/月/.test(dom.text) && /剩余 95[\s\u00A0]天/.test(dom.text), dom.text)
   check('宽卡：不发延迟请求（这一档不含三网延迟）', ping === 0, `实测 ${ping} 次`)
-  check('宽卡：列表收成两列（768 起）——不再是三列 / 四列',
-    dom.grid.includes('md:grid-cols-2') && !dom.grid.includes('lg:grid-cols-3') && !dom.grid.includes('xl:grid-cols-4'), dom.grid)
-  // 宽度与列线：这一档把**整页容器**收 1080（顶栏 / 主区 / 卡列同一条线），卡片 = 510。
-  //   「只收列表那一块」的方案在这里会红：顶栏还是 1280、与卡列错开 ~100px。
+  check('宽卡：列表一行三张（sm 两列 / lg 起三列）——不是四列，也不再单独收窄',
+    dom.grid.includes('sm:grid-cols-2') && dom.grid.includes('lg:grid-cols-3') && !dom.grid.includes('xl:grid-cols-4') && !dom.grid.includes('md:grid-cols-2'), dom.grid)
+  // 宽度与列线（2026-10-30 站长要求）：这一档**不再单独收窄整页**，与其余五档共用 1280 ——
+  //   顶栏 / 主区 / 卡列仍是同一条线，只是卡片变成三列里的 403 宽。
   const shellInfo = JSON.parse(await evalJS(`(() => {
     const r = (el) => { const b = el.getBoundingClientRect(); return { x: Math.round(b.x), w: Math.round(b.width) } }
     const h = document.querySelector('header > div')
@@ -622,12 +622,12 @@ const WIDE_CELLS = `JSON.stringify((() => {
     const cards = [...document.querySelectorAll('[data-node-card]')]
     return JSON.stringify({ header: h ? r(h) : null, main: m ? r(m) : null, grid: g ? r(g) : null, card: cards[0] ? r(cards[0]) : null, win: innerWidth })
   })()`))
-  check('★ 宽卡：整页容器收 1080 —— 顶栏与主区同一条列线，卡片网格紧贴主区左内缘',
-    shellInfo.header?.w === 1080 && shellInfo.main?.w === 1080 &&
+  check('★ 宽卡：整页容器 1280（与其余五档同一条列线）—— 顶栏与主区同宽，卡片网格紧贴主区左内缘',
+    shellInfo.header?.w === 1280 && shellInfo.main?.w === 1280 &&
     shellInfo.header?.x === shellInfo.main?.x && Math.abs((shellInfo.grid?.x ?? -99) - ((shellInfo.main?.x ?? 0) + 24)) <= 1,
     JSON.stringify(shellInfo))
-  check('★ 宽卡：卡片宽 510（1080 容器 × 两列 − 12 间距），不再是 1280 容器下的 610',
-    Math.abs((shellInfo.card?.w ?? 0) - 510) <= 2, `卡宽 ${shellInfo.card?.w}`)
+  check('★ 宽卡：卡片宽 403（1280 容器 × 三列 − 12 间距）',
+    Math.abs((shellInfo.card?.w ?? 0) - 403) <= 2, `卡宽 ${shellInfo.card?.w}`)
 }
 
 

@@ -7,8 +7,8 @@ import { remarkChips } from "@/lib/notes"
 import { remarksOnCards, type RemarkPlacement } from "@/lib/site-settings"
 
 /**
- * 「宽卡」那一档的卡片（在收成 1080 的整页容器里两列铺开、每张 510 宽 —— 容器收窄与
- * 卡片同属这一档，见 App 的 shell）。
+ * 「宽卡」那一档的卡片（在 1280 的整页容器里三列铺开、每张约 402 宽 —— 与其余五档共用
+ * 同一条列线，见 App 的 shell；2026-10-30 由「1080 容器 × 两列 / 510 宽」改成现在这一档）。
  *
  * 版式照参考站的宽卡校准过（那边 508×209）。从上到下六块：
  *   ① 身份行：旗子 + 名字；

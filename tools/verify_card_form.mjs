@@ -162,7 +162,7 @@ const probe = `(() => {
       meta: c.querySelector('p')?.textContent ?? null,
       cells,
       gridCols: m ? getComputedStyle(m).gridTemplateColumns.split(' ').length : 0,
-      // 列表那一层：一行几张卡（宽卡口径，768 起两列）。
+      // 列表那一层：一行几张卡（宽卡口径：sm 两列、lg 起三列——与其余五档同一条列线）。
       listCols: getComputedStyle(c.parentElement).gridTemplateColumns.split(' ').length,
       divider: m ? getComputedStyle(m).borderTopWidth : null,
       net: net ? {
@@ -194,8 +194,8 @@ check('★ 六张卡都不带状态点（绿点 / 红点只属于源形态，不
   cards.every((c) => c.dot === null), JSON.stringify(cards.map((c) => c.dot)))
 check('★ 六张卡都不挂「已离线」徽章（掉线那台由②那行以「已离线」收尾，见下）',
   cards.every((c) => c.badge === null), JSON.stringify(cards.map((c) => c.badge?.text ?? null)))
-check('卡片宽度是 510（整页 1080 容器 × 两列），不再是 1280 容器下的 610',
-  Math.abs((one?.box?.w ?? 0) - 510) <= 2, `卡宽 ${one?.box?.w} / 高 ${one?.box?.h}`)
+check('卡片宽度是 403（1280 容器 × 三列），与其余五档同一条列线',
+  Math.abs((one?.box?.w ?? 0) - 403) <= 2, `卡宽 ${one?.box?.w} / 高 ${one?.box?.h}`)
 
 // ② meta 行
 console.log('\n② 系统 · 运行时间')
@@ -297,9 +297,10 @@ check('从未接入那台：只有身份行 + 一行说明，没有读数区', n
   check('★ 备注小卡片收成紧凑档（高 10–16px：塞得进底注那行，不把卡片撑高）',
     typeof chipH === 'number' && chipH >= 10 && chipH <= 16, `实测 ${chipH}px`)
 }
-check('★ 列表是一行两张宽卡（768 起两列，1440 上两列）', cards[0]?.listCols === 2, `listCols=${cards[0]?.listCols}`)
-check('★ 卡片是宽扁的（宽 ≥ 2×高）',
-  cards.filter((c) => c.cells).every((c) => c.box.w >= 2 * c.box.h),
+check('★ 列表是一行三张宽卡（sm 两列、lg 起三列；1440 上三列）', cards[0]?.listCols === 3, `listCols=${cards[0]?.listCols}`)
+// ★2026-10-30：一行三张之后卡片 403×215（≈1.87:1）——不再够「≥2×」，判据按实测放到 1.8×。
+check('★ 卡片是宽扁的（宽 ≥ 1.8×高；三列档实测 403×215）',
+  cards.filter((c) => c.cells).every((c) => c.box.w >= 1.8 * c.box.h),
   JSON.stringify(cards.map((c) => `${c.box.w}x${c.box.h}`)))
 check('1440 视口上整页没有横向溢出',
   (await js('document.documentElement.scrollWidth <= document.documentElement.clientWidth')) === true,
@@ -312,7 +313,7 @@ for (let i = 0; i < 60; i++) { await sleep(200); if (await js(`document.querySel
 await sleep(700)
 const m390 = JSON.parse(await js(probe) ?? '[]')
 check('手机上一列：四列读数格仍是四列', m390[0]?.gridCols === 4, String(m390[0]?.gridCols))
-check('手机上一列：列表是单列（两列宽卡从 768 起）', m390[0]?.listCols === 1, `listCols=${m390[0]?.listCols}`)
+check('手机上一列：列表是单列（两列起于 sm 640）', m390[0]?.listCols === 1, `listCols=${m390[0]?.listCols}`)
 check('手机上四个读数都没被截（scrollWidth ≤ clientWidth）',
   (await js(`(() => {
     const c = document.querySelector('[data-node-card]')

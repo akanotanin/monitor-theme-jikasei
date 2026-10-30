@@ -13,10 +13,11 @@
 //   ① 单行短名字（CT）：名字文字右沿 → 数值文字左沿 ≤ 12px（旧实现 ≈ 91px）
 //   ② 多行块里最宽名字那行：名字列尾空（列宽 − 文字宽）≤ 1.5px（旧实现 = 80 − 名字宽）
 //   ③ 多行块里最宽数值那行：数值列前导（列宽 − 文字宽）≤ 1.5px（旧实现 = 56 − 数值宽）
-//   ⑪ 经典档浮层一组（旧实现是固定 72/48 列，短名 ≈75px 死区）
 //   全绿只在「分档后可自适应的两档」成立——判据分不了两头就等于没钉。
+//   ★2026-10-30：经典档那枚 ⓘ 浮层连同它的三网延迟块一起下线（见 NodeCard），
+//     原先的「⑪ 浮层自适应」一组随之删除——本文件只剩卡面（延迟档 adaptive / 详细档固定列）。
 //   其余各条是「两种实现都必须过」的不变量（对齐/截断/节奏/无溢出），用来防改坏。
-//   ★⑫ 详细档一组反过来：它对旧 dist 也应当全绿——钉的是「详细档保持固定列原样」这条口径，
+//   ★详细档一组反过来：它对旧 dist 也应当全绿——钉的是「详细档保持固定列原样」这条口径，
 //     谁哪天把详细档也改成自适应（或动了它的列宽），这一组就红。
 import { createServer } from 'node:http'
 import { existsSync, readFileSync, statSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -168,7 +169,7 @@ await send('Page.enable')
 const BASE = `http://127.0.0.1:${PORT}`
 
 /* 量：文字用 Range 的 bbox、列盒用 Rect；「尾空/前导」= 列宽 − 文字宽（右对齐列的左前导也这么量）。
-   选择器参数化：卡面 `[data-latency]`（行是 div）、浮层 `[data-peek-latency]`（行是 span）都走这一份。 */
+   选择器参数化：卡面 `[data-latency]`（行是 div）。浮层那一路 2026-10-30 随 ⓘ 浮层下线。 */
 const measureOf = (sel) => `JSON.stringify([...document.querySelectorAll('${sel}')].map((panel) => {
   const rowEls = [...panel.querySelectorAll(':scope > *')]
   const rows = rowEls.map((row) => {
@@ -328,69 +329,18 @@ async function measureAt(cfg, width, height, mobile, label) {
   await shotGrid('w390')
 }
 
-/* ---------------------------------------------------------------- ⑪ 经典档浮层：自适应（站长 2026-10-15 分档） */
-
-{
-  CONFIG = { cardStyle: 'classic', pingLines: '' }
-  await setViewport(1440, 1100, false)
-  await send('Page.navigate', { url: `${BASE}/` })
-  let cards = false
-  for (let i = 0; i < 60 && !cards; i++) {
-    await sleep(250)
-    cards = await js(`document.querySelectorAll('[data-note-popover]').length >= 4`)
-  }
-  if (!cards) console.log('   （⑪：经典档卡片没渲染出来）')
-
-  const openPeek = async (idx) => {
-    await js(`(() => { const b = [...document.querySelectorAll('[data-note-popover]')][${idx}]; b && b.click(); return !!b })()`)
-    for (let i = 0; i < 40; i++) {
-      await sleep(200)
-      const ok = await js(`(() => { const b = document.querySelector('[data-peek-latency]'); return !!(b && b.querySelector('[data-probe-name]') && /ms|超时/.test(b.textContent)) })()`)
-      if (ok) break
-    }
-  }
-
-  // 第二张卡 = 「单行短名」（CT 独行）——旧固定列在这里最刺眼（≈75px 死区）
-  await openPeek(1)
-  const peek1 = JSON.parse(await js(measureOf('[data-peek-latency]')) ?? '[]')
-  const p1rows = peek1[0]?.rows ?? []
-  const ctRow = p1rows.find((r) => r.name === 'CT')
-  check('⑪ 浮层（单行短名 CT）：名字→数值间隙 ≤ 12px（旧实现 ≈75px）', !!ctRow && gapOf(ctRow).raw <= 12, ctRow ? `实测 ${gapOf(ctRow).raw}px` : '没找到 CT 行')
-  check('⑪b 浮层：数值列无固定前导（≤1.5px；旧实现 = 48 − 数值宽）', !!ctRow && gapOf(ctRow).msLead <= 1.5, ctRow ? `前导 ${gapOf(ctRow).msLead}px` : '')
-  check('⑪c 浮层：名字列按内容收缩（≤ 名字文字宽 + 1.5；旧实现固定 72px）', !!ctRow && ctRow.nameBox[2] <= ctRow.nameText[2] + 1.5, ctRow ? `列宽 ${ctRow.nameBox[2]} vs 文字 ${ctRow.nameText[2]}` : '')
-  const peekMaxW = await js(`getComputedStyle(document.querySelector('[data-peek-latency] [data-probe-name]')).maxWidth`)
-  check('⑪d 浮层：名字列上限仍是 72px（computed max-width；旧实现没有上限声明）', peekMaxW === '72px', String(peekMaxW))
-  check('⑪e 浮层：丢包列仍固定 36px（w-9 老口径）', !!ctRow && Math.abs(ctRow.lossBox[2] - 36) <= 0.5, ctRow ? `实测 ${ctRow.lossBox[2]}px` : '')
-  await shotGrid('peek-single', '[data-note-panel]')
-
-  // 第一张卡 = 「混排三行」——对齐不变量
-  await send('Page.navigate', { url: `${BASE}/` })
-  for (let i = 0; i < 60; i++) { await sleep(250); if (await js(`document.querySelectorAll('[data-note-popover]').length >= 4`)) break }
-  await openPeek(0)
-  const peek0 = JSON.parse(await js(measureOf('[data-peek-latency]')) ?? '[]')
-  const p0rows = peek0[0]?.rows ?? []
-  if (p0rows.length === 3) {
-    const spread = (f) => r1(Math.max(...p0rows.map(f)) - Math.min(...p0rows.map(f)))
-    check('⑪f 浮层（三行）：数值右沿 / 走势线左沿逐列对齐（≤1.5px）',
-      spread((r) => r.msText[1]) <= 1.5 && spread((r) => r.spark[0]) <= 1.5,
-      `数值右沿差 ${spread((r) => r.msText[1])} / 走势线左沿差 ${spread((r) => r.spark[0])}`)
-    check('⑪g 浮层（三行）：每行结构间隙都在 5~11px', p0rows.every((r) => gapOf(r).structural >= 5 && gapOf(r).structural <= 11), p0rows.map((r) => `${r.name}:${gapOf(r).structural}`).join(' '))
-  } else check('⑪f/g 浮层（三行）没渲染出来', false)
-  await shotGrid('peek-mixed', '[data-note-panel]')
-}
-
-/* ---------------------------------------------------------------- ⑫ 详细档：保持固定列原样（站长 2026-10-15 分档） */
+/* ---------------------------------------------------------------- ⑪ 详细档：保持固定列原样（站长 2026-10-15 分档） */
 
 {
   const data = await measureAt({ cardStyle: 'detailed', pingLines: '' }, 1440, 900, false, '详细档（保持固定列原样）')
   const all = data.flatMap((p) => p.rows)
-  check('⑫ 详细档：名字列恒 80px（含短名/超长名——自适应档会缩成 13.7 / 内容宽）',
+  check('⑪ 详细档：名字列恒 80px（含短名/超长名——自适应档会缩成 13.7 / 内容宽）',
     all.length === 7 && all.every((r) => Math.abs(r.nameBox[2] - 80) <= 0.5), all.map((r) => `${r.name}:${r.nameBox[2]}`).join(' '))
-  check('⑫b 详细档：数值列恒 56px、丢包列恒 40px',
+  check('⑪b 详细档：数值列恒 56px、丢包列恒 40px',
     all.every((r) => Math.abs(r.msBox[2] - 56) <= 0.5 && Math.abs(r.lossBox[2] - 40) <= 0.5),
     all.slice(0, 3).map((r) => `${r.msBox[2]}/${r.lossBox[2]}`).join(' '))
   const ct = all.find((r) => r.name === 'CT')
-  check('⑫c 详细档：短名行仍是旧的固定间距（80~100px，不是自适应的 ~8px）', !!ct && gapOf(ct).raw >= 80 && gapOf(ct).raw <= 100, ct ? `实测 ${gapOf(ct).raw}px` : '没找到 CT 行')
+  check('⑪c 详细档：短名行仍是旧的固定间距（80~100px，不是自适应的 ~8px）', !!ct && gapOf(ct).raw >= 80 && gapOf(ct).raw <= 100, ct ? `实测 ${gapOf(ct).raw}px` : '没找到 CT 行')
   await shotGrid('detailed-1440')
 }
 

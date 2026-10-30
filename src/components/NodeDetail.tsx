@@ -5,7 +5,7 @@ import { Check, Copy, Info } from "lucide-react"
 import { TimeChart } from "@/components/Chart"
 import { PingTooltip } from "@/components/ChartTooltip"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Country, deployed, offlineSeconds, RemarkChips } from "@/components/NodeCard"
+import { Country, cycleText, deployed, expiryText, offlineSeconds, priceText, RemarkChips } from "@/components/NodeCard"
 import { api, type Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, despike, cpuName, osName, rate, uptime,
@@ -24,6 +24,8 @@ type Point = {
   /** 连接条数（hub 的历史桶里带着 `tcp / udp`；老 hub 的桶可能没有这个键——图会自行留白）。 */
   tcp?: number | null
   udp?: number | null
+  /** 进程总数（同一个历史桶的 `procs`；老 hub 的桶同样可能没有这个键）。 */
+  procs?: number | null
 }
 // `latency` is the bucket's median round trip, null when every probe in it timed
 // out. `band` is the range its answers spanned, absent when they spanned nothing.
@@ -118,10 +120,10 @@ function onlineFor(node: Node) {
   return down >= 60 ? `离线 ${uptime(down)}` : "离线"
 }
 
-function Fact({ label, value }: { label: string; value?: string | number | null }) {
+function Fact({ label, value, title }: { label: string; value?: string | number | null; title?: string }) {
   if (value === null || value === undefined || value === "") return null
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" title={title}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="truncate text-sm">{value}</dd>
     </div>
@@ -239,6 +241,10 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   }, [node.id, hours, tab])
 
   const m = node.metrics
+  // 计费那一截（价格 / 周期）：原先只收在「经典 / 延迟」两档的浮层里，浮层撤掉后搬到本页
+  // 信息格（见下面「价格」那一格）。价格 0 不出现 —— 与卡片同一口径（NodeCard 的 priceText）。
+  const price = priceText(node)
+  const cycle = cycleText(node)
   // One series per probe that reported, labelled from the names the samples
   // arrived with. Memoised, as are the two below: the node prop changes every few
   // seconds as live metrics arrive, and rebuilding the chart's data array on those
@@ -277,6 +283,9 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
     const max = (pick: (m: Point) => number) =>
       metricRows.reduce((hi, m) => Math.max(hi, pick(m)), 0)
     const connTop = axisTop(max((m) => Math.max(m.tcp ?? 0, m.udp ?? 0)), 4, 10)
+    // ★2026-10-30（与 kanso 同轮）：进程总数也是「计数不是容量」，口径与连接数完全同款
+    //   ——轴顶取窗口峰值、下限 4、补到 4 的倍数（四分刻度不出小数）。
+    const procTop = axisTop(max((m) => m.procs ?? 0), 4, 10)
     return {
       // A floor of 4%, or a machine that never exceeds 0.4% would get an axis of
       // 0-0.4 and render every scheduler blip as a peak. Capped at 100.
@@ -290,6 +299,7 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
       //   峰值落在 (4,6] / (8,10] / (20,30] 时轴顶会是 6 / 10 / 30。把轴顶补到 4 的倍数
       //   （6→8、10→12、30→32），任何峰值下四分刻度都是整数。
       conn: connTop + ((4 - (connTop % 4)) % 4),
+      procs: procTop + ((4 - (procTop % 4)) % 4),
     }
   }, [metricRows])
 
@@ -395,9 +405,13 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
         />
         <Fact label="内存 / 硬盘" value={`${bytes(node.mem_total)} / ${bytes(node.disk_total)}`} />
         <Fact label="今日流量" value={`↓ ${bytes(node.day_rx)} · ↑ ${bytes(node.day_tx)}`} />
-        {/* 最后一格是「在线时间」：取代原先标题行上那枚状态徽章。它顶掉的是「续费」
-            那一格——公开页的访客关心这台机器还活着多久，价格与到期在后台看。 */}
+        {/* 第三行收尾三格：在线时间 → 价格 → 到期。
+            「在线时间」取代原先标题行上那枚状态徽章；「价格」「到期」是 2026-10-30 从
+            「经典 / 延迟」两档右上角那枚 ⓘ 浮层搬来的（浮层撤掉之后它们只剩这一处），
+            排法与 kanso 那九格同一条栅格（三列 × 三行）。到期那一格悬停给绝对日期。 */}
         <Fact label="在线时间" value={onlineFor(node)} />
+        <Fact label="价格" value={price ? [price, cycle].filter(Boolean).join(" / ") : null} />
+        <Fact label="到期" value={expiryText(node) ?? "无期限"} title={node.expires_at || undefined} />
       </dl>
 
       {/* 整页详情那一块备注：**私有 + 公有合并成一串小卡片**（私有在前、带锁与描边 = 仅自己可见）。
@@ -634,9 +648,11 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
       ) : metricRows.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted-foreground">这段时间没有历史数据</p>
       ) : (
-        <div className="space-y-5">
-          {/* ★2026-10-16 站长定稿的次序（与 kanso 同步）：网络速率与 TCP / UDP 连接打头
-              （在 CPU 之前），其后 CPU / 内存 / 硬盘。 */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          {/* ★2026-10-30 与 kanso 同轮（站长要求）：资源区**每排两张、一共三排**（lg 起两列；
+              窄屏仍是一列），六张卡＝网络速率 · TCP / UDP 连接 · 进程 · CPU · 内存 · 硬盘。
+              ★2026-10-16 站长定稿的次序（与 kanso 同步）：网络速率与 TCP / UDP 连接打头
+              （在 CPU 之前），其后 进程 / CPU / 内存 / 硬盘（进程卡 2026-10-30 加、排 CPU 之前）。 */}
           {/* A rate has no total to be a fraction of, so this one climbs the
               ladder like CPU rather than pinning to a capacity. */}
           <Panel title="网络速率">
@@ -669,6 +685,19 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
               hours={hours}
               top={tops.conn}
               label="TCP / UDP 连接数走势"
+            />
+          </Panel>
+
+          {/* ★2026-10-30 与 kanso 同轮新增：进程总数走势。hub 只上报进程**数**（`procs`），
+              没有逐进程的列表 —— 所以这张画的是条数，口径与「TCP / UDP 连接」同款：
+              计数不填面积、轴顶取窗口峰值并补到 4 的倍数。标题右端就是当前值。 */}
+          <Panel title={m && typeof m.procs === "number" ? `进程 · ${m.procs}` : "进程"}>
+            <TimeChart
+              rows={metricRows}
+              series={[{ key: "procs", name: "进程", color: "var(--chart-8)" }]}
+              hours={hours}
+              top={tops.procs}
+              label="进程数走势"
             />
           </Panel>
 

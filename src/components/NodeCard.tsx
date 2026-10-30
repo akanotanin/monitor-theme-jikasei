@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { useRef, useState, type ComponentType, type ReactNode } from "react"
 import {
-  ArrowDown, ArrowDownUp, ArrowUp, CalendarClock, Cpu, HardDrive, Info, Lock, MemoryStick,
+  ArrowDown, ArrowDownUp, ArrowUp, CalendarClock, Cpu, HardDrive, Lock, MemoryStick,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
-import { LatencyPanel, PeekLatency } from "@/components/Latency"
+import { LatencyPanel } from "@/components/Latency"
 import { TextHighlight } from "@/components/TextHighlight"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
@@ -108,11 +108,15 @@ function onlineText(node: Node): string | null {
   return down >= 60 ? `离线 ${uptime(down)}` : "离线"
 }
 
-function priceText(node: Node): string | null {
+/**
+ * 价格与计费周期：**卡片（详细档第二行）与整页详情共用这一处**。
+ * 价格 0 不写：hub 后台那一格写着「留空或 0 为免费」，把「没填」也印成「免费」是在替站长断言。
+ */
+export function priceText(node: Node): string | null {
   return node.price > 0 ? money(node.price, node.currency) : null
 }
 
-function cycleText(node: Node): string | null {
+export function cycleText(node: Node): string | null {
   if (node.price <= 0) return null
   return CYCLES[node.billing_cycle] ?? (node.billing_cycle || null)
 }
@@ -122,7 +126,7 @@ function cycleText(node: Node): string | null {
  * 顺延到期日，访客自己按浏览器时钟算会在顺延前的那几个小时里显示成「已过期」。只有
  * 旧 hub 没这个 key 时，才退回按 `expires_at` 自己数。
  */
-function expiryText(node: Node): string | null {
+export function expiryText(node: Node): string | null {
   const days = node.expires_in !== undefined ? node.expires_in : daysUntil(node.expires_at)
   if (days === null || days === undefined) return null
   if (days < 0) return `已过期 ${-days} 天`
@@ -199,7 +203,7 @@ function trafficFoot(node: Node) {
 
 /**
  * 备注小卡片：**私有那几枚带锁 + 描边**（仅自己可见），公有那几枚实心 `secondary`。
- * 卡片（详细档标题行、经典/延迟的浮层）与整页详情、紧凑展开行共用这一套——写法只有一处，
+ * 卡片（详细 / 经典 / 延迟三档的标题行右端）与整页详情、紧凑展开行共用这一套——写法只有一处，
  * 合并后的次序（私有在前、公有在后）也由 `@/lib/notes` 的 `remarkChips` 一处决定。
  */
 export function RemarkChips({ chips, max = "full", keep = false, compact = false }: { chips: RemarkChip[]; max?: string; keep?: boolean; compact?: boolean }) {
@@ -247,7 +251,7 @@ export function NodeCard({ node, onOpen, onOpenLatency, onWarm, latencyLines, ca
   const m = node.metrics
   // 详细档：图标、元信息行与三枚读数盒都只在它里面出现；配色仍与另外两档同一套灰。
   const detailed = cardStyle === "detailed"
-  // 经典档：底部是 2×2 四格、不含延迟；备注与「延迟」档一样收在右上角那枚浮层里（见 peek）。
+  // 经典档：底部是 2×2 四格、不含延迟；备注与「延迟」档一样摊在标题行右端（ⓘ 浮层 2026-10-30 撤掉）。
   // 简约档：结构、内容、位置与经典档完全一致，只换一套视觉处理——标签改用前景色、
   // 进度条压到 4px、底注降到 11px、名字加粗一档、格子间距收紧（见下方各处 plain 分支）。
   // ★ 按站长的口径，简约档**不显示公开备注**（其余四档都显示），这一档保持原样。
@@ -255,34 +259,15 @@ export function NodeCard({ node, onOpen, onOpenLatency, onWarm, latencyLines, ca
   // 这台机器的备注（见 @/lib/notes）：私有在前（仅自己可见）、公有在后，都拆成一枚枚小卡片。
   // 备注那一串：先按「备注显示位置」判这一侧要不要摊，再交给 @/lib/notes 拆（私有在前、公有在后）。
   const chips = remarksOnCards(remarkPlacement ?? "both") ? remarkChips(node) : []
-  /**
-   * 「经典」「延迟」两档右上角那枚信息控件：悬停或点击弹出浮层，里面是
-   * **备注（写了才有）+ 在线时间 + 价格 + 到期**。
-   *
-   * 这两档本来不写这些（它们原来只有「详细」档有），浮层让它们按需出现；控件本身只有 20px、
-   * 挂在标题行右端，卡片其余部分一个像素都不为它让位。★这两档**常驻**这枚控件（站长 2026-10-03 定的）：
-   * 没写备注的机器点开也能看到在线时间/价格/到期——不然那几项在这两档上根本无处可看。
-   */
-  const peek = cardStyle === "classic" || cardStyle === "latency"
-  const [peekOpen, setPeekOpen] = useState(false)
-  const peekRef = useRef<HTMLSpanElement>(null)
-  // 「详细」档标题行那一格：悬停弹悬浮层，把放不下的备注看全（只有这一档有，另两档收在 ⓘ 里）。
+  // ★2026-10-30（站长要求）：**经典 / 延迟两档右上角那枚 ⓘ 浮层撤掉**（它里面原本是备注 +
+  // 在线时间 + 价格 + 到期，经典档还多一块三网延迟）。在线时间/价格/到期已搬进整页详情
+  // （见 NodeDetail 的信息格），卡片上不再留任何浮层。这两档的备注因此改为**直接摊在标题行
+  // 右端**（与「详细」档同一处）——整块删掉的话，站长在后台设的「卡片与详情页都显示」就只
+  // 对四档生效了。这里不给它们 hover 浮层：站长要的就是「这两档不再有浮窗」。
+  const inlineChips = chips.length > 0 && (detailed || cardStyle === "classic" || cardStyle === "latency")
+  // 「详细」档标题行那一格：悬停弹悬浮层，把放不下的备注看全（只有这一档有）。
   const [titlePeek, setTitlePeek] = useState(false)
   const titlePeekRef = useRef<HTMLSpanElement>(null)
-  // 钉住（点开）之后点别处要能收起；点卡片别的地方会跳详情页，所以只在浮层外按下时收。
-  useEffect(() => {
-    if (!peekOpen) return
-    const onDown = (e: PointerEvent) => {
-      // 别写 `e.target as Node`：本文件里的 `Node` 是主题自己的节点类型（@/lib/api），
-      // 会和 DOM 的 Node 撞名。用 instanceof 收窄，既避开名字冲突也真的判了类型。
-      const el = e.target
-      if (!(el instanceof HTMLElement) || !peekRef.current?.contains(el)) setPeekOpen(false)
-    }
-    document.addEventListener("pointerdown", onDown)
-    return () => document.removeEventListener("pointerdown", onDown)
-  }, [peekOpen])
-  const price = priceText(node)
-  const cycle = cycleText(node)
 
   // 卡片底部那一行网络：经典、简约、延迟三档共用**同一个节点**——一行两段，
   // 左边实时速率（前景色）、右边累计总量（弱化灰），上面一条分隔线；箭头用文字
@@ -358,87 +343,30 @@ export function NodeCard({ node, onOpen, onOpenLatency, onWarm, latencyLines, ca
             名字少 2px 并被截断（护栏实测 175 → 173px），因为 shrink 是按「收缩系数 × 基准尺寸」
             分摊的，只要备注有基准尺寸就会分走一点。
             极端情况（名字特别长）下备注会被压到看不见 —— 刻意的取舍：宁可备注隐身，也不动机器名。
-            ★「经典」档不挂在这里：它与「延迟」档一样把备注收进右上角那枚浮层（见下面那个控件）。
-            「简约」档不挂（站长的口径），「紧凑」档收在展开行量程栏那格（见 NodeDetail）。 */}
-        {detailed && chips.length > 0 && (
-          /* 「详细」档的备注：**只占一行**（零行高、名字不受影响），放不下的部分裁在边缘外，
-             鼠标移到这一格上弹悬浮层看全（多枚、完整文字）。★悬浮层必须挂在这个**没有 overflow-hidden**
-             的外层上，否则会被裁掉看不见；内层才是那条会裁的一行。 */
+            ★「经典」「延迟」两档 2026-10-30 起也挂在这里（它们右上角那枚 ⓘ 浮层已撤掉）
+              ——只是不弹 hover 浮层；「简约」档不挂（站长的口径），「紧凑」档收在展开行量程栏那格（见 NodeDetail）。 */}
+        {inlineChips && (
+          /* 备注：**只占一行**（零行高、名字不受影响），放不下的部分裁在边缘外。
+             「详细」档鼠标移到这一格上会弹悬浮层看全（多枚、完整文字）；经典 / 延迟两档
+             **不弹**——它们这一轮刚把 ⓘ 浮层撤掉，再挂一个 hover 浮层等于换个地方长回来。
+             ★悬浮层必须挂在这个**没有 overflow-hidden** 的外层上，否则会被裁掉看不见。 */
           <span
             ref={titlePeekRef}
             className="relative ml-auto flex min-w-0 max-w-[40%] grow basis-0 items-center justify-end sm:max-w-[55%]"
-            onPointerEnter={() => setTitlePeek(true)}
-            onPointerLeave={() => setTitlePeek(false)}
+            onPointerEnter={detailed ? () => setTitlePeek(true) : undefined}
+            onPointerLeave={detailed ? () => setTitlePeek(false) : undefined}
           >
             {/* ★`justify-start`（不是 end）：右对齐时溢出会往**左**跑，被裁掉的就成了排在最前面的
                 私有那枚——而它是站长最想一眼看到的；左对齐则是尾巴被裁，前几枚完整。 */}
             <span data-remark="title" className="flex min-w-0 items-center justify-start gap-1 overflow-hidden">
               <RemarkChips chips={chips} max="9rem" keep />
             </span>
-            {titlePeek && (
+            {detailed && titlePeek && (
               <span
                 data-remark-panel
                 className="absolute right-0 top-5 z-20 flex w-max max-w-[18rem] flex-wrap justify-end gap-1 rounded-md border bg-popover px-2 py-1.5 shadow-md"
               >
                 <RemarkChips chips={chips} />
-              </span>
-            )}
-          </span>
-        )}
-        {/* 「经典」「延迟」两档右上角的信息控件（悬停/点击弹浮层：备注 · 在线时间 · 价格 · 到期，
-            经典档最下面还有一条分隔线 + 三网延迟）。卡片自己是 role=button，所以点击与
-            Enter/空格都要拦在控件里，别让它冒泡成「打开详情页」；浮层挂在同一个 relative 容器内，
-            鼠标从图标移到浮层上不会把它关掉。
-            ★ 这两档常驻这枚控件（20px，挂在标题行右端）：没写备注时它照样在，
-            点开是在线时间/价格/到期；「详细」档不挂它——那几项本来就在卡面上写着。 */}
-        {peek && (
-          <span
-            ref={peekRef}
-            className="relative ml-auto shrink-0"
-            onPointerEnter={() => setPeekOpen(true)}
-            onPointerLeave={() => setPeekOpen(false)}
-          >
-            <button
-              type="button"
-              data-note-popover=""
-              aria-expanded={peekOpen}
-              aria-label="备注、在线时间、价格、到期与三网延迟"
-              onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Escape") setPeekOpen(false) }}
-              onClick={(e) => { e.stopPropagation(); setPeekOpen((v) => !v) }}
-              className="grid size-5 place-items-center rounded-full text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              <Info className="size-3.5" />
-            </button>
-            {peekOpen && (
-              <span
-                data-note-panel=""
-                // 「经典」档最下面多一块三网延迟（名 / 延迟 / 走势线 / 丢包），要宽一点才装得下
-                // ——顺带让备注小卡片少折一行；「延迟」档这一档不带那块，也就保持原来的宽度。
-                className={`absolute right-0 top-6 z-20 block ${cardStyle === "classic" ? "w-72" : "w-56"} space-y-1.5 rounded-md border bg-popover px-3 py-2.5 text-xs shadow-md`}
-              >
-                {/* 公开备注：一枚一枚小卡片（逗号分隔的多枚也就排成多枚），
-                    没有备注的机器不占这一行。浮层是这一档唯一能读到它的地方（卡片上不占位）。 */}
-                {chips.length > 0 && (
-                  <span data-note-remark="" className="flex min-w-0 flex-wrap items-center gap-1">
-                    <RemarkChips chips={chips} />
-                  </span>
-                )}
-                <span className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">在线时间</span>
-                  <span className="tnum min-w-0 truncate">{onlineText(node) ?? "—"}</span>
-                </span>
-                {price && (
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="text-muted-foreground">价格</span>
-                    <span className="tnum min-w-0 truncate">{cycle ? `${price} / ${cycle}` : price}</span>
-                  </span>
-                )}
-                <span className="flex items-center justify-between gap-2">
-                  <span className="text-muted-foreground">到期</span>
-                  <span className="tnum min-w-0 truncate">{expiryText(node) ?? "无期限"}</span>
-                </span>
-                {/* 三网延迟排在计费那几行下面、自带一条分隔线；只有「经典」档挂它，且要打开浮层才取数。 */}
-                {cardStyle === "classic" && <PeekLatency node={node} lines={latencyLines} onOpen={onOpenLatency} />}
               </span>
             )}
           </span>

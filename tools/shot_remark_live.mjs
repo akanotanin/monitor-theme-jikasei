@@ -1,6 +1,10 @@
 // 真机取景：静态 = 本机 dist/（待发的这一份），/api/* 转给真 hub（经隧道）——用**真实的节点数据与
 // 真实的公开备注**拍五种形态 + 整页详情，交付给站长看「hub 里那条备注在页面上长什么样」。
 //
+// ★2026-10-30：经典 / 延迟两档右上角那枚 ⓘ 浮层已下线（在线时间/价格/到期搬进整页详情），
+//   这两档的备注改为直接摊在标题行右端 —— 所以本脚本里「点开浮层」那几段对它们不再有内容，
+//   只剩「紧凑」档手机端那枚图标还用得着 [data-note-popover]。
+//
 // 用法：ssh -f -N -J <跳板> -L 28086:127.0.0.1:28080 <hub 那台机器>
 //       node tools/shot_remark_live.mjs http://127.0.0.1:28086 [输出目录=shots/remark-live]
 //
@@ -200,7 +204,7 @@ hub 上存的站点配置：${JSON.stringify(cfg)} → 形态 ${style}`)
     console.log(`   浮层里的备注小卡片：${panel}`)
     await shoot(`hub-01b-list-popover-1440`)
   } else {
-    console.log('   这一档没有浮层控件（只有经典/延迟有；详细档的备注挂在标题行右端，简约档不挂）')
+    console.log('   这一档没有浮层控件（经典/延迟那枚 ⓘ 浮层 2026-10-30 已下线；备注现在摊在标题行右端：详细/经典/延迟三档，简约档不摊）')
   }
   await go(style, 'hub-detail', { path: `/node/${remarked[0].id}`, h: 1100 })
   await shoot('hub-02-detail-1440')

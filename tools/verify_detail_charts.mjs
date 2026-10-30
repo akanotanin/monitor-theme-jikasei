@@ -1,6 +1,6 @@
-// 详情页那五张资源图（网络速率 / TCP·UDP 连接 / CPU / 内存 / 硬盘）的护栏 —— 它们从 recharts
+// 详情页那六张资源图（网络速率 / TCP·UDP 连接 / 进程 / CPU / 内存 / 硬盘）的护栏 —— 它们从 recharts
 // 换成了自绘 `TimeChart`（src/components/Chart.tsx），所以判据得落在「画出来的东西」上：
-//   ① 五块面板各有一张 svg，且撑满面板高度；② Y 轴刻度就是 quarters(top)（不是 recharts 挑的"整"数）；
+//   ① 六块面板各有一张 svg，且撑满面板高度（lg 起每排两张、一共三排）；② Y 轴刻度就是 quarters(top)（不是 recharts 挑的"整"数）；
 //   ③ X 轴是真时间轴（标签是时刻，不是序号）；④ 断点照断：数据中间空一段，路径要断成两笔（不连桥）；
 //   ⑤ 悬停出 tooltip（那枚自绘的，值带单位）。
 //
@@ -63,6 +63,7 @@ const METRICS = {
       net_tx: gap ? null : 200 + i * 8,
       tcp: gap ? null : 8 + (i % 2),          // 8~9 → axisTop(9,4,10) = 10、补到 4 的倍数 = 12（刻度 0/3/6/9/12）
       udp: gap ? null : 2 + (i % 3),          // 2~4（与 tcp 同轴，两条线各自画得出来）
+      procs: gap ? null : 60 + (i % 5) * 2,   // 60~68 → axisTop = 80、已是 4 的倍数（刻度 0/20/40/60/80）
     }
   }),
 }
@@ -146,7 +147,7 @@ await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1200, de
 
 // 每一块面板量：标题、svg 尺寸、Y 轴刻度文字、X 轴刻度文字、面积/折线路径、路径里的断笔数
 const PROBE = `(() => {
-  const panels = [...document.querySelectorAll('h4')].filter((h) => /^(CPU|内存|网络速率|硬盘|TCP)/.test(h.textContent || ''))
+  const panels = [...document.querySelectorAll('h4')].filter((h) => /^(CPU|内存|网络速率|硬盘|TCP|进程)/.test(h.textContent || ''))
   return JSON.stringify(panels.map((h) => {
     const box = h.parentElement
     const svg = box.querySelector('svg')
@@ -226,21 +227,46 @@ async function shot(name, selector) {
 
 console.log(`\n详情页五张资源图（${REAL ? '真站' : UPSTREAM ? `本机 dist + 上游 ${UPSTREAM}` : '本机夹具'}）:`)
 const charts = await open(`${BASE}/node/1`)
-// ★2026-10-16 站长定稿的次序（与 kanso 同步）：网络速率与 TCP / UDP 连接打头（在 CPU 之前）。
-const PANELS = ['网络速率', 'TCP / UDP', 'CPU', '内存', '硬盘']
-check('五块面板都在、且次序＝网络速率 / TCP / UDP 连接 / CPU / 内存 / 硬盘',
-  charts.length === 5 && PANELS.every((t, i) => (charts[i]?.title || '').startsWith(t)),
+// ★2026-10-16 站长定稿的次序（与 kanso 同步）：网络速率与 TCP / UDP 连接打头（在 CPU 之前）；
+// ★2026-10-30 与 kanso 同轮：进程卡加在 CPU 之前（六块）。
+const PANELS = ['网络速率', 'TCP / UDP', '进程', 'CPU', '内存', '硬盘']
+check('六块面板都在、且次序＝网络速率 / TCP / UDP 连接 / 进程 / CPU / 内存 / 硬盘',
+  charts.length === 6 && PANELS.every((t, i) => (charts[i]?.title || '').startsWith(t)),
   JSON.stringify(charts.map((c) => c.title)))
 check('每块都有一张 svg，且撑满图表容器（h-40 = 160）',
-  charts.length === 5 && charts.every((c) => c.svg && Math.abs(c.svg.h - c.chartH) <= 2 && c.chartH === 160),
+  charts.length === 6 && charts.every((c) => c.svg && Math.abs(c.svg.h - c.chartH) <= 2 && c.chartH === 160),
   JSON.stringify(charts.map((c) => `${c.title} svg ${c.svg?.w}×${c.svg?.h} / 容器 ${c.chartH}`)))
+
+// ★2026-10-30 站长要求（与 kanso 同轮）：资源区**每排两张、一共三排**。
+//   窄屏（本文件默认 1000 视口）是一列，所以换到 lg 那一档量一次几何：
+//   同一排两块 y 相同、x 不同、等宽；六块正好三排。
+await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1200, deviceScaleFactor: 2, mobile: false })
+await sleep(400)
+const gridBoxes = JSON.parse(await js(`(() => {
+  const hs = [...document.querySelectorAll('h4')].filter((h) => /^(CPU|内存|网络速率|硬盘|TCP|进程)/.test(h.textContent || ''))
+  return JSON.stringify(hs.map((h) => { const b = h.parentElement.getBoundingClientRect(); return { t: (h.textContent || '').slice(0, 5), x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width) } }))
+})()`) ?? '[]')
+await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 1200, deviceScaleFactor: 2, mobile: false })
+await sleep(350)
+{
+  const rowKeys = [...new Set(gridBoxes.map((b) => b.y))]
+  check('★ 资源区 2×3：lg 下每排两张、一共三排（1400 视口实测）',
+    gridBoxes.length === 6 && rowKeys.length === 3 && rowKeys.every((y) => gridBoxes.filter((b) => b.y === y).length === 2),
+    JSON.stringify(gridBoxes.map((b) => `${b.t}@${b.x},${b.y}`)))
+  check('★ 同一排两块等宽、左右并排（x 差 > 40px）',
+    rowKeys.length === 3 && rowKeys.every((y) => {
+      const r = gridBoxes.filter((b) => b.y === y)
+      return r.length === 2 && Math.abs(r[0].w - r[1].w) <= 2 && Math.abs(r[0].x - r[1].x) > 40
+    }),
+    JSON.stringify(gridBoxes.map((b) => `${b.t} x${b.x} w${b.w}`)))
+}
 check('每张 svg 都带 aria-label（读屏知道画的是什么）', charts.every((c) => !!c.ariaLabel), JSON.stringify(charts.map((c) => c.ariaLabel)))
 check('Y 轴 5 条刻度、X 轴有时刻标签',
   charts.every((c) => c.ys.length === 5 && c.xs.length >= 3),
   JSON.stringify(charts.map((c) => `${c.title} y=${c.ys.length} x=${c.xs.length}`)))
 check('X 轴标签是时刻（HH:MM），不是序号', charts.every((c) => c.xs.every((s) => /^\d{2}:\d{2}$/.test(s))), JSON.stringify(charts[0]?.xs))
-check('面积图有线下面的填充（CPU / 内存 / 硬盘；断点会把它切成两块），折线图没有（网络速率 / TCP / UDP）',
-  charts[2]?.area >= 1 && charts[3]?.area >= 1 && charts[4]?.area >= 1 && charts[0]?.area === 0 && charts[1]?.area === 0,
+check('面积图有线下面的填充（CPU / 内存 / 硬盘；断点会把它切成两块），折线图没有（网络速率 / TCP / UDP / 进程）',
+  charts[3]?.area >= 1 && charts[4]?.area >= 1 && charts[5]?.area >= 1 && charts[0]?.area === 0 && charts[1]?.area === 0 && charts[2]?.area === 0,
   JSON.stringify(charts.map((c) => `${c.title} 面积 ${c.area}`)))
 check('网络速率是两条折线（下行 / 上行）', charts[0]?.line === 2, `line=${charts[0]?.line}`)
 // ★2026-10-16 站长要求（与 kanso 同步）：TCP / UDP 两条折线，且是两种不同颜色。
@@ -257,9 +283,10 @@ if (!REAL && !UPSTREAM) {
 } else {
   // ★（2026-10-16 审出）原判据「每条线都 ≥1 笔」对「多余断笔」本来也抓不到（非空路径都 ≥1），
   //   又会把老 hub（历史桶没有 tcp/udp 两列）下连接数面板的**留白**当假红。
-  //   改为：必有数据的四块都画出了线；连接数面板缺列时允许留白。
-  check('真数据：该有数据的面板都画出了线（连接数面板缺列时留白，不算断）',
-    [0, 2, 3, 4].every((i) => (charts[i]?.breaks ?? []).some((n) => n >= 1)),
+  //   改为：必有数据的几块都画出了线；连接数 / 进程那两块缺列时允许留白
+  //   （老 hub 的历史桶没有 `tcp / udp / procs` 三列）。
+  check('真数据：该有数据的面板都画出了线（连接数 / 进程面板缺列时留白，不算断）',
+    [0, 3, 4, 5].every((i) => (charts[i]?.breaks ?? []).some((n) => n >= 1)),
     JSON.stringify(charts.map((c) => `${c.title} 断笔 ${c.breaks.join(',')}`)))
 }
 
@@ -267,11 +294,11 @@ if (!REAL && !UPSTREAM) {
   const maxCpu = Math.max(...METRICS.metrics.map((m) => m.cpu ?? 0))
   const cpuTicks = quarters(axisTop(maxCpu, 4, 10, 100)).map((v) => `${v}%`)
   check(`CPU 的 Y 轴刻度就是 quarters(axisTop(max))（${cpuTicks.join(' / ')}）`,
-    JSON.stringify(charts[2]?.ys) === JSON.stringify(cpuTicks), JSON.stringify(charts[2]?.ys))
+    JSON.stringify(charts[3]?.ys) === JSON.stringify(cpuTicks), JSON.stringify(charts[3]?.ys))
   check('网络速率的 Y 轴带 /s 单位', (charts[0]?.ys ?? []).every((s) => s.endsWith('/s')), JSON.stringify(charts[0]?.ys))
   check('内存 / 硬盘的 Y 轴按字节印',
-    (charts[3]?.ys ?? []).every((s) => /B$/.test(s)) && (charts[4]?.ys ?? []).every((s) => /B$/.test(s)),
-    JSON.stringify({ 内存: charts[3]?.ys, 硬盘: charts[4]?.ys }))
+    (charts[4]?.ys ?? []).every((s) => /B$/.test(s)) && (charts[5]?.ys ?? []).every((s) => /B$/.test(s)),
+    JSON.stringify({ 内存: charts[4]?.ys, 硬盘: charts[5]?.ys }))
   const maxConn = Math.max(...METRICS.metrics.map((m) => Math.max(m.tcp ?? 0, m.udp ?? 0)))
   // ★与页面同式（2026-10-16）：轴顶补到 4 的倍数 —— axisTop 会给 6 / 10 / 30 这类，
   //   quarters 就带 x.5；夹具峰值 9 正是那个坑（axisTop = 10 → 补到 12）。页面若漏补，这里必红。
@@ -280,6 +307,13 @@ if (!REAL && !UPSTREAM) {
   check(`TCP / UDP 的 Y 轴刻度就是 quarters(轴顶补整)（${connTicks.join(' / ')}）、纯整数无单位`,
     JSON.stringify(charts[1]?.ys) === JSON.stringify(connTicks) && connTicks.every((s) => /^\d+$/.test(s)),
     JSON.stringify(charts[1]?.ys))
+  // ★2026-10-30（与 kanso 同轮）：进程面板与连接数同一个计数口径 —— 轴顶补到 4 的倍数。
+  const maxProc = Math.max(...METRICS.metrics.map((m) => m.procs ?? 0))
+  const procTop = axisTop(maxProc, 4, 10)
+  const procTicks = quarters(procTop + ((4 - (procTop % 4)) % 4)).map(String)
+  check(`进程的 Y 轴刻度就是 quarters(轴顶补整)（${procTicks.join(' / ')}）、纯整数无单位`,
+    JSON.stringify(charts[2]?.ys) === JSON.stringify(procTicks) && procTicks.every((s) => /^\d+$/.test(s)),
+    JSON.stringify({ 实测: charts[2]?.ys, 期望: procTicks }))
 }
 
 // 悬停：鼠标落到 CPU 那块绘图区中间，应该出一枚 tooltip（时间戳 + CPU + 带 % 的值）
@@ -376,6 +410,21 @@ check('没有控制台异常', errors.length === 0, errors.slice(0, 2).join(' | 
   check('★ 不再有独立的「TCP 连接」「UDP 连接」两格（合成之后就该只剩一格）',
     facts['TCP 连接'] === undefined && facts['UDP 连接'] === undefined,
     JSON.stringify({ TCP: facts['TCP 连接'], UDP: facts['UDP 连接'] }))
+  // ★2026-10-30 站长要求：「在线时间 / 价格 / 到期」从「经典 / 延迟」两档右上角那枚 ⓘ 浮层搬到这一页，
+  //   收在信息格的第三行（与 kanso 那九格同一条栅格）。
+  {
+    const labels = JSON.parse(await js(`JSON.stringify([...document.querySelectorAll('dt')].map((d) => d.textContent.trim()))`) ?? '[]')
+    check('★ 信息项收尾三格＝在线时间 → 价格 → 到期（浮层撤掉后它们只在这里）',
+      JSON.stringify(labels.slice(-3)) === JSON.stringify(['在线时间', '价格', '到期']),
+      JSON.stringify(labels))
+    if (!REAL && !UPSTREAM) {
+      check('★ 价格 ＝ ¥349.00 / 月付（夹具 monthly 349 CNY）', facts['价格'] === '¥349.00 / 月付', String(facts['价格']))
+      check('★ 到期 ＝ 剩余 299 天（hub 下发的 expires_in，不按访客时钟算）', facts['到期'] === '剩余 299 天', String(facts['到期']))
+    } else {
+      check('★ 价格 / 到期都是非空文本（真站只断形状）', !!facts['价格'] && !!facts['到期'],
+        JSON.stringify({ 价格: facts['价格'], 到期: facts['到期'] }))
+    }
+  }
 }
 // 真站那轮也出图：同一台机器、同一时刻，改前改后各拍一张才能比。
 await shot(REAL ? 'live-detail-charts' : 'detail-charts')
@@ -683,13 +732,13 @@ if (!REAL && !UPSTREAM) {
   console.log('\n三、页签往返（网络延迟 → 资源）:')
   const clickTab = (label) => js(`(() => { const b = [...document.querySelectorAll('button')].find((x) => (x.textContent || '').trim() === ${JSON.stringify(label)}); b && b.click(); return !!b })()`)
   const waitLatency = async () => { for (let i = 0; i < 40; i++) { await sleep(300); if (await js(`document.querySelector('svg[aria-label="节点延迟走势"]') !== null`)) return true } return false }
-  // a) 正常形状（五个键都带齐）：切过去再切回来，五张图必须回来
+  // a) 正常形状（五个键都带齐）：切过去再切回来，六张图必须回来
   await clickTab('网络延迟')
   check('切到延迟页签（图出来）', await waitLatency(), '')
   await clickTab('资源')
   let backN = 0
-  for (let i = 0; i < 50; i++) { await sleep(300); backN = await js(`document.querySelectorAll('[data-chart] svg').length`); if (backN >= 5) break }
-  check('★ 切回资源：五张图回来（不停在空提示/空白）', backN >= 5, `现在 ${backN} 张`)
+  for (let i = 0; i < 50; i++) { await sleep(300); backN = await js(`document.querySelectorAll('[data-chart] svg').length`); if (backN >= 6) break }
+  check('★ 切回资源：六张图回来（不停在空提示/空白）', backN >= 6, `现在 ${backN} 张`)
   // b) 缺键形状（形状漂移的哨兵）：响应里没有 metrics 键，整页也不许炸
   errors.length = 0
   partialShape = true
@@ -702,10 +751,10 @@ if (!REAL && !UPSTREAM) {
   for (let i = 0; i < 50; i++) {
     await sleep(300)
     st = JSON.parse(await js(`JSON.stringify({ alive: document.querySelector('header') !== null, charts: document.querySelectorAll('[data-chart] svg').length })`))
-    if (st.charts >= 5) break
+    if (st.charts >= 6) break
   }
   check('★ 缺 metrics 键：整页不炸（header 还在、没卸载整棵树）', st.alive === true, JSON.stringify(st))
-  check('★ 缺 metrics 键：随后五张图照样画出来', st.charts >= 5, JSON.stringify(st))
+  check('★ 缺 metrics 键：随后六张图照样画出来', st.charts >= 6, JSON.stringify(st))
   check('缺键切换期间没有未捕获异常', errors.length === 0, errors.slice(0, 2).join(' | '))
   partialShape = false
 }

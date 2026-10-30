@@ -9,8 +9,9 @@
 // 站长 2026-10-03 定的口径（这一份护栏就是它的判据）：
 //   · 备注有两个来源：hub 后台按节点填的「公开备注」**优先**，这台**没写公开备注**才用主题设置里的
 //     （主题设置里那份「服务器备注」清单 1.19.0 已删：备注只来自 hub 这两个字段）；
-//   · 「经典」「延迟」两档**右上角常驻**一枚信息图标：点开是在线时间/价格/到期，写了公开备注就多一排小卡片；
-//   · 「详细」档公开备注挂在标题行右端（多枚小卡片）；「简约」档不显示备注、也不挂那枚图标；
+//   · ★2026-10-30 站长改口：「经典」「延迟」两档**右上角那枚 ⓘ 浮层撤掉**（在线时间/价格/到期搬进整页详情，
+//     见 verify_detail_charts 的「信息项」那组），这两档的公开备注改摊在**标题行右端**（与「详细」档同一处，
+//     但不弹 hover 浮层）；「简约」档不显示备注；
 //   · 「宽卡」档公开备注摊在底注右端（最多 3 枚），底注恒定占位（卡片高度与有没有备注无关）；「紧凑」档并排在展开行量程栏右端（手机收成一枚图标 + 浮层）；
 //   · **整页详情不摊公开备注**（只留规格与图表），但**私有备注**在那里**整段展示**（探针原本的设定）：
 //     保留换行、不做逗号拆分，块顶带一行「私有备注 · 仅自己可见」标记；
@@ -332,48 +333,31 @@ const card = async (name) => {
 }
 const hover = async (x, y) => { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none', buttons: 0 }); await sleep(400) }
 
-/* ────────────────── ① 经典：右上角常驻浮层（备注也在里面） ────────────────── */
-console.log('\n── 经典档：右上角常驻信息图标，点开是 在线时间/价格/到期（+备注） ──')
+/* ────────────────── ① 经典：ⓘ 浮层撤掉，备注摊在标题行右端 ────────────────── */
+console.log('\n── 经典档：卡面没有任何浮层（在线时间/价格/到期已搬去整页详情），备注摊在标题行右端 ──')
 {
   remark = ''
   await render({ cardStyle: 'classic' }, 'classic-base')
   const base = await card('节点一')
-  const basePop = await json(POPOVER_PROBE(CARD('节点一')))
-  check('经典（没写备注）：右上角那枚控件照样在（原生 button、默认收起）',
-    basePop.btn?.tag === 'BUTTON' && basePop.btn?.expanded === 'false' && basePop.panel === null, JSON.stringify(basePop.btn))
-  check('经典（没写备注）：标题行上没有备注元素（备注只在浮层里）', base.note === false && base.tags.length === 0, JSON.stringify(base.tags))
-  check('经典（没写备注）：控件贴在卡片右上角、且在读数格之上',
-    basePop.btn !== null && Math.abs(base.cardRight - basePop.btn.r - 16) <= 3 && basePop.btn.mid < base.cardTop + base.gridTop,
-    `卡右 ${base.cardRight} / 控件右 ${basePop.btn?.r} / 控件中线 ${basePop.btn?.mid} vs 读数格上沿 ${base.cardTop + base.gridTop}`)
-
-  // 点开：没有备注时就是那三项，没有备注那一排
-  // 控件不在时（实现被弄坏/被判据打回）别让整轮崩在这儿：跳过悬停，让下面几条自己报 FAIL。
-  if (basePop.btn) await hover(basePop.btn.x + basePop.btn.w / 2, basePop.btn.mid)
-  const bOpen = await json(POPOVER_PROBE(CARD('节点一')))
-  const bt = bOpen.panel?.text ?? ''
-  check('经典（没写备注）：浮层里是在线时间 / 价格 / 到期（与「详细」档同一口径）',
-    /在线 /.test(bt) && bt.includes('¥12.50 / 月付') && bt.includes('剩余 95 天'), bt)
-  check('经典（没写备注）：浮层里没有备注那一排', (bOpen.panel?.tags ?? []).length === 0, JSON.stringify(bOpen.panel?.tags))
-  await shot('classic-popover-noremark-1440')
-  await hover(4, 4)
+  check('经典（没写备注）：标题行上没有备注元素，卡片上也没有任何浮层控件',
+    base.note === false && base.tags.length === 0 && base.popover === false,
+    JSON.stringify({ note: base.note, popover: base.popover }))
+  check('★ 经典：整页一个 [data-note-popover] / [data-note-panel] 都没有（浮层 2026-10-30 撤掉）',
+    (await evalJS(`document.querySelectorAll('[data-note-popover], [data-note-panel]').length`)) === 0)
+  check('★ 经典：卡面不再写 价格 / 到期（它们只在整页详情那一页）',
+    !/剩余 95 天/.test(base.text) && !/¥12\.50/.test(base.text), base.text.slice(0, 120))
 
   remark = SHORT
   await render({ cardStyle: 'classic' }, 'classic-note')
   const on = await card('节点一')
-  const onPop = await json(POPOVER_PROBE(CARD('节点一')))
-  check('经典（写了备注）：标题行上仍然没有备注元素（备注进浮层，不在卡面）', on.note === false && on.tags.length === 0, JSON.stringify(on.tags))
-  check('经典（写了备注）：卡片几何与没写备注时逐像素相同（浮层不占位）',
+  check('经典（写了备注）：标题行右端三枚小卡片逐枚同序', SAME(on.tags, tagsOf(SHORT)), JSON.stringify(on.tags))
+  check('经典（写了备注）：每枚都挂着整枚的 title（截断时悬停可看全）', SAME(on.tagTitles, tagsOf(SHORT)), JSON.stringify(on.tagTitles))
+  check('经典（写了备注）：卡片总高 / 标题行高 / 读数格上沿与没写备注时逐像素相同（标题行那一格不加高）',
     on.cardH === base.cardH && on.rowH === base.rowH && on.gridTop === base.gridTop,
     `高 ${on.cardH}/${base.cardH} 行 ${on.rowH}/${base.rowH} 格上沿 ${on.gridTop}/${base.gridTop}`)
-  if (onPop.btn) await hover(onPop.btn.x + onPop.btn.w / 2, onPop.btn.mid)
-  const oOpen = await json(POPOVER_PROBE(CARD('节点一')))
-  const ot = oOpen.panel?.text ?? ''
-  check('经典（写了备注）：浮层里多出备注那三枚小卡片（逐枚同序）',
-    SAME(oOpen.panel?.tags, tagsOf(SHORT)), JSON.stringify(oOpen.panel?.tags))
-  check('经典（写了备注）：备注与在线时间/价格/到期同在（三项没被挤走）',
-    /在线 /.test(ot) && ot.includes('¥12.50 / 月付') && ot.includes('剩余 95 天'), ot)
-  await shot('classic-popover-remark-1440')
-  await hover(4, 4)
+  check('经典（写了备注）：备注只出现一处、没有浮层图标',
+    on.noteAnchors === 1 && on.popover === false, `锚点 ${on.noteAnchors} / 图标 ${on.popover}`)
+  await shot('classic-remark-inline-1440')
 }
 
 /* ────────────────────────────── ② 简约档 ────────────────────────────── */
@@ -516,58 +500,33 @@ const WIDE_PROBE = (name) => `JSON.stringify((() => {
 }
 
 /* ────────────────────────────── ④ 延迟档 ────────────────────────────── */
-console.log('\n── 延迟档：右上角常驻浮层（与经典同一套） ──')
+console.log('\n── 延迟档：与经典同一套（ⓘ 浮层撤掉，备注摊在标题行右端） ──')
 {
   remark = ''
   await render({ cardStyle: 'latency' }, 'latency-base')
   const base = await card('节点一')
-  const basePop = await json(POPOVER_PROBE(CARD('节点一')))
-  check('延迟（没写备注）：那枚控件照样在（常驻，不是「有备注才有」）',
-    basePop.btn?.tag === 'BUTTON' && base.popover === true, JSON.stringify(basePop.btn))
-  check('延迟（没写备注）：卡片正文里没有备注文字、标题行上也没有备注元素',
-    base.note === false && base.tags.length === 0, JSON.stringify(base.tags))
+  check('延迟（没写备注）：标题行上没有备注元素，也没有浮层控件',
+    base.note === false && base.tags.length === 0 && base.popover === false,
+    JSON.stringify({ note: base.note, popover: base.popover }))
+  check('★ 延迟：卡面不再写 价格 / 到期（它们只在整页详情那一页）',
+    !/剩余 95 天/.test(base.text) && !/¥12\.50/.test(base.text), base.text.slice(0, 120))
 
   remark = SHORT
   await render({ cardStyle: 'latency' }, 'latency-note')
   const on = await card('节点一')
-  const onPop = await json(POPOVER_PROBE(CARD('节点一')))
-  check('延迟（写了备注）：卡片几何与没写备注时逐像素相同（浮层与控件都不占位）',
+  check('延迟（写了备注）：标题行右端三枚小卡片逐枚同序', SAME(on.tags, tagsOf(SHORT)), JSON.stringify(on.tags))
+  check('延迟（写了备注）：卡片总高 / 标题行高 / 读数格上沿与没写备注时逐像素相同',
     on.cardH === base.cardH && on.rowH === base.rowH && on.gridTop === base.gridTop,
     `高 ${on.cardH}/${base.cardH} 行 ${on.rowH}/${base.rowH} 格上沿 ${on.gridTop}/${base.gridTop}`)
-  check('延迟（写了备注）：卡片正文里没有备注文字（只在浮层里）',
-    !on.text.includes('三网优化') && on.note === false, on.text.slice(0, 120))
-  check('延迟（写了备注）：控件贴在卡片右上角、且在读数格之上',
-    onPop.btn !== null && Math.abs(on.cardRight - onPop.btn.r - 16) <= 3 && onPop.btn.mid < on.cardTop + on.gridTop,
-    `卡右 ${on.cardRight} / 控件右 ${onPop.btn?.r} / 控件中线 ${onPop.btn?.mid} vs 读数格上沿 ${on.cardTop + on.gridTop}`)
-
-  if (onPop.btn) await hover(onPop.btn.x + onPop.btn.w / 2, onPop.btn.mid)
-  const hov = await json(POPOVER_PROBE(CARD('节点一')))
-  check('延迟（写了备注）：悬停即弹出（aria-expanded=true，浮层渲染出来）',
-    hov.btn?.expanded === 'true' && hov.panel !== null, JSON.stringify(hov.btn))
-  const t = hov.panel?.text ?? ''
-  check('延迟（写了备注）：浮层里三枚小卡片都在（逐枚同序）', SAME(hov.panel?.tags, tagsOf(SHORT)), JSON.stringify(hov.panel?.tags))
-  check('延迟（写了备注）：浮层里另有在线时间 / 价格 / 到期（这三样没被备注挤走）',
-    /在线 /.test(t) && t.includes('¥12.50 / 月付') && t.includes('剩余 95 天'), t)
-  check('延迟（写了备注）：悬停不会跳详情页（仍在列表页）', hov.path === '/', hov.path)
-  await shot('latency-popover-1440')
-
-  // 手机没有悬停，点击是唯一入口；且点它不许连带打开详情页（卡片自己是 role=button）。
-  // ★先把鼠标挪开：悬停那一步刚把浮层打开，指针还停在控件上时再点一下是「收起」。
-  await hover(4, 4)
-  const clickedPath = await evalJS(`(() => { const c = ${CARD('节点一')}; const b = c && c.querySelector('[data-note-popover]'); if (!b) return 'no-btn'; b.click(); return location.pathname })()`)
-  await sleep(300)
-  const clicked = await json(POPOVER_PROBE(CARD('节点一')))
-  check('延迟（写了备注）：点一下就开（手机端的唯一入口）',
-    clicked.panel !== null && clicked.btn?.expanded === 'true', JSON.stringify(clicked.btn))
-  check('延迟（写了备注）：点这枚控件不会打开详情页', clickedPath === '/' && clicked.path === '/', `点击那一刻 ${clickedPath} / 复测 ${clicked.path}`)
-  const esc = await evalJS(`(() => { const c = ${CARD('节点一')}; const b = c && c.querySelector('[data-note-popover]'); if (!b) return 'no-btn'; b.focus(); b.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); return location.pathname })()`)
-  await sleep(300)
-  const afterEsc = await json(POPOVER_PROBE(CARD('节点一')))
-  check('延迟（写了备注）：Escape 收起、且不跳详情页', afterEsc.panel === null && esc === '/', `浮层 ${afterEsc.panel ? '在' : '不在'} / ${esc}`)
-  // 对照组：同样的 Enter 打在卡片本体上确实会跳详情页（证明上面那条「不跳页」不是恒真）。
+  check('延迟（写了备注）：三网延迟那一块照旧在（备注没把它顶掉）',
+    (await evalJS(`document.querySelectorAll('[data-latency]').length`)) >= 1)
+  check('延迟（写了备注）：备注只出现一处、没有浮层图标', on.noteAnchors === 1 && on.popover === false,
+    `锚点 ${on.noteAnchors} / 图标 ${on.popover}`)
+  await shot('latency-remark-inline-1440')
+  // 对照组：Enter 打在卡片本体上确实会跳详情页（卡片仍是 role=button，判据不是恒真）。
   const cardEnter = await evalJS(`(() => { const c = ${CARD('节点一')}; if (!c) return 'no-card'; c.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); return location.pathname })()`)
   await sleep(400)
-  check('延迟（写了备注）：对照组——同样的 Enter 打在卡片本体上确实会跳详情页（判据不是恒真）',
+  check('延迟：对照组——Enter 打在卡片本体上确实会跳详情页（判据不是恒真）',
     typeof cardEnter === 'string' && cardEnter.startsWith('/node'), `卡片上 ${cardEnter}`)
 }
 
@@ -718,15 +677,11 @@ console.log('\n── 合并备注：私有（仅自己可见）+ 公有，列�
   await shot('card-merged-remark-1440')
   await hover(4, 4)
 
-  // ⑤ 经典档的浮层里同样读到合并后的那串
-  await render({ cardStyle: 'classic' }, 'merged-popover')
-  // 浮层要点开才有内容：先读控件、悬停上去再读一次（控件不在时跳过，让断言自己报 FAIL）。
-  const pop0 = await json(POPOVER_PROBE(CARD('节点一')))
-  if (pop0.btn) await hover(pop0.btn.x + pop0.btn.w / 2, pop0.btn.mid)
-  const pop = await json(POPOVER_PROBE(CARD('节点一')))
-  check('列表卡片（经典档浮层）：私有 + 公有都在（逐枚同序）',
-    SAME(pop.panel?.tags, ['仅自己可见的一条', ...tagsOf(SHORT)]), JSON.stringify(pop.panel?.tags))
-  await hover(4, 4)
+  // ⑤ 经典档的标题行里同样读到合并后的那串（浮层撤掉后它摊在同一格）
+  await render({ cardStyle: 'classic' }, 'merged-inline')
+  const cl = await card('节点一')
+  check('列表卡片（经典档标题行）：私有 + 公有都在（逐枚同序）',
+    SAME(cl.tags, ['仅自己可见的一条', ...tagsOf(SHORT)]), JSON.stringify(cl.tags))
 
   privateNote = ''
   remark = SHORT
@@ -780,7 +735,7 @@ const hoursRequested = async () => {
     SAME(pills365, ['1 小时', '6 小时', '24 小时', '7 天', '30 天', '365 天']), JSON.stringify(pills365))
   await clickPill('365 天')
   await sleep(1800)
-  // 详情页有五张资源图（2026-10-16 起），每张各有自己的 x 轴 —— 刻度会重复五遍，所以判据取
+  // 详情页有六张资源图（2026-10-30 起；原五张 + 进程），每张各有自己的 x 轴 —— 刻度会重复六遍，所以判据取
   // **去重后**的条数。★（原来硬编码 ≤ 去重数 × 4：加第五张图后 30 条 > 6×4，这条会假红。）
   // ★原来这里读的是 recharts 的 `.recharts-xAxis-tick-labels text` —— 延迟图换成自绘 SVG
   //   （src/components/Chart.tsx）之后那个类名整批消失，判据就静默变成「0 条」。改读自家图表里
@@ -788,7 +743,7 @@ const hoursRequested = async () => {
   const ticks = (await json(`JSON.stringify([...document.querySelectorAll('svg[role="img"] text')].filter((t) => t.getAttribute('text-anchor') === 'middle').map((t) => t.textContent.trim()))`)) || []
   const uniq = [...new Set(ticks)]
   check('保留 365 天：x 轴刻度去重后仍是稀疏的几条（不是每张 52 条糊成一片），且只写到日',
-    uniq.length >= 3 && uniq.length <= 12 && uniq.every((t) => /^[0-9]{2}\/[0-9]{2}$/.test(t)) && ticks.length <= uniq.length * 5,
+    uniq.length >= 3 && uniq.length <= 12 && uniq.every((t) => /^[0-9]{2}\/[0-9]{2}$/.test(t)) && ticks.length <= uniq.length * 6,
     `共 ${ticks.length} 条 / 去重 ${uniq.length} 条：${JSON.stringify(uniq)}`)
   await shot('detail-range-365d-1440')
   delete meExtra.history_days
@@ -814,7 +769,7 @@ console.log('\n── 备注显示位置：卡片与详情页 / 只在卡片 / �
   check('只在卡片：卡片上有、整页详情那一块整个不出现',
     cardOnlyCard.note === true && SAME(cardOnlyCard.tags, tagsOf(SHORT)) && cardOnlyDetail.block === false && cardOnlyDetail.chips.length === 0,
     JSON.stringify({ card: cardOnlyCard.tags, detail: cardOnlyDetail.chips }))
-  // ③ 只在详情页：卡片这一侧一枚都不摊（连经典/延迟那枚浮层里的备注行也没有），详情页那一块在
+  // ③ 只在详情页：卡片这一侧一枚都不摊（经典/延迟那两档的标题行也没有），详情页那一块在
   await render({ cardStyle: 'detailed', remarkPlacement: 'detail' }, 'place-detail-card')
   const detailOnlyCard = await card('节点一')
   await render({ cardStyle: 'plain', remarkPlacement: 'detail' }, 'place-detail-detail', { path: '/node/1' })
