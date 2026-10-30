@@ -111,6 +111,16 @@ export type Budget = {
   remainingItems: BudgetItem[]
 }
 
+/**
+ * 浮层里最多逐台列多少条（2026-10-31：站长提「机器特别多的时候」）。
+ *
+ * 48 与「今日流量」那张取峰值的上限同值，但不是同一件事：那边是**请求预算**（每台一个历史
+ * 请求、hub 的并发闸门只有 4），这边只是别让 800 台机器撑出 800 行 DOM。两条都按「超过就
+ * 收口、并在末尾用一行说明收掉了多少」处理，数字不丢：预算那张多一行「其余 N 台 ≈¥X」，
+ * 加起来仍等于卡片面那个合计；流量那张在尾巴里写「只列今日流量最大的 48 台」。
+ */
+export const BUDGET_ROWS = 48
+
 /** 逐台明细里的一条（月摊与剩余价值共用；`amount` 都是折算后的人民币金额）。 */
 export type BudgetItem = {
   /** 机器名（原样显示；浮层里过长由 CSS 截断）。 */
@@ -184,16 +194,21 @@ export function cny(amount: number): string {
 
 /**
  * 提示里那句汇率说明。只列真的用到的币种（人民币自身不必写「1 CNY = ¥1」）。
- * `fx` 决定前缀措辞与取价日期：每日汇率（lib/fx.ts 拉的）写「按每日更新的汇率折算」，
- * 内置表写「按固定汇率折算」——文案与数字同源，不许说岔。
+ * `fx` 决定前缀措辞：每日汇率（lib/fx.ts 拉的）只写「每日汇率」（日期就是今天，写出来只是
+ * 多占一行）；内置兜底表写「固定汇率 + 日期」（那个日期是「这份表多久没换过」的信号，得留）。
+ * ——文案与数字同源，不许说岔。
+ *
+ * ★2026-10-31 精简：这一段在浮层尾巴上（15rem 宽 12px 字），原来那版
+ * 「按每日更新的汇率折算（1 EUR = ¥7.4487，1 USD = ¥6.6768，2026-10-30）」要占五行；
+ * 现在把动词砍掉、汇率写成 `EUR ¥7.4487 · USD ¥6.6768`，同一份信息两行收得下。
  */
 export function fxNote(used: string[], skipped: string[] = [], fx: FxSnapshot = FX_BUILTIN): string {
   const rates = used
     .filter((code) => code !== "CNY")
-    .map((code) => `1 ${code} = ¥${trimRate(fx.rates[code])}`)
-  const kind = fx.live ? "按每日更新的汇率折算" : "按固定汇率折算"
-  const head = rates.length ? `${kind}（${rates.join("，")}，${fx.date}）` : `${kind}成人民币`
-  const miss = skipped.length ? `；${skipped.join("、")} 没有汇率，未计入` : ""
+    .map((code) => `${code} ¥${trimRate(fx.rates[code])}`)
+  const kind = fx.live ? "每日汇率" : `固定汇率 ${fx.date}`
+  const head = rates.length ? `${kind}：${rates.join("，")}` : "人民币记账，无需折算"
+  const miss = skipped.length ? `；${skipped.join("、")} 无汇率未计入` : ""
   return head + miss
 }
 

@@ -108,9 +108,12 @@ eq(round(legacy.remaining), 15, "旧 hub 按 expires_at 自己数（剩 15 天 �
 /* 金额与提示文案。 */
 eq(cny(1234.5), "¥1,234.50", "人民币金额带千分位")
 eq(cny(0), "¥0.00", "零也写两位小数")
-eq(fxNote(["CNY"]), "按固定汇率折算成人民币", "只用人民币时不列汇率")
-eq(fxNote(["CNY", "USD"]), `按固定汇率折算（1 USD = ¥${FX_CNY.USD}，2026-09-30）`, "列用到的汇率与取价日期")
-eq(fxNote(["CNY"], ["XYZ"]), "按固定汇率折算成人民币；XYZ 没有汇率，未计入", "没有汇率的币种要点名")
+eq(fxNote(["CNY"]), "人民币记账，无需折算", "只用人民币时不列汇率")
+eq(fxNote(["CNY", "USD"]), `固定汇率 2026-09-30：USD ¥${FX_CNY.USD}`, "列用到的汇率与取价日期")
+eq(fxNote(["CNY"], ["XYZ"]), "人民币记账，无需折算；XYZ 无汇率未计入", "没有汇率的币种要点名")
+// 多个币种：按 `used` 的顺序用中文逗号连起来（2026-10-31 精简时把「 · 」换成「，」——
+// 浮层里换行会落在逗号后面，不会留一个悬空的间隔点）。
+eq(fxNote(["USD", "EUR"]), `固定汇率 2026-09-30：USD ¥${FX_CNY.USD}，EUR ¥${FX_CNY.EUR}`, "多币种用中文逗号连接")
 
 /* 逐台明细（「月度预算」悬停浮层）：与 monthly 完全同一份口径 —— 计入规则一样、
    金额降序（同额保持原顺序）、条数与 monthlyCount 一致。 */
@@ -147,9 +150,11 @@ eq(round(worth.remaining), round(100 + 15), "明细与合计同源：加起来�
 const liveSnap = { rates: { ...FX_CNY, USD: 7.1, EUR: 7.5 }, date: "2026-10-11", live: true }
 const live = budgetOf([node({ price: 12, currency: "USD", billing_cycle: "monthly", expires_in: 10 })], liveSnap)
 eq(round(live.monthly), round(12 * 7.1), "注入每日汇率：月摊按新值折算（不是内置表的数）")
-eq(fxNote(["USD"], [], liveSnap), "按每日更新的汇率折算（1 USD = ¥7.1，2026-10-11）", "每日汇率文案自报来源与日期")
-eq(fxNote(["CNY"], [], liveSnap), "按每日更新的汇率折算成人民币", "每日汇率：只用人民币时的简版")
-eq(fxNote(["USD"]), `按固定汇率折算（1 USD = ¥${FX_CNY.USD}，2026-09-30）`, "不注入时仍是内置表口径（默认参数）")
+// 每日汇率的日期就是今天，不写在尾巴上（15rem 的浮层里那一行会因此多折一行）；
+// 内置表那次要留日期 —— 它是「这份表多久没换过」的信号。
+eq(fxNote(["USD"], [], liveSnap), "每日汇率：USD ¥7.1", "每日汇率只写来源（日期省略）")
+eq(fxNote(["CNY"], [], liveSnap), "人民币记账，无需折算", "每日汇率：只用人民币时的简版")
+eq(fxNote(["USD"]), `固定汇率 2026-09-30：USD ¥${FX_CNY.USD}`, "不注入时仍是内置表口径（默认参数）")
 
 if (failed) {
   console.error(`\n${failed} 处不符`)

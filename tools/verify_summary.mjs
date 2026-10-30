@@ -132,6 +132,27 @@ const MAX_MB = { nodes: [base(1, 'Node A', { online: true, metrics: metrics({ cp
    打成省略号（实拍 ≈¥2,803.… ）。 */
 const BIG_MONEY = { nodes: [base(1, 'Node A', { online: true, price: 3000, currency: 'CNY', billing_cycle: 'yearly', expires_in: 341, metrics: metrics({ cpu: 12.5, net_rx: KB, net_tx: KB }) })] }
 
+/**
+ * 「今日流量」明细浮层要的历史采样（2026-10-30）：两台在线机器各给一段**今天**的桶
+ * （峰值与时刻是写死的，好断言），另外两台没有采样 —— 浮层里那一栏该写「—」。
+ * 只回 metrics（series=metrics），延迟那一路照旧回空。
+ */
+const atToday = (h, m) => {
+  const d = new Date()
+  d.setHours(h, m, 0, 0)
+  return Math.floor(d.getTime() / 1000)
+}
+const PEAK_ROWS = {
+  1: [
+    { ts: atToday(6, 0), net_rx: 1 * MB, net_tx: 1 * MB, net_rx_max: 20 * MB, net_tx_max: 3 * MB },
+    { ts: atToday(7, 30), net_rx: 2 * MB, net_tx: 2 * MB, net_rx_max: 4 * MB, net_tx_max: 8 * MB },
+  ],
+  2: [
+    { ts: atToday(5, 0), net_rx: 1 * MB, net_tx: 1 * MB, net_rx_max: 4 * MB, net_tx_max: 1 * MB },
+    { ts: atToday(5, 30), net_rx: 1 * MB, net_tx: 1 * MB, net_rx_max: 2 * MB, net_tx_max: 2 * MB },
+  ],
+}
+
 const VARIANTS = { mixed: MIXED, down: ALL_DOWN, tied: TIED, free: NO_PRICE, exotic: EXOTIC, once: ONCE_ONLY, long: LONG_KB, maxkb: MAX_KB, maxmb: MAX_MB, bigmoney: BIG_MONEY,
   // 分组跟随（第 12 组）：站点里**只有某一个分组那几台**——当对照用。
   // 概览卡片在「全部」档切到某个分组时的数字，必须与「站点里只有这几台」时逐字相同。
@@ -159,7 +180,12 @@ const server = createServer((req, res) => {
     if (path.endsWith('/config')) return json(config)
     if (path === '/api/version') return json({ version: '1.4.0' })
     // 延迟请求（详细 / 延迟形态才会发）：空数据，主题那边整块不渲染。
-    if (/^\/api\/nodes\/\d+\/metrics/.test(path)) return json({ ping: [], probes: {}, loss: {} })
+    // 资源序列（series=metrics）给「今天」的两段采样 —— 「今日流量」明细浮层读它算峰值。
+    if (/^\/api\/nodes\/\d+\/metrics/.test(path)) {
+      const id = Number(path.split('/')[3])
+      const metrics = url.searchParams.get('series') === 'metrics' ? (PEAK_ROWS[id] ?? []) : []
+      return json({ metrics, ping: [], probes: {}, loss: {} })
+    }
     return json({})
   }
   const file = path === '/' ? '/index.html' : path
@@ -402,9 +428,40 @@ const readBudgetDetail = (title = '月度预算') => evalJS(`(async () => {
   const d = b.querySelector('[data-budget-detail]')
   if (!d) return null
   const cs = getComputedStyle(d)
+  // 2026-10-31 三段式：滚动从浮层挪到了中间那节（表头/尾巴固定），判据跟着改。
+  const sc = d.querySelector('[data-detail-scroll]')
   return { rows: [...d.querySelectorAll('[data-budget-row]')].map((r) => r.innerText.replace(/\\n/g, ' | ')),
     text: d.innerText.replace(/\\n/g, ' | '),
-    maxHeight: cs.maxHeight, overflowY: cs.overflowY, clientH: d.clientHeight, scrollH: d.scrollHeight }
+    maxHeight: cs.maxHeight, overflowY: cs.overflowY, scrollOverflow: sc ? getComputedStyle(sc).overflowY : null,
+    clientH: sc ? sc.clientHeight : d.clientHeight, scrollH: sc ? sc.scrollHeight : d.scrollHeight }
+})()`)
+
+/**
+ * 「今日流量」那张卡的明细浮层（2026-10-30）：聚焦（等价悬停）后读行、全文与几何。
+ * 每行两段文字（今日上下行 / 两枚峰值带时刻），折成一行好断言。
+ */
+const readTrafficDetail = () => evalJS(`(async () => {
+  const card = [...document.querySelectorAll('[data-slot=card]')].find((c) => c.innerText.startsWith('今日流量'))
+  if (!card) return null
+  const b = [...card.children].find((x) => x.innerText.startsWith('今日流量'))
+  if (!b) return null
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur()
+  await new Promise((r) => setTimeout(r, 40))
+  b.focus()
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 100))
+    const d = b.querySelector('[data-budget-detail]')
+    if (d && !/读取中/.test(d.innerText)) break
+  }
+  const d = b.querySelector('[data-budget-detail]')
+  if (!d) return null
+  const r = d.getBoundingClientRect()
+  return {
+    rows: [...d.querySelectorAll('[data-traffic-row]')].map((x) => x.innerText.replace(/\\n/g, ' | ')),
+    text: d.innerText.replace(/\\n/g, ' | '),
+    w: Math.round(r.width), right: Math.round(r.right), viewport: innerWidth,
+    cardText: card.innerText.replace(/\\n/g, ' | '),
+  }
 })()`)
 
 /** 一张卡里两块读数：左块贴左、右块贴右、两块不重叠、下沿对齐、数字没被截断。 */
@@ -540,15 +597,23 @@ let classicNet = null
   //   浮层尾巴 —— 断言跟着改成「聚焦后读浮层」；两块各读各的浮层。
   const pop = await readBudgetDetail()
   const popValue = await readBudgetDetail('剩余价值')
-  check('预算版：月度预算的浮层写明口径（计费周期 / 一次性买断不计入）与实际用到的汇率',
-    !!pop && pop.text.includes('计费周期') && pop.text.includes('一次性买断') &&
-    pop.text.includes('1 EUR = ¥7.6172') && pop.text.includes('1 USD = ¥6.7179') &&
-    !pop.text.includes('1 CNY'),
+  check('预算版：月度预算的浮层写明口径（月摊 / 买断与未填价不计）与实际用到的汇率',
+    !!pop && pop.text.includes('月摊相加') && pop.text.includes('买断与未填价不计') &&
+    pop.text.includes('EUR ¥7.6172') && pop.text.includes('USD ¥6.7179') &&
+    !pop.text.includes('CNY ¥'),
     pop?.text ?? '（没有浮层）')
-  check('预算版：剩余价值的浮层写明口径（价格 × 剩余天数 ÷ 周期天数 / 无到期日不计入）与汇率',
-    !!popValue && popValue.text.includes('剩余天数') && popValue.text.includes('无到期日') &&
-    popValue.text.includes('1 EUR = ¥7.6172') && popValue.text.includes('1 USD = ¥6.7179'),
+  check('预算版：剩余价值的浮层写明口径（按剩余天数折算 / 无到期日与买断不计）与汇率',
+    !!popValue && popValue.text.includes('按剩余天数折算') && popValue.text.includes('无到期日与买断不计') &&
+    popValue.text.includes('EUR ¥7.6172') && popValue.text.includes('USD ¥6.7179'),
     popValue?.text ?? '（没有浮层）')
+  // ★2026-10-31 站长要求「精简这段说明」：尾巴那两行原文要占五行，现在压到「口径一句 + 汇率一句」。
+  //   判据按**尾巴字数**（去掉明细行后的那段）钉一个上限，防止以后又长回去。
+  // 尾巴＝最后两段（口径一条 + 汇率一条；明细行都在它们前面）。
+  const tail = (text) => (text ?? '').split(' | ').slice(-2).join(' ').trim()
+  check('预算版：浮层尾巴精简（口径 + 汇率两句，≤ 60 字）',
+    tail(pop?.text).length > 0 && tail(pop?.text).length <= 60 &&
+    tail(pop?.text).includes('月摊相加') && /(每日|固定)汇率/.test(tail(pop?.text)),
+    `${tail(pop?.text).length} 字：${tail(pop?.text)}`)
   check('预算版：折算日期写在浮层里（不写来源站点）',
     !!pop && pop.text.includes('2026-09-30') && !/https?:\/\/|[a-z0-9-]+\.(com|net|org|io)/.test(pop.text),
     pop?.text ?? '')
@@ -570,8 +635,8 @@ let classicNet = null
   // ★2026-10-12 浮层限高：近百台明细不许把浮层拉出屏幕 —— min(24rem,60vh) + 内部滚动
   //   （.budget-detail，紧贴块底无 margin gap，悬停能摸进浮层）。
   check('预算版·浮层：限高生效（max-height 有值 / overflow-y: auto）',
-    !!pop && pop.maxHeight !== 'none' && pop.overflowY === 'auto',
-    `max-height=${pop?.maxHeight} / overflow-y=${pop?.overflowY}`)
+    !!pop && pop.maxHeight !== 'none' && pop.scrollOverflow === 'auto',
+    `max-height=${pop?.maxHeight} / 明细 overflow-y=${pop?.scrollOverflow}`)
 
   // 剩余价值浮层（2026-10-12 加装）：同一套牙齿 —— 行数 = 「N 台未到期」、降序、和 ≈ 大数。
   const valueText = block(dom, '剩余价值').text
@@ -597,9 +662,9 @@ let classicNet = null
     check('每日汇率：种子汇率被采纳（月度预算 ≈¥943.49）',
       block(fxDom, '月度预算').text === '月度预算 | ≈¥943.49 | 4 台计费', block(fxDom, '月度预算').text)
     const fxPop = await readBudgetDetail()
-    check('每日汇率：口径文案改口并自报种子日期（1 USD = ¥7.1234，2026-10-11）',
-      !!fxPop && fxPop.text.includes('按每日更新的汇率折算') && fxPop.text.includes('1 USD = ¥7.1234') &&
-      fxPop.text.includes('1 EUR = ¥7.5678') && fxPop.text.includes('2026-10-11'),
+    check('每日汇率：口径文案改口并自报来源（USD ¥7.1234 / EUR ¥7.5678）',
+      !!fxPop && fxPop.text.includes('每日汇率：') && fxPop.text.includes('USD ¥7.1234') &&
+      fxPop.text.includes('EUR ¥7.5678'),
       fxPop?.text ?? '（没有浮层）')
   }
   // 收起：Esc；以及焦点离开（blur）。
@@ -626,6 +691,55 @@ let classicNet = null
   check('预算版·浮层：焦点离开（blur）收起', popBlur === true, `开→关 ${popBlur}`)
 }
 
+/* 3b) 今日流量 · 节点明细浮层（2026-10-30 加装） */
+// 卡片面上只有两个总数；浮层里要摊出**每台**今天的上下行，以及今天冲到的采样峰值与时刻
+// （峰值取历史桶里的 net_*_max，时刻是那个桶的 ts）。桩里 Node A 峰值 20 MB/s @06:00 /
+// 8.0 MB/s @07:30，Node B 4.0 MB/s @05:00 / 2.0 MB/s @05:30，Node C、D 没有采样。
+{
+  await render({ listTop: 'budget' }, 'traffic-detail')
+  const pop = await readTrafficDetail()
+  check('今日流量·浮层：悬停/聚焦出现，表头是「节点明细 · N 台」',
+    !!pop && pop.text.includes('节点明细 · 4 台'), pop?.text ?? '（没有浮层）')
+  check('今日流量·浮层：四台各一行（按今日总量降序：A 1.5GB → B 512MB → C/D 0）',
+    !!pop && pop.rows.length === 4 &&
+    pop.rows[0].includes('Node A') && pop.rows[1].includes('Node B') &&
+    pop.rows[2].includes('Node C') && pop.rows[3].includes('Node D'),
+    JSON.stringify(pop?.rows ?? []))
+  check('今日流量·浮层：第一行是 Node A 的今日上下行（↓ 1.00 GB ↑ 512 MB）',
+    !!pop && pop.rows[0].includes('↓ 1.00 GB') && pop.rows[0].includes('↑ 512 MB'), pop?.rows[0] ?? '')
+  check('今日流量·浮层：第一行两枚峰值带时刻（20 MB/s 06:00 ／ 8.0 MB/s 07:30）',
+    !!pop && pop.rows[0].includes('20 MB/s') && pop.rows[0].includes('06:00') &&
+    pop.rows[0].includes('8.0 MB/s') && pop.rows[0].includes('07:30'), pop?.rows[0] ?? '')
+  check('今日流量·浮层：第二行是 Node B 的峰值（4.0 MB/s 05:00 ／ 2.0 MB/s 05:30）',
+    !!pop && pop.rows[1].includes('4.0 MB/s') && pop.rows[1].includes('05:00') &&
+    pop.rows[1].includes('2.0 MB/s') && pop.rows[1].includes('05:30'), pop?.rows[1] ?? '')
+  check('今日流量·浮层：没有采样的那两台写「—」（不是 0 B/s、也不是空白）',
+    !!pop && pop.rows[2].includes('—') && pop.rows[3].includes('—') &&
+    !pop.rows[2].includes('0 B/s'), JSON.stringify(pop?.rows.slice(2) ?? []))
+  check('今日流量·浮层：尾巴写明口径（按今天 00:00 起的历史采样计算）',
+    !!pop && pop.text.includes('峰值按今天 00:00 起的历史采样计算'), pop?.text.slice(0, 80) ?? '')
+  check('今日流量·浮层：比预算那两块宽（22rem 档），且不出视口右沿',
+    !!pop && pop.w >= 300 && pop.right <= pop.viewport - 8, `宽 ${pop?.w} / 右沿 ${pop?.right} / 视口 ${pop?.viewport}`)
+  check('今日流量·浮层：卡片面上的两个总数没被浮层改掉（仍是 1.25 GB ↓ / 768 MB ↑）',
+    !!pop && pop.cardText.includes('1.25 GB') && pop.cardText.includes('768 MB'), pop?.cardText ?? '')
+  const escClosed = await evalJS(`(async () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await new Promise((r) => setTimeout(r, 80))
+    return !document.querySelector('[data-budget-detail]')
+  })()`)
+  check('今日流量·浮层：Esc 收起', escClosed === true, String(escClosed))
+
+  // 手机（390）：一列布局里浮层同样不许越过右沿。
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 900, deviceScaleFactor: 2, mobile: true })
+  await render({ listTop: 'budget' }, 'traffic-detail-390')
+  const mPop = await readTrafficDetail()
+  check('今日流量·浮层（390）：浮层不出视口右沿、也不横向溢出',
+    !!mPop && mPop.right <= mPop.viewport - 4 &&
+    (await evalJS('document.documentElement.scrollWidth <= document.documentElement.clientWidth')) === true,
+    `右沿 ${mPop?.right} / 视口 ${mPop?.viewport}`)
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
+}
+
 /* 4) 一块都没有 / 一次性买断 / 没有汇率的降级 */
 {
   const free = await render({ listTop: 'budget' }, 'free', 'free')
@@ -633,8 +747,8 @@ let classicNet = null
     block(free, '月度预算').text === '月度预算 | — | 未记录价格', block(free, '月度预算').text)
   check('没填价格：剩余价值写「— / 无预付到期」',
     block(free, '剩余价值').text === '剩余价值 | — | 无预付到期', block(free, '剩余价值').text)
-  check('没填价格：提示里只写「按固定汇率折算成人民币」（没有汇率可列）',
-    block(free, '月度预算').hint === '各节点的价格按计费周期摊到每个月后相加；一次性买断与没填价格的不计入。按固定汇率折算成人民币',
+  check('没填价格：提示里只写「人民币记账，无需折算」（没有汇率可列）',
+    block(free, '月度预算').hint === '月摊相加；买断与未填价不计。人民币记账，无需折算',
     block(free, '月度预算').hint)
   check('没填价格：两块都不挂浮层（没有明细可摊，保持原生 title 那一副面孔）',
     (await readBudgetDetail()) === null && (await readBudgetDetail('剩余价值')) === null, '浮层不应出现')
@@ -649,7 +763,7 @@ let classicNet = null
     block(exotic, '月度预算').text === '月度预算 | ≈¥20.00 | 1 台计费' && block(exotic, '剩余价值').text === '剩余价值 | ≈¥6.67 | 1 台未到期',
     `${block(exotic, '月度预算').text} ／ ${block(exotic, '剩余价值').text}`)
   const popEx = await readBudgetDetail()
-  check('没有汇率的币种：浮层照常出现，口径行点名 XYZ', !!popEx && popEx.text.includes('XYZ 没有汇率，未计入'), popEx?.text ?? '（没有浮层）')
+  check('没有汇率的币种：浮层照常出现，口径行点名 XYZ', !!popEx && popEx.text.includes('XYZ 无汇率未计入'), popEx?.text ?? '（没有浮层）')
   const popExV = await readBudgetDetail('剩余价值')
   check('没有汇率的币种：剩余价值浮层 1 行、金额 ≈¥6.67', !!popExV && popExV.rows.length === 1 && popExV.rows[0].includes('6.67'),
     popExV?.rows?.join(' / ') ?? '（没有浮层）')

@@ -12,9 +12,10 @@ dist
 dist-ssr
 *.local
 
-# 打包与取景的临时产物
+# 打包与取景的临时产物（scratch/ 是本机探针与截图的落脚处，别进仓库）
 /release/
 /shots/
+/scratch/
 
 # Editor directories and files
 .vscode/*

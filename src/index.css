@@ -416,25 +416,42 @@
    淡墨的圆头、去掉箭头按钮；悬停加深一档。Firefox 用 `scrollbar-color` 对齐（Chrome/Edge/
    Safari 走 ::-webkit-*）。`scrollbar-gutter: stable` 让有/无滚动的两类浮层右缘一样宽、
    金额列不跳。 */
-.budget-detail {
+/* 概览卡片的悬停浮层：预算那两块（15rem）与「今日流量」的节点明细（22rem）共用这一套
+   滚动与纸面滚动条。 */
+/* 概览卡片的明细浮层（2026-10-12 加，2026-10-31 改成三段式）：
+   外层只管**高度上限**（机器多时最多这么高，再高就把视口顶穿）；
+   表头与尾巴是 flex 的固定项，只有中间那节 `.detail-scroll` 滚动 —— 一百多台机器滚到底，
+   仍然知道自己在看哪张卡的多少台、口径是什么。 */
+.budget-detail,
+.traffic-detail {
   max-height: min(24rem, 60vh);
+}
+.detail-scroll {
+  min-height: 0;                    /* flex 子项的默认 min-height:auto 会撑破父级上限 */
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--foreground) 35%, transparent) transparent;
   scrollbar-gutter: stable;
 }
-.budget-detail::-webkit-scrollbar { width: 10px; }
-.budget-detail::-webkit-scrollbar-track { background: transparent; }
-.budget-detail::-webkit-scrollbar-button { display: none; }
-.budget-detail::-webkit-scrollbar-thumb {
+.detail-scroll::-webkit-scrollbar { width: 10px; }
+.detail-scroll::-webkit-scrollbar-track { background: transparent; }
+.detail-scroll::-webkit-scrollbar-button { display: none; }
+.detail-scroll::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--foreground) 35%, transparent);
   border: 3px solid transparent;
   border-radius: 8px;
   background-clip: padding-box;
 }
-.budget-detail::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--foreground) 55%, transparent); }
-.budget-detail::-webkit-scrollbar-corner { background: transparent; }
+.detail-scroll::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--foreground) 55%, transparent); }
+.detail-scroll::-webkit-scrollbar-corner { background: transparent; }
+/* 「下面还有」的提示（见 components/DetailScroll.tsx）：滚动视口下沿一道渐隐遮罩 ——
+   露在边上的那一行淡出去，滚到底（data-detail-more 撤掉）就恢复干净。
+   之所以不用一条 sticky 的渐变条：它会压住最后一行、在 7 台那种「刚好装下」时还会多出
+   一条灰影（站长 2026-10-31 那轮就踩过「明明没有更多了还留着灰」）。 */
+.detail-scroll[data-detail-more] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+}
 
 /* 触屏命中区：**外观一点不动，只把可点范围往外撑**。
    手指比鼠标粗 —— Apple 的通行线是 44×44，WCAG 2.2 的硬线（2.5.8）是 24×24。

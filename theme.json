@@ -2,7 +2,7 @@
   "name": "jikasei",
   "short": "jikasei",
   "description": "自家制の极简探针（Monitor）主题：六种卡片形态、节点地球、分组筛选、明暗双色。",
-  "version": "1.34.0",
+  "version": "1.35.0",
   "author": "akanotanin",
   "url": "https://github.com/akanotanin/monitor-theme-jikasei",
   "config": [
@@ -48,7 +48,7 @@
           "label": "两个都显示·概览卡片价值版"
         }
       ],
-      "help": "分组标签行与概览卡片行各要哪一档；概览卡片分原版与价值版两种排法。"
+      "help": "分组标签行与概览卡片行各要哪一档；概览卡片分原版与价值版两种排法；「今日流量」那张卡悬停可摊出每台节点今天的流量与采样峰值。"
     },
     {
       "type": "select",

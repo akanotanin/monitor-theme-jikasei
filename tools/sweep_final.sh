@@ -18,7 +18,7 @@ for t in verify_globe_colors verify_globe_coverage verify_globe_land verify_glob
          verify_card_expiry_fit verify_offline_last \
          verify_globe_layout verify_summary verify_globe \
          verify_globe_scale verify_offline_time verify_visibility \
-         verify_region_names verify_hub141; do
+         verify_region_names verify_hub141 verify_many_nodes; do
   line=$(node "tools/$t.mjs" 2>&1 | grep -E "[0-9]+ PASS / [0-9]+ FAIL|ALL PASS|[0-9]+ 条通过|[0-9]+ 个视角通过|PASS [0-9]+ / FAIL [0-9]+|全部通过|FAIL [0-9]+ 条" | tail -1)
   printf "%-26s %s\n" "$t" "${line:-（没抓到结果行，得单独看）}" | tee -a "$OUT"
   sleep 2
