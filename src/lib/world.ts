@@ -148,7 +148,7 @@ export const COUNTRY_LL: Record<string, [number, number]> = {
   AE: [55.27, 25.2], SA: [46.72, 24.71], QA: [51.53, 25.29], KW: [47.98, 29.38],
   BH: [50.59, 26.23], OM: [58.41, 23.59], IL: [34.78, 32.09], JO: [35.91, 31.95],
   GE: [44.83, 41.72], AM: [44.51, 40.18], AZ: [49.87, 40.41], KZ: [76.89, 43.24],
-  UZ: [69.24, 41.31], MN: [106.92, 47.89],
+  UZ: [69.24, 41.31], MN: [106.92, 47.89], KP: [125.75, 39.04],
   // —— 非洲与大洋洲
   ZA: [28.05, -26.2], EG: [31.24, 30.04], MA: [-7.59, 33.57], NG: [3.38, 6.52],
   KE: [36.82, -1.29], NZ: [174.76, -36.85],
@@ -191,7 +191,7 @@ export const COUNTRY_NAME: Record<string, string> = {
   AE: "United Arab Emirates", SA: "Saudi Arabia", QA: "Qatar", KW: "Kuwait",
   BH: "Bahrain", OM: "Oman", IL: "Israel", JO: "Jordan",
   GE: "Georgia", AM: "Armenia", AZ: "Azerbaijan", KZ: "Kazakhstan",
-  UZ: "Uzbekistan", MN: "Mongolia",
+  UZ: "Uzbekistan", MN: "Mongolia", KP: "North Korea",
   // —— 非洲与大洋洲
   ZA: "South Africa", EG: "Egypt", MA: "Morocco", NG: "Nigeria",
   KE: "Kenya", NZ: "New Zealand",

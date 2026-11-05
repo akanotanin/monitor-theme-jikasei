@@ -174,6 +174,7 @@ eq(cityHint(node(4, "魏武王", "CN", { group: "香港" }))?.name, "Hong Kong",
 eq(regionOf(node(1, "阿里 广州", "CN")), { key: "CN · Guangzhou", code: "CN", city: "Guangzhou", label: "Guangzhou", base: [113.2644, 23.1291] }, "国家码 + 城名 = 地区键（城名线索优先于国家落点）")
 eq(regionOf(node(2, "Nobrand Traffic Bug", "jp")), { key: "JP", code: "JP", city: "", label: "Japan", base: [139.7, 35.7] }, "认不出城市 → 国家级写国家名（Japan，不再裸写 JP），国家码大小写归一")
 eq(regionOf(node(2, "Nobrand Traffic Bug", "de")), { key: "DE", code: "DE", city: "", label: "Germany", base: [8.7, 50.1] }, "同上（Germany）——与 JP 同一套写法")
+eq(regionOf(node(32, "某台机器", "kp")), { key: "KP", code: "KP", city: "", label: "North Korea", base: [125.75, 39.04] }, "KP 认不出城市时以 North Korea 国家级落点显示")
 eq(regionOf(node(3, "无名", "")), null, "没有国家码的节点不上地球")
 eq(regionOf(node(4, "某地", "XA")), null, "国家码不在表里、又认不出城市 → 不上地球")
 ok(regionOf(node(5, "纳泰-DE9929", "DE")) !== null, "表里有 DE")
@@ -372,7 +373,7 @@ ok(WORLD_OUTLINES.every((r) => r.every(([lon, lat]) => Number.isFinite(lon) && N
 eq(COARSE_WORLD_OUTLINES.length, 8, "粗岸线 8 个环")
 // ★ 2026-10：国家表从原站那 12 国有意扩到常见 IDC 国家全集（表外国家在地区功能里
 //   完全看不见）。原表那 12 条要**逐字不变**，扩的是新增条目。
-eq(Object.keys(COUNTRY_LL).length, 87, "国家落点表覆盖到常见 IDC 国家（原站 12 国 + 75 国扩展）")
+eq(Object.keys(COUNTRY_LL).length, 88, "国家落点表覆盖到常见 IDC 国家（原站 12 国 + 76 国扩展）")
 eq(["HK", "JP", "DE", "NL", "US", "TW", "AU", "SG", "KR", "GB", "FR", "CN"].map((cc) => [cc, COUNTRY_LL[cc]]), [
   ["HK", [114.2, 22.3]], ["JP", [139.7, 35.7]], ["DE", [8.7, 50.1]], ["NL", [4.9, 52.4]],
   ["US", [-98.6, 39.8]], ["TW", [121.0, 23.7]], ["AU", [134.5, -25.7]], ["SG", [103.82, 1.35]],
