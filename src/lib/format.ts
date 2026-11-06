@@ -15,9 +15,17 @@ export function bytes(n: number, digits?: number): string {
   // `< 1` rather than `< 0`: a fraction of a byte puts `unitOf` at -1 and prints
   // "512 undefined".
   if (!n || n < 1) return "0 B"
-  const i = unitOf(n)
-  const v = n / 1024 ** i
-  return `${v.toFixed(i === 0 ? 0 : (digits ?? (v >= 100 ? 0 : v >= 10 ? 1 : 2)))} ${UNITS[i]}`
+  let i = unitOf(n)
+  let v = n / 1024 ** i
+  const places = () => (i === 0 ? 0 : (digits ?? (v >= 100 ? 0 : v >= 10 ? 1 : 2)))
+  // 四舍五入之后可能正好顶到 1024（1023.6 B → 「1024 B」、1048575 B → 「1024 KB」）：
+  // 数值与单位对不上，读起来是个坏数。顶到就升一档重算；PB 是最后一档，原地印。
+  // （rate() 早就有这条进位规则，bytes / axisBytes 是后补的 —— 2026-11-06。）
+  if (Number(v.toFixed(places())) >= 1024 && i < UNITS.length - 1) {
+    i += 1
+    v = n / 1024 ** i
+  }
+  return `${v.toFixed(places())} ${UNITS[i]}`
 }
 
 /**
@@ -91,12 +99,24 @@ export function uptime(seconds: number): string {
   return d > 0 ? `${d} 天 ${h} 小时` : h > 0 ? `${h} 小时 ${m} 分` : `${m} 分`
 }
 
-/** Whole days until a date, negative once it has passed. */
+/**
+ * Whole days until a date, negative once it has passed.
+ *
+ * 按**北京时间**（UTC+8）的日历数，不是访客本地日历：`expires_at` 是 hub 时区的日期，
+ * hub 自己也为此把 `expires_in` 算好下发（api.rs 的注释写着按访客时钟数会在它翻日之前
+ * 差 8 小时）。旧 hub 没有 `expires_in` 时才走到这里，口径与站点的「北京时间」一致。
+ * 用日期差而不是毫秒差，免得在当天返回 -0。
+ */
 export function daysUntil(date?: string | null): number | null {
   if (!date) return null
-  const target = new Date(`${date}T00:00:00`).getTime()
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date)
+  if (!m) return null
+  const target = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
   if (Number.isNaN(target)) return null
-  return Math.ceil((target - Date.now()) / 86400000)
+  const day = 86_400_000
+  const beijing = 8 * 3_600_000
+  const index = (ms: number) => Math.floor((ms + beijing) / day)
+  return index(target) - index(Date.now())
 }
 
 /**
@@ -149,6 +169,26 @@ export const CYCLE_SHORT: Record<string, string> = {
   biennial: "两年",
   triennial: "三年",
   once: "一次性",
+}
+
+/**
+ * 周期 → 中文写法（详情页 / 紧凑表格用）。表里没有的整月数写成「5 个月」——
+ * hub 把非具名周期存成 `<n>m`（见 lib/money.ts 的 cycleMonthsOf）。认不出来时原样给回
+ * 那串值（老数据里手填的东西，总比空白强）。
+ */
+export function cycleName(cycle: string): string | null {
+  const named = CYCLES[cycle]
+  if (named) return named
+  const custom = /^(\d+)m$/.exec(cycle)
+  return custom ? `${custom[1]} 个月` : cycle || null
+}
+
+/** 同一组周期的短写法（卡片底注那一行小字用）。认不出来时不写周期。 */
+export function cycleNameShort(cycle: string): string | null {
+  const named = CYCLE_SHORT[cycle]
+  if (named) return named
+  const custom = /^(\d+)m$/.exec(cycle)
+  return custom ? `${custom[1]} 个月` : null
 }
 
 // Hoisted out of `clock`: recharts calls a tickFormatter for every sample when

@@ -104,7 +104,10 @@ export async function fromCurrencyApi(f: FetchLike): Promise<FxSnapshot | null> 
 export async function fetchRates(f: FetchLike = fetch): Promise<FxSnapshot | null> {
   const snap = (await fromErApi(f)) ?? (await fromCurrencyApi(f))
   if (!snap) return null
-  return { ...snap, rates: { ...FX_BUILTIN.rates, ...snap.rates } }
+  // 上游没给的币种用内置值顶上（不让那台机器掉出合计），但要记下是哪几种 —— 提示里
+  // 不能把它们说成「每日汇率」（见 money.ts 的 FxSnapshot.builtin）。
+  const builtin = KEYS.filter((k) => !(k in snap.rates))
+  return { ...snap, rates: { ...FX_BUILTIN.rates, ...snap.rates }, builtin }
 }
 
 /** localStorage 的安全拿取（隐身模式 / Node 单测 / 被禁都返回 null）。 */
@@ -123,13 +126,18 @@ export function readCache(): FxSnapshot | null {
   try {
     const raw = ls.getItem(CACHE_KEY)
     if (!raw) return null
-    const j = JSON.parse(raw) as { rates?: FxRates; date?: string; at?: number }
-    if (typeof j.at !== "number" || Date.now() - j.at > TTL_MS) return null
+    const j = JSON.parse(raw) as { rates?: FxRates; date?: string; at?: number; builtin?: unknown }
+    // 只判「太旧」不够：时间戳落在未来（时钟回拨、手改 localStorage）时 age 是负数，
+    // 缓存会一直命中、汇率再也不更新。两头都要卡（2026-11-06）。
+    if (typeof j.at !== "number") return null
+    const age = Date.now() - j.at
+    if (!(age >= 0 && age < TTL_MS)) return null
     if (typeof j.date !== "string" || typeof j.rates !== "object" || !j.rates) return null
     // 存回来的也过一遍同一道关（防手改、也防旧版本写坏）
     const picked = pickRates(j.rates)
     if (!picked) return null
-    return { rates: { ...FX_BUILTIN.rates, ...picked }, date: j.date, live: true }
+    const builtin = Array.isArray(j.builtin) ? j.builtin.filter((k): k is string => typeof k === "string") : []
+    return { rates: { ...FX_BUILTIN.rates, ...picked }, date: j.date, live: true, builtin }
   } catch {
     return null
   }
@@ -140,7 +148,7 @@ export function writeCache(snap: FxSnapshot): void {
   const ls = storage()
   if (!ls) return
   try {
-    ls.setItem(CACHE_KEY, JSON.stringify({ rates: snap.rates, date: snap.date, at: Date.now() }))
+    ls.setItem(CACHE_KEY, JSON.stringify({ rates: snap.rates, date: snap.date, at: Date.now(), builtin: snap.builtin ?? [] }))
   } catch {
     /* 静默 */
   }

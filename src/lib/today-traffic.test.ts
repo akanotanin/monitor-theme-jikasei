@@ -28,15 +28,18 @@ function node(over: Partial<Node> = {}): Node {
 
 /* ── ① 今天从哪儿算起 ────────────────────────────────────────────── */
 {
-  const at = (h: number, m = 0) => new Date(2026, 9, 30, h, m, 0, 0).getTime() // 2026-10-30 本地时间
-  eq(new Date(dayStart(at(13, 45))).getHours(), 0, "dayStart：回到本机时区的 0 点")
-  eq(new Date(dayStart(at(13, 45))).getDate(), 30, "dayStart：还是同一天（没跨到前一/后一天）")
-  eq(new Date(dayStart(at(0, 5))).getDate(), 30, "dayStart：刚过零点也算今天")
+  // ★2026-11-06：按**北京时间**数，与访客本机时区无关（hub 的 day_rx 是 hub 日历、站点明暗自
+  //   动档也用北京时间 —— 同一把尺子，两个访客看到的「今日峰值」才是同一段）。
+  const at = (d: number, h: number, m = 0) => Date.UTC(2026, 9, d, h, m) - 8 * 3_600_000 // 北京时间
+  eq(dayStart(at(30, 13, 45)), at(30, 0), "dayStart：回到北京时间 0 点")
+  eq(dayStart(at(30, 0, 5)), at(30, 0), "dayStart：刚过零点也算今天")
+  eq(dayStart(at(30, 23, 59)), at(30, 0), "dayStart：一整天同一个起点")
+  eq(dayStart(at(30, 13, 45)), Date.UTC(2026, 9, 29, 16), "dayStart 与运行环境的时区无关（UTC 16:00 = 北京 0 点）")
 }
 
 /* ── ② 要向 hub 要哪一段 ────────────────────────────────────────────── */
 {
-  const at = (h: number, m = 0) => new Date(2026, 9, 30, h, m, 0, 0).getTime()
+  const at = (h: number, m = 0) => Date.UTC(2026, 9, 30, h, m) - 8 * 3_600_000 // 北京时间
   eq(windowFor(at(0, 5)), { hours: 1, points: 60 }, "刚过零点：hours 下限 1、points 下限 60")
   eq(windowFor(at(13, 45)), { hours: 14, points: 420 }, "13:45：向你天要到 14 小时、两分钟一个桶")
   eq(windowFor(at(23, 59)), { hours: 24, points: 720 }, "23:59：24 小时 / 720 点（上限）")
@@ -77,9 +80,10 @@ function node(over: Partial<Node> = {}): Node {
 /* ── ③b 只要今天那一段 ────────────────────────────────────────────── */
 {
   // 刚过零点（00:20）时 hub 的 1 小时窗口会带回昨晚 23:20–24:00 的桶：那些不许算进「今天」。
-  const now = new Date(2026, 9, 31, 0, 20, 0, 0).getTime()
-  const yesterday = Math.floor(new Date(2026, 9, 30, 23, 30, 0, 0).getTime() / 1000)
-  const today = Math.floor(new Date(2026, 9, 31, 0, 10, 0, 0).getTime() / 1000)
+  const bj = (d: number, h: number, m = 0) => Date.UTC(2026, 9, d, h, m) - 8 * 3_600_000
+  const now = bj(31, 0, 20)                      // 北京时间 10-31 00:20
+  const yesterday = Math.floor(bj(30, 23, 30) / 1000)
+  const today = Math.floor(bj(31, 0, 10) / 1000)
   const rows: TrafficRow[] = [
     { ts: yesterday, net_rx: 1, net_tx: 1, net_rx_max: 999 * 1024 ** 2, net_tx_max: 999 * 1024 ** 2 },
     { ts: today, net_rx_max: 5 * 1024 ** 2, net_tx_max: 2 * 1024 ** 2 },

@@ -115,6 +115,14 @@ function Block({ title, hint, detail, wide = false, children }: {
       onFocus={detail ? () => setOpen(true) : undefined}
       onBlur={detail ? () => setOpen(false) : undefined}
       onClick={detail ? () => setOpen(true) : undefined}
+      // ★2026-11-06：这块是 role="button"，原先却没有键盘激活路径 —— Esc 关掉浮层之后
+      //   焦点还在块上，按 Enter / 空格毫无反应（只能 Tab 走再 Tab 回来靠 onFocus 重开）。
+      onKeyDown={detail ? (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          setOpen((was) => !was)
+        } else if (e.key === "Escape") setOpen(false)
+      } : undefined}
     >
       <div className="truncate text-xs text-muted-foreground">{title}</div>
       {children}
@@ -131,7 +139,7 @@ function Block({ title, hint, detail, wide = false, children }: {
         <span
           ref={popRef}
           data-budget-detail=""
-          className={`${wide ? "traffic-detail max-w-[22rem]" : "budget-detail max-w-[15rem]"} absolute left-0 top-full z-20 flex w-max flex-col rounded-md border bg-popover text-xs shadow-md`}
+          className={`${wide ? "traffic-detail max-w-[min(22rem,calc(100vw-2rem))]" : "budget-detail max-w-[min(15rem,calc(100vw-2rem))]"} absolute left-0 top-full z-20 flex w-max flex-col rounded-md border bg-popover text-xs shadow-md`}
         >
           {detail}
         </span>

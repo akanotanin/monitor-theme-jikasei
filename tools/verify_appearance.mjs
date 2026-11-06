@@ -94,6 +94,9 @@ async function load({ config, systemDark = false, visitor = null, globePref = un
   if (visitor !== undefined || globePref !== undefined) { await send('Page.reload'); await sleep(1500) }
   return JSON.parse(await js(`JSON.stringify({
     dark: document.documentElement.classList.contains('dark'),
+    // 原生控件那一档（滚动条 / 下拉 / 日期选择器）：必须与页面实际明暗同档，
+    // 而不是首帧脚本按系统猜的那一档（2026-11-06）。
+    colorScheme: getComputedStyle(document.documentElement).colorScheme,
     globe: !!document.querySelector('.globe-atlas svg'),
     globePanel: !!document.querySelector('.globe-panel'),
     globeToggle: !!document.querySelector('.globe-toggle'),
@@ -154,8 +157,12 @@ async function load({ config, systemDark = false, visitor = null, globePref = un
 console.log('=== 主题模式四档 ===')
 let s = await load({ config: { themeMode: 'light', globeOn: true }, systemDark: true })
 check('light：站点设亮色，访客系统是暗色 → 页面仍是亮色', s.dark === false, `dark=${s.dark}`)
+check('light：原生控件那一档也跟着页面（color-scheme=light，不是系统的暗）',
+  s.colorScheme === 'light', `colorScheme=${s.colorScheme}`)
 s = await load({ config: { themeMode: 'dark', globeOn: true }, systemDark: false })
 check('dark：站点设暗色，访客系统是亮色 → 页面是暗色', s.dark === true, `dark=${s.dark}`)
+check('★ dark：站内暗色、系统亮色时原生滚动条也转暗（color-scheme=dark）',
+  s.colorScheme === 'dark', `colorScheme=${s.colorScheme}`)
 s = await load({ config: { themeMode: 'system', globeOn: true }, systemDark: true })
 check('system：跟访客系统走（暗）', s.dark === true, `dark=${s.dark}`)
 s = await load({ config: { themeMode: 'system', globeOn: true }, systemDark: false })
@@ -280,6 +287,49 @@ s = await load({ config: { themeMode: 'dark', globeOn: false }, visitor: 'light'
 check('站点设暗色、访客记着亮色 → 页面是亮色', s.dark === false, `dark=${s.dark}`)
 s = await load({ config: { themeMode: 'light', globeOn: true }, visitor: null })
 check('访客没记过 → 跟着站点（亮）', s.dark === false, `dark=${s.dark} ls=${JSON.stringify(s.ls)}`)
+
+console.log('\n=== 首帧明暗：暗色访客不该先闪一屏亮色（2026-11-06）===')
+/**
+ * 判据：从 **document 起点**采样 `<html>` 的 `.dark` 与 body 底色 —— 修复前（index.html 里没有
+ * 那段内联脚本）入口包下载并执行之前，记到的一定是亮色；修好后**第一条采样就必须已经是暗色**。
+ * 采样器用 addScriptToEvaluateOnNewDocument 注入，跑在页面任何脚本之前。
+ * 顺带断 colorScheme：暗色下原生滚动条 / 表单控件也跟着转暗（:root 与 .dark 各一份）。
+ */
+await send('Page.addScriptToEvaluateOnNewDocument', {
+  source: `
+window.__bgLog = [];
+(function tick() {
+  if (document.body) {
+    var dark = document.documentElement.classList.contains('dark');
+    var bg = getComputedStyle(document.body).backgroundColor;
+    var cs = document.documentElement.style.colorScheme;
+    var last = window.__bgLog[window.__bgLog.length - 1];
+    if (!last || last.dark !== dark || last.bg !== bg || last.cs !== cs) window.__bgLog.push({ t: Math.round(performance.now()), dark: dark, bg: bg, cs: cs });
+  }
+  if (performance.now() < 8000) requestAnimationFrame(tick);
+})();
+`,
+})
+const firstFrame = async (systemDark, visitor) => {
+  // 站点设「随系统」：首帧脚本与 App 的结论一致，页面不会在第一帧之后自己翻面
+  // （翻面会把「第一帧对不对」和「配置到没到」混在一起，判据就不干净了）。
+  CONFIG = { themeMode: 'system', globeOn: true }
+  await js("localStorage.removeItem('theme')")
+  if (visitor) await js(`localStorage.setItem('theme', ${JSON.stringify(visitor)})`)
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: systemDark ? 'dark' : 'light' }] })
+  await send('Page.navigate', { url: `${BASE}/` })
+  for (let i = 0; i < 60; i++) { await sleep(100); if (await js('!!document.querySelector("header")')) break }
+  await sleep(600)
+  return JSON.parse(await js('JSON.stringify(window.__bgLog || [])'))
+}
+let bg = await firstFrame(true, null)
+check('★ 系统暗：第一帧就已经是暗色（没有先闪亮色）', bg.length > 0 && bg[0].dark === true, JSON.stringify(bg.slice(0, 3)))
+check('★ 系统暗：第一帧的原生控件那一档也是暗（colorScheme 一开始就是 dark）',
+  bg.length > 0 && bg[0].cs === 'dark', JSON.stringify(bg.slice(0, 3)))
+bg = await firstFrame(false, 'dark')
+check('★ 系统亮、访客记着暗：第一帧就已经是暗色', bg.length > 0 && bg[0].dark === true, JSON.stringify(bg.slice(0, 3)))
+bg = await firstFrame(true, 'light')
+check('★ 系统暗、访客记着亮：第一帧就是亮色（也不许反向闪）', bg.length > 0 && bg[0].dark === false, JSON.stringify(bg.slice(0, 3)))
 
 console.log(`\n结果: PASS ${pass} / FAIL ${fail}`)
 ws.close(); chrome.kill(); server.close()

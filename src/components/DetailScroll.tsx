@@ -35,7 +35,12 @@ export function DetailScroll({ children }: { children: ReactNode }) {
       ref={ref}
       data-detail-scroll=""
       data-detail-more={more ? "" : undefined}
-      className="detail-scroll block space-y-1 px-2.5 py-1.5"
+      // 可聚焦：Chrome 130+ 默认让滚动容器进 Tab 序列，Safari / Firefox 不会 —— 键盘用户
+      // 拿不到被裁掉的那几十行（48 台上限时必然溢出）。role=group 让读屏读成「一组明细」。
+      tabIndex={0}
+      role="group"
+      aria-label="明细"
+      className="detail-scroll block space-y-1 px-2.5 py-1.5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {children}
     </span>

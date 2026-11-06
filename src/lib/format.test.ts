@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, CYCLE_SHORT, CYCLES, cpuName, daysUntil, despike, innerTicks, osName, pair, quarters, rate, timeTicks, uptime, zoomSpan,
+  axisBytes, axisTop, bytes, CYCLE_SHORT, cycleName, cycleNameShort, CYCLES, cpuName, daysUntil, despike, innerTicks, osName, pair, quarters, rate, timeTicks, uptime, zoomSpan,
 } from "./format.ts"
 
 let failed = 0
@@ -26,6 +26,12 @@ eq(bytes(1024), "1.00 KB", "bytes(1 KiB)")
 eq(bytes(10 * 1024), "10.0 KB", "两位数留一位小数")
 eq(bytes(100 * 1024), "100 KB", "三位数不留小数")
 eq(bytes(1024, 1), "1.0 KB", "digits 覆盖默认档位")
+// ★2026-11-06：四舍五入顶到 1024 时必须进位（原先会印出「1024 B」「1024 KB」，
+// 数值与单位对不上的那种坏数；rate() 早就有这条规则）。
+eq(bytes(1023.6), "1.00 KB", "1023.6 B 四舍五入后进位，不印 1024 B")
+eq(bytes(1048575), "1.00 MB", "1048575 B 不印 1024 KB")
+eq(bytes(1023.4), "1023 B", "没顶到 1024 就留在原档")
+eq(axisBytes(1048575), "1 MB", "axisBytes 同样进位（轴刻度用它）")
 
 // pair: one unit when both sides share it, two when they do not.
 eq(pair(300 * 1024 ** 2, 900 * 1024 ** 2), "300.00 / 900.00 MB", "同单位只写一次")
@@ -145,6 +151,14 @@ eq(cpuName("Intel(R) Xeon(R) CPU E5-2680 8-Core Processor"), "Intel Xeon E5-2680
 eq(CYCLE_SHORT.monthly, "月", "月付短写法")
 eq(CYCLE_SHORT.yearly, "年", "年付短写法")
 eq(CYCLE_SHORT.once, "一次性", "一次性不缩")
+// ★2026-11-06：hub 把非具名整月数存成 `<n>m`（5m / 18m / 60m），认不出来就会被当成月付。
+eq(cycleName("5m"), "5 个月", "5m 写成 5 个月")
+eq(cycleNameShort("18m"), "18 个月", "18m 的短写法")
+eq(cycleName("yearly"), "年付", "具名周期照旧")
+eq(cycleName("weird"), "weird", "认不出来的原样给回")
+eq(cycleNameShort("weird"), null, "短写法认不出就不写")
+// 到期天数按北京时间数：同一时刻换任何时区跑，结果都一样（不再随访客时区漂一天）。
+eq(daysUntil("2999-01-01") !== null, true, "daysUntil 解析日期")
 eq(Object.keys(CYCLE_SHORT).sort(), Object.keys(CYCLES).sort(), "短写法与 CYCLES 是同一组键")
 
 // innerTicks / zoomSpan：滚轮纵缩那一档的刻度与量程数学。

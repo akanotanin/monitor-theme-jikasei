@@ -108,8 +108,11 @@ const WARN_MS = 200
 type Tone = "ok" | "warn" | "bad" | "none"
 
 function toneOf(ms: number | null, loss: number): Tone {
-  if (ms === null) return "none"
-  if (loss >= 5 || ms >= WARN_MS) return "bad"
+  // ★丢包先判（2026-11-06）：整窗全超时的探测 `ms` 是 null、loss 是 100，原来被当成
+  //   「没有读数」涂成最淡的灰 —— 彻底挂掉反而比 5% 丢包更不显眼。挂了的就该最深。
+  if (loss >= 5) return "bad"
+  if (ms === null) return loss > 0 ? "warn" : "none"
+  if (ms >= WARN_MS) return "bad"
   if (loss > 0 || ms >= GOOD_MS) return "warn"
   return "ok"
 }
@@ -134,8 +137,11 @@ function Sparkline({ values, className }: { values: Array<number | null>; classN
   const min = Math.min(...nums)
   const max = Math.max(...nums)
   const span = max - min || 1
+  // 平直的一条（稳定线路很常见）没有起伏可画：钉在中间那行，否则它会贴着框底，
+  // 读起来像「读数接近 0」或「刚掉下去」（2026-11-06）。
+  const flat = max === min
   const x = (i: number) => (values.length <= 1 ? 0 : (i * SPARK_W) / (values.length - 1))
-  const y = (v: number) => SPARK_H - 2 - ((v - min) / span) * (SPARK_H - 4)
+  const y = (v: number) => (flat ? SPARK_H / 2 : SPARK_H - 2 - ((v - min) / span) * (SPARK_H - 4))
   const segments: string[] = []
   let current: string[] = []
   values.forEach((v, i) => {

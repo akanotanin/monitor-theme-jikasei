@@ -124,7 +124,11 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
     return () => io.disconnect()
   }, [])
 
-  const spinning = inView && !dragging && !pinned && !reduced
+  // 钉住要**跟着地区筛选一起失效**：地区被外部清掉（切分组、那台机器下线/改名、关掉地球开关）
+  // 之后 `pinned` 还留着 true，地球就再也不自转，页面上也没有「已定位」的痕迹可看
+  // （2026-11-06 审出来的）。这里不用 effect 去改 state，直接把它算进判据 —— 状态与画面同源。
+  const held = pinned && region !== null
+  const spinning = inView && !dragging && !held && !reduced
 
   useEffect(() => {
     if (!spinning) return

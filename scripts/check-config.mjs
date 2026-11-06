@@ -46,7 +46,13 @@ const CACHES = [
   { what: '站名', key: 'jikasei:site_name', places: [
     ['src/App.tsx', /TITLE_CACHE_KEY\s*=\s*"([^"]+)"/g],
     ['public/title-probe.js', /var KEY\s*=\s*"([^"]+)"/g],
-    ['index.html', /localStorage\.getItem\("([^"]+)"\)/g],
+    // 只认 `jikasei:` 前缀那一条：index.html 里现在还有首帧明暗那段读的 `theme`（见下一条）。
+    ['index.html', /localStorage\.getItem\("(jikasei:[^"]+)"\)/g],
+  ] },
+  // 明暗这一档同源两处：App 的 useTheme 读 / 写 / 删，index.html 的首帧脚本事先读一次。
+  { what: '明暗', key: 'theme', places: [
+    ['src/App.tsx', /localStorage\.getItem\("(theme)"\)/g],
+    ['index.html', /localStorage\.getItem\("(theme)"\)/g],
   ] },
 ]
 const bad = []
@@ -69,6 +75,22 @@ const html = readFileSync('index.html', 'utf8')
 // 站点图标的两条静态引用：hub 1.4.0 认的就是这两个路径，写成别的名字等于把兜底丢了。
 for (const icon of ['/favicon.svg', '/apple-touch-icon.png']) {
   if (!html.includes(`href="${icon}"`)) bad.push(`index.html 里没有引用 ${icon}（站点图标的兜底就断了）`)
+}
+// ★ 首帧明暗（2026-11-06）：暗色访客在入口包执行之前页面上只有 CSS 默认的亮色底 —— 首绘会先
+//   闪一屏亮色，弱网下这段最长。那一段必须内联在 <head>、并且赶在入口模块之前；它还得把
+//   colorScheme 说清楚，否则暗色下原生滚动条 / 表单控件仍是亮色。CSS 里另有一份给「内联被
+//   CSP 挡掉」时兜底（React 挂上 .dark 之后原生控件照样要跟着转暗）。
+{
+  const toggleAt = html.indexOf('document.documentElement.classList.toggle("dark"')
+  const moduleAt = html.indexOf('<script type="module"')
+  if (toggleAt < 0) bad.push('index.html 里没有首帧明暗的内联脚本（暗色访客会先闪一屏亮色）')
+  else {
+    if (moduleAt >= 0 && toggleAt > moduleAt) bad.push('首帧明暗那段内联脚本在入口模块之后：它必须赶在首帧之前跑（挪回 <head> 里）')
+    if (!html.includes('document.documentElement.style.colorScheme')) bad.push('首帧明暗那段没有设 colorScheme（暗色下原生滚动条与表单控件仍是亮色）')
+  }
+  const css = readFileSync('src/index.css', 'utf8')
+  if (!css.includes('color-scheme: dark')) bad.push('src/index.css 的 .dark 没有 color-scheme: dark（原生控件不会转暗）')
+  if (!css.includes('color-scheme: light')) bad.push('src/index.css 的 :root 没有 color-scheme: light（原生控件不会转亮）')
 }
 // 主题包里必须真的带着这两份兜底文件（public/ 会被原样拷进 dist/）。
 for (const file of ['public/favicon.svg', 'public/favicon.ico', 'public/apple-touch-icon.png']) {

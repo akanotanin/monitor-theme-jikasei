@@ -390,7 +390,7 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
         <Fact label="系统" value={[osName(node.os), node.kernel].filter(Boolean).join(" · ")} />
         <Fact
           label="架构"
-          value={[node.arch, node.virt !== "none" ? node.virt : "", m ? `${m.procs} 进程` : ""]
+          value={[node.arch, node.virt !== "none" ? node.virt : "", typeof m?.procs === "number" ? `${m.procs} 进程` : ""]
             .filter(Boolean)
             .join(" · ")}
         />
@@ -398,7 +398,10 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
             应站长要求加到详情页；2026-10-15 站长在 kanso 要求合成**一格**，本仓 2026-10-16
             同步）。写法照「内存 / 硬盘」那格：标签 `TCP / UDP 连接`、值 `17 / 3`。离线机器
             `metrics` 是 null，这一格随 Fact 的既有口径一起隐身 ——「没有这个值」本来就不该占格子。 */}
-        <Fact label="TCP / UDP 连接" value={m ? `${m.tcp} / ${m.udp}` : null} />
+        <Fact
+          label="TCP / UDP 连接"
+          value={typeof m?.tcp === "number" && typeof m?.udp === "number" ? `${m.tcp} / ${m.udp}` : null}
+        />
         <Fact
           label="CPU"
           value={node.cpu_name ? `${cpuName(node.cpu_name)} × ${node.cpu_cores}` : `${node.cpu_cores} 核`}

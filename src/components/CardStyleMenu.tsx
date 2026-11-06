@@ -78,9 +78,32 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
     }
     document.addEventListener("pointerdown", onDown)
     document.addEventListener("keydown", onKey)
+    // ★2026-11-06：role="menu" 得有菜单该有的键盘行为 —— 打开时焦点落到当前那一档，
+    // ↑↓ / Home / End 在选项间移动，Esc 收起来并把焦点还给触发按钮。原先只有「点别处 /
+    // 按 Esc 收起」，键盘用户 Tab 进来之后方向键毫无反应、Tab 走开菜单还挂在屏幕上。
+    const items = () => Array.from(menu.current?.querySelectorAll<HTMLButtonElement>("[data-style-option]") ?? [])
+    const start = items().find((el) => el.getAttribute("aria-checked") === "true") ?? items()[0]
+    start?.focus()
+    const onNav = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false)
+        box.current?.querySelector<HTMLElement>(".card-style-toggle")?.focus()
+        return
+      }
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return
+      const list = items()
+      if (!list.length) return
+      e.preventDefault()
+      const at = list.indexOf(document.activeElement as HTMLButtonElement)
+      const to = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1
+        : (at + (e.key === "ArrowDown" ? 1 : -1) + list.length) % list.length
+      list[to]?.focus()
+    }
+    document.addEventListener("keydown", onNav)
     return () => {
       document.removeEventListener("pointerdown", onDown)
       document.removeEventListener("keydown", onKey)
+      document.removeEventListener("keydown", onNav)
     }
   }, [open])
 
@@ -107,6 +130,10 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
           // 绝对定位挂在 header 上（见 place() 那段注释）；right 贴住按钮右缘（窄屏也不会
           // 出界），top 落在按钮下沿 4px —— 与原本 top-10 的落点一致。
           style={{ top: spot.top, right: spot.right }}
+          // 焦点离开这一块（Tab 走开）就收起：菜单开着却停在别处，读屏的焦点与视觉对不上。
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) setOpen(false)
+          }}
           className="absolute z-20 block w-36 overflow-hidden rounded-md border bg-popover py-1 text-sm shadow-md"
         >
           {STYLES.map(({ value: v, label, hint, Icon }) => (

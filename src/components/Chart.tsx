@@ -77,7 +77,10 @@ function niceScale(lo: number, hi: number, count = 4): { lo: number; hi: number;
   const raw = (hi - lo) / count
   const mag = 10 ** Math.floor(Math.log10(Math.max(raw, Number.MIN_VALUE)))
   const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((n) => n >= raw) ?? raw
-  const low = Math.floor(lo / step) * step
+  // 数据本身非负（延迟 / 速率 / 百分比）时量程不许落到 0 以下：一条平直且 ≤1ms 的线路
+  // 会被上面那段 pad 扩成 -1..1.5，轴下沿钉在 -1、刻度印出「-1ms」「-0.5ms」，
+  // 线还被压在下半截（2026-11-06 审出来的）。非负数就从 0 起。
+  const low = lo >= 0 ? Math.max(0, Math.floor(lo / step) * step) : Math.floor(lo / step) * step
   const high = Math.ceil(hi / step) * step
   const ticks: number[] = []
   for (let v = low; v <= high + step / 2; v += step) ticks.push(Math.round(v * 1e6) / 1e6)
@@ -341,7 +344,18 @@ export function TimeChart({
   const indexAt = (clientX: number, el: Element) => {
     const rect = el.getBoundingClientRect()
     const ratio = (clientX - rect.left) / Math.max(1, rect.width)
-    return Math.min(view.length - 1, Math.max(0, Math.round(ratio * (view.length - 1))))
+    // ★按**时间**反查，不能按「序号比例」。x() 是把时间戳线性映射的，而时间轴上的空档
+    //   （agent 掉线那几小时 / 探测中途才有数据）会被压成 0 宽 —— 一旦有空档，序号与 x
+    //   就分叉：按序号取行会让十字线落在离光标几百像素外，tooltip 报的是另一段时间
+    //   （2026-11-06 审出来的）。最近邻取行与绘制用的是同一把尺子。
+    const target = t0 + Math.min(1, Math.max(0, ratio)) * span
+    let best = 0
+    let gap = Infinity
+    for (let i = 0; i < view.length; i++) {
+      const d = Math.abs(view[i].ts - target)
+      if (d < gap) { gap = d; best = i }
+    }
+    return best
   }
 
   const hovered = hover === null ? null : view[Math.min(Math.max(hover, 0), view.length - 1)]
@@ -386,7 +400,11 @@ export function TimeChart({
               shapeRendering="crispEdges"
             />
           ))}
-          {/* Y 轴刻度 */}
+          {/* Y 轴刻度：首末两枚要各夹进来 8px —— 11px 字的实际包围盒有 15px 高
+              （top = y − 9.2，实测），顶格那枚不夹就会冒出绘图区（护栏
+              verify_detail_charts 的「不冒出绘图区」会当场报红）。夹的代价是最上/最下
+              两条网格线与标签差 8px；要消掉它得把 TOP 加高 8px（绘图区整体矮一截），
+              属视觉改动，先按现状保留。 */}
           {scale.ticks.map((v) => (
             <text
               key={`y${v}`}

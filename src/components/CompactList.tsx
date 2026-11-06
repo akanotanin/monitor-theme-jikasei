@@ -6,7 +6,7 @@ import { TextHighlight } from "@/components/TextHighlight"
 import { Skeleton } from "@/components/ui/skeleton"
 import type { Node } from "@/lib/api"
 import type { RemarkPlacement } from "@/lib/site-settings"
-import { FOREVER, CYCLES, bytes, daysUntil, money, osName, pair, percent, rate } from "@/lib/format"
+import { FOREVER, bytes, cycleName, daysUntil, money, osName, pair, percent, rate } from "@/lib/format"
 
 /**
  * 「紧凑」形态：一行一台机器的表格，点一行就地摊开延迟。
@@ -131,7 +131,7 @@ function useSpan(): number {
 /** 展开行里那块：整页详情的延迟图就地渲染；从没接入的机器没有历史可画，写一句话带过。 */
 function Expanded({ node, span, onOpenDetail, historyDays, remarkPlacement }: { node: Node; span: number; onOpenDetail: () => void; historyDays?: number; remarkPlacement?: RemarkPlacement }) {
   return (
-    <tr className="bg-muted/30">
+    <tr id={`compact-detail-${node.id}`} className="bg-muted/30">
       {/* 展开行要跨满当前看得见的列数：colSpan 得跟着断点走（见 useSpan），写死一个数会
           在窄屏上把表格撑出多余的列。 */}
       <td colSpan={span} className="p-0">
@@ -177,18 +177,17 @@ function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, re
   const traffic = node.traffic_limit > 0 ? percent(used, node.traffic_limit) : null
   const expiry = expiryShort(node)
   // 续费价与计费周期：与「详细」卡片同一套读法（金额 + 周期），只是压在一个格子里。
-  const cycle = CYCLES[node.billing_cycle] ?? (node.billing_cycle || null)
+  const cycle = cycleName(node.billing_cycle)
 
   return (
     <>
+      {/* ★2026-11-06：行不再是 role="button" —— <tr> 只允许是 row，标成按钮会让整张表对读屏
+          退化成「表头 + 一台一个按钮」，列标题与数值的对应关系全丢。可点语义落在名称列那枚
+          真按钮上（aria-expanded + aria-controls），鼠标照旧点整行。 */}
       <tr
-        role="button"
-        aria-expanded={open}
-        tabIndex={0}
         data-node-card={node.id}
         data-selected={selected ? "1" : undefined}
         onClick={onToggle}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onToggle())}
         onPointerOver={onWarm}
         onFocus={onWarm}
         onTouchStart={onWarm}
@@ -201,7 +200,15 @@ function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, re
           <span className="flex min-w-0 items-center gap-2">
             <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground/60 transition-transform ${open ? "rotate-90" : ""}`} />
             <Country node={node} />
-            <span className="truncate text-sm font-medium"><TextHighlight text={node.name} terms={terms} /></span>
+            <button
+              type="button"
+              className="min-w-0 max-w-full truncate rounded-sm text-left text-sm font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              aria-expanded={open}
+              aria-controls={`compact-detail-${node.id}`}
+              onClick={(e) => { e.stopPropagation(); onToggle() }}
+            >
+              <TextHighlight text={node.name} terms={terms} />
+            </button>
           </span>
         </td>
         <td className={`${colCls("os")} ${CELL} ${node.os ? "" : "text-muted-foreground"}`}>

@@ -12,6 +12,10 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  /* 原生控件（滚动条、下拉、日期选择器）跟着这一档走：不声明的话它们一直是亮色的 ——
+     .dark 下页面底色变暗、滚动条仍是浅灰。index.html 的首帧内联脚本也把同一档写进
+     documentElement.style.colorScheme（两处同源，改一处记得改另一处）。 */
+  color-scheme: light;
   --radius: 0.625rem;
   /* 页面底色：参考站是 oklch(0.985) 那一档浅灰，卡片才「浮」得出来。原来两面都是纯白，
      卡片只能靠描边+阴影区分，整页看着发闷。 */
@@ -69,6 +73,8 @@
 }
 
 .dark {
+  /* 原生控件在暗色下也走暗的那一套（见 :root 里的同一行）。 */
+  color-scheme: dark;
   /* ── 暗色的文字与底色：对着上游实测过的那一套调过 ─────────────────────────────
      站长 2026-10-06 反馈「全暗模式下字的颜色有些刺眼」。把原站 :root 里那几档取出来算成
      OKLCH，问题就很清楚 —— 它不是"亮一点/暗一点"，而是**对比度差了一档，而且它是暖的**：
@@ -269,7 +275,6 @@
   font-family: ui-monospace, SFMono-Regular, "IBM Plex Mono", monospace;
   font-size: 8.8px;
   letter-spacing: 1.4px;
-  opacity: 0.55;
 }
 
 .globe-side {

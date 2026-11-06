@@ -32,15 +32,19 @@ export function TrafficDetail({ nodes }: { nodes: Node[] }) {
   const [peaks, setPeaks] = useState<Map<number, TrafficPeak>>(() => new Map())
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(0)
-  // 取数用的那份名单在挂载那一刻定下来（同一批 id 不会变，名字/流量怎么跳都不影响 id）。
-  const initial = useRef(nodes)
+  // 取数用的名单：跟着当前这一批走（**不能**在挂载那一刻锁死 —— 浮层开着时新增/下线一台，
+  // id 集合变了、effect 会用旧名单重取，新那台永远等不到峰值、还白打一轮请求）。
+  const listRef = useRef(nodes)
+  useEffect(() => {
+    listRef.current = nodes
+  })
 
   useEffect(() => {
     let alive = true
     setPeaks(new Map())
     setLoaded(false)
     setFailed(0)
-    void fetchTrafficPeaks(initial.current, {
+    void fetchTrafficPeaks(listRef.current, {
       onPeak: (id, peak) => {
         if (!alive) return
         setPeaks((prev) => new Map(prev).set(id, peak))
@@ -97,7 +101,7 @@ export function TrafficDetail({ nodes }: { nodes: Node[] }) {
       })}
       </DetailScroll>
       <span data-detail-foot="" className="block border-t px-2.5 py-1.5 text-muted-foreground">
-        峰值按今天 00:00 起的历史采样计算（两分钟一个点）
+        峰值按北京时间今天 00:00 起的历史采样计算（两分钟一个点）
         {total > rows.length ? `；共 ${total} 台，只列今日流量最大的 ${rows.length} 台` : ""}
         {failed > 0 ? `；${failed} 台读取失败` : ""}
       </span>

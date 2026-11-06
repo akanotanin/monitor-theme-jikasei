@@ -9,7 +9,7 @@ import { LatencyPanel } from "@/components/Latency"
 import { TextHighlight } from "@/components/TextHighlight"
 import { Meter } from "@/components/Meter"
 import type { Node } from "@/lib/api"
-import { CYCLES, FOREVER, bytes, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
+import { FOREVER, bytes, cycleName, daysUntil, money, pair, percent, rate, uptime } from "@/lib/format"
 import { remarkChips, type RemarkChip } from "@/lib/notes"
 import { remarksOnCards, type RemarkPlacement } from "@/lib/site-settings"
 
@@ -118,7 +118,7 @@ export function priceText(node: Node): string | null {
 
 export function cycleText(node: Node): string | null {
   if (node.price <= 0) return null
-  return CYCLES[node.billing_cycle] ?? (node.billing_cycle || null)
+  return cycleName(node.billing_cycle)
 }
 
 /**

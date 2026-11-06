@@ -2,7 +2,7 @@ import { Card } from "@/components/ui/card"
 import { Country, RemarkChips, deployed, monthUsage } from "@/components/NodeCard"
 import { TextHighlight } from "@/components/TextHighlight"
 import type { Node } from "@/lib/api"
-import { CYCLE_SHORT, FOREVER, bytes, daysUntil, money, osName, pair, percent, rate, uptime } from "@/lib/format"
+import { FOREVER, bytes, cycleNameShort, daysUntil, money, osName, pair, percent, rate, uptime } from "@/lib/format"
 import { remarkChips } from "@/lib/notes"
 import { remarksOnCards, type RemarkPlacement } from "@/lib/site-settings"
 
@@ -63,7 +63,7 @@ function loadPct(node: Node): number | null {
  *   key 时才退回按 `expires_at` 自己数（见 @/lib/format 的 daysUntil）。
  */
 function noteText(node: Node): string {
-  const cycle = CYCLE_SHORT[node.billing_cycle]
+  const cycle = cycleNameShort(node.billing_cycle)
   const price = node.price > 0 ? `价格 ${money(node.price, node.currency)}${cycle ? `/${cycle}` : ""}` : ""
   const days = node.expires_in !== undefined ? node.expires_in : daysUntil(node.expires_at)
   const left = days === null || days === undefined ? ""

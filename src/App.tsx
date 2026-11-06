@@ -232,6 +232,13 @@ function useTheme(siteMode: ThemeMode) {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark)
     /**
+     * 原生控件那一档跟着走（滚动条、下拉、日期选择器）。CSS 的 :root / .dark 已经各写了一份，
+     * 这里再写一次**内联**：index.html 的首帧脚本为了让第一帧就是对的，会把 colorScheme 作为
+     * 内联样式挂上去 —— 内联比 CSS 规则权重大，站点设的明暗与系统不一致时（系统亮、站点暗）
+     * 不在这里改一次，滚动条就会一直停在首帧猜的那一档。
+     */
+    document.documentElement.style.colorScheme = dark ? "dark" : "light"
+    /**
      * 手机浏览器那一圈（地址栏 / 状态栏）的配色（`theme-color`）跟着**页面实际用的**明暗走。
      *
      * index.html 里那两份是静态值、按**系统**明暗挑的；而本站的「随北京时间自动」在夜里
@@ -454,7 +461,18 @@ export default function App() {
    */
   useEffect(() => {
     if (open !== null) return
-    history.replaceState({}, "", pageUrl(null, null, { group: groupNow, region: regionNow, q: query }))
+    const url = pageUrl(null, null, { group: groupNow, region: regionNow, q: query })
+    // ★2026-11-06：每敲一个字写一次地址栏，Safari 有 100 次 / 30 秒 的硬限制（超了抛
+    //   SecurityError，异常发生在 effect 里会把整棵树卸载 = 白屏），输入法组字期间更密。
+    //   改成 200ms 防抖，并且写不进也不算错 —— 地址栏是「分享/刷新能复原」的便利，不是页面本体。
+    const timer = window.setTimeout(() => {
+      try {
+        history.replaceState({}, "", url)
+      } catch {
+        // 隐私模式 / 限流：这次没写进去，下一次筛选变化再说。
+      }
+    }, 200)
+    return () => window.clearTimeout(timer)
   }, [open, groupNow, regionNow, query])
 
   /**
@@ -520,7 +538,9 @@ export default function App() {
     // 纵向排下来、页脚吊在最后（main 吃满剩余高度）：机器少、内容比一屏短时，
     // 署名也落在屏幕的右下角，而不是紧贴在列表底下浮在半空中。
     <div className="flex min-h-svh flex-col">
-      <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
+      {/* z-30：卡片与概览的浮层是 z-20 —— 顶栏若停在 z-10，浮层往下滚时会压在它身上、
+          把站名与搜索的点击一起吃掉（2026-11-06 实测 900×420）。浮层是该被吸顶栏盖住的。 */}
+      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
         {/* ★ 窄屏的横向余量很紧（390 宽上这一行原本要 407px，整页因此能横向拖动）。现在按
             「**站名优先展开、图标自己滑**」分：站名那格 max-w-[55%]（正常名字完整显示，
             只有长到离谱才轮到 truncate），搜索钉在它右边，剩下几枚图标装进一条能横向滑动的

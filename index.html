@@ -39,6 +39,30 @@
         }
       })()
     </script>
+    <!-- ★首帧明暗：**必须内联、必须在 head 里、必须赶在样式表与入口包之前**。暗色访客（系统暗，
+         或访客用顶栏那枚图标记下的 theme=dark）在入口包执行之前，页面上只有 CSS 默认的亮色底 ——
+         首绘会先闪一屏亮色，弱网下这段最长。这里把 .dark 挂到 <html> 上，第一帧就是对的；
+         判据与 App 的 useTheme 同源（同一把 localStorage key、同一套「记录优先、否则跟系统」）。
+         站点前面若有 CSP 挡掉内联脚本，退回原来的表现（闪一下），不会坏。
+         scripts/check-config.mjs 钉着这一段的存在、位置与 key。 -->
+    <script>
+      ;(function () {
+        var saved = null
+        try {
+          saved = localStorage.getItem("theme")
+        } catch (e) {
+          // 隐私模式 / 存储被禁用：没有记录可用，跟系统。
+        }
+        try {
+          var dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches
+          document.documentElement.classList.toggle("dark", dark)
+          // 原生滚动条 / 表单控件与 UA 的默认底色一起说清楚（CSS 里 :root / .dark 也有同一份）。
+          document.documentElement.style.colorScheme = dark ? "dark" : "light"
+        } catch (e) {
+          // matchMedia 不可用（很老的浏览器）：退回 CSS 默认那套。
+        }
+      })()
+    </script>
     <!-- 标题的头一步（冷启动时早问一次 /api/me，兼内联被 CSP 挡掉时的兜底）：public/title-probe.js，
          与 src/App.tsx 里的 TITLE_CACHE_KEY 共用一个键。
          ★ 必须 async（2026-10-09 实测后从普通脚本改过来）。普通脚本会**阻塞解析**：入口模块要等它

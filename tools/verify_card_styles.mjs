@@ -340,11 +340,13 @@ async function render(cfg, tag = '') {
 
 /* ------------------------------------------------------------------ 紧凑形态探测 */
 
-// 紧凑形态的行是 tr[role=button]（不是卡片），探针另写一份：表头/单元格各自数「没被 display:none 收掉」的那些，
+// 紧凑形态的行是 tr[data-node-card]（不是卡片；可点语义在名称列那枚按钮上），探针另写一份：表头/单元格各自数「没被 display:none 收掉」的那些，
 // 它们正是访客看得见的列。
 const COMPACT_PROBE = `JSON.stringify((() => {
   const table = document.querySelector('table')
-  const rows = [...document.querySelectorAll('tbody tr[role=button]')]
+  // 2026-11-06：紧凑行的可点语义搬进了名称列那枚真按钮（<tr> 不再冒充 button），
+  // 所以按 data-node-card 取行，别再拿 role 当选择器。
+  const rows = [...document.querySelectorAll('tbody tr[data-node-card]')]
   const visible = (el) => !!el && getComputedStyle(el).display !== 'none'
   const heads = table ? [...table.querySelectorAll('thead tr > *')].filter(visible).map((h) => h.textContent.trim()) : []
   const cells = rows[0] ? [...rows[0].children].filter(visible).length : 0
@@ -695,7 +697,7 @@ for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
 {
   await renderCompact({ cardStyle: 'compact', listTop: 'none' }, 1000, 'compact-long')
   const long = JSON.parse(await evalJS(`(() => {
-    const span = document.querySelector('tbody tr[role=button] td span.truncate')
+    const span = document.querySelector('tbody tr[data-node-card] td button')
     span.textContent = '超长机器名'.repeat(40)
     return JSON.stringify({
       tableW: Math.round(document.querySelector('table').getBoundingClientRect().width),
@@ -709,12 +711,12 @@ for (const [cfg, tag] of [[{}, 'empty'], [{ cardStyle: 'bogus' }, 'bogus']]) {
 /* 6d) 点一行就地展开延迟，不跳详情页（源站的做法） */
 {
   await renderCompact({ cardStyle: 'compact', listTop: 'none' }, 1440, 'compact-open')
-  await evalJS(`(() => { const r = document.querySelector('tbody tr[role=button]'); if (r) r.click(); return r ? 'ok' : 'no-row' })()`)
+  await evalJS(`(() => { const r = document.querySelector('tbody tr[data-node-card]'); if (r) r.click(); return r ? 'ok' : 'no-row' })()`)
   await sleep(2000) // 等 NodeDetail 那个 chunk 与延迟图落地
   // 包一层 try：求值撞上重渲染时会丢上下文，直接 JSON.parse(undefined) 会让整脚本莫名地断在这里。
   const raw = await evalJS(`(() => { try { return JSON.stringify({
     path: location.pathname,
-    expanded: !!document.querySelector('tbody tr[aria-expanded="true"]'),
+    expanded: !!document.querySelector('tbody tr[data-node-card] button[aria-expanded="true"]'),
     rows: document.querySelectorAll('tbody tr').length,
     detailLink: [...document.querySelectorAll('button')].some((b) => /完整详情/.test(b.textContent)),
     svg: document.querySelectorAll('tbody tr td[colspan] svg').length,

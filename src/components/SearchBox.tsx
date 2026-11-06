@@ -141,6 +141,10 @@ function Field({ value, onChange, onActivate, onClose, onMove, onEnter, autoFocu
         onFocus={onActivate}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
+          // ★2026-11-06：输入法组字期间（拼音 / かな 还没上屏）方向键与 Enter 属于候选窗，
+          //   抢过来会让「↓ 选词」变成「跳卡片」、「Enter」直接开机器。keyCode 229 是
+          //   老浏览器对组字的唯一信号，一并认。
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return
           // ↑↓ 选的是**下面那张列表**（命中列表的顺序），不是输入框里的光标历史 ——
           // 一概吞掉：单行搜索框里这两下本来没有用途，放行只会让光标跳到词首/词尾。
           if (e.key === "ArrowDown" || e.key === "ArrowUp") {

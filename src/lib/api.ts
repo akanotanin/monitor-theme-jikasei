@@ -16,9 +16,13 @@ export type Metrics = {
   total_tx: number
   month_rx: number
   month_tx: number
-  tcp: number
-  udp: number
-  procs: number
+  /**
+   * 连接数 / 进程数：hub 1.4.0 起才稳定带上（更早的 agent 可能整列不报）。缺了**不许**
+   * 把整块实时数据作废 —— 见 safeNodes：这三列降级成 null，CPU / 内存 / 网速照常显示。
+   */
+  tcp?: number | null
+  udp?: number | null
+  procs?: number | null
 }
 
 export type Node = {
@@ -167,12 +171,22 @@ export function sample(nodes: Node[]) {
 /** A malformed report must not remove every other node from the page. */
 export function safeNodes(nodes: Node[]): Node[] {
   const number = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0
-  const fields = ["uptime", "cpu", "mem_total", "mem_used", "swap_total", "swap_used", "disk_total", "disk_used",
-    "net_rx", "net_tx", "total_rx", "total_tx", "month_rx", "month_tx", "tcp", "udp", "procs"] as const
+  // 承重的那几列：坏一个就整块 metrics 作废（卡片宁可不显示，也不显示一半的假读数）。
+  const required = ["uptime", "cpu", "mem_total", "mem_used", "swap_total", "swap_used", "disk_total", "disk_used",
+    "net_rx", "net_tx", "total_rx", "total_tx", "month_rx", "month_tx"] as const
+  // 可有可无：agent 与 hub 版本不同步时可能整列不报（hub 自己的 check_contract 也只 warn）。
+  // 缺了降级成 null —— 早先它们也算「必需」，一台少报 procs 的机器会连 CPU / 内存 / 网速一起消失，
+  // 还会因为 `online && metrics` 这条沉底判据掉到列表最后一屏。
+  const optional = ["tcp", "udp", "procs"] as const
   return nodes.map((node) => {
     const m = node.metrics
-    return !m || (fields.every((key) => number(m[key])) && Array.isArray(m.load) && m.load.length === 3 && m.load.every(number))
-      ? node : { ...node, metrics: null }
+    if (!m) return node
+    const valid = required.every((key) => number(m[key])) && Array.isArray(m.load) && m.load.length === 3 && m.load.every(number)
+    if (!valid) return { ...node, metrics: null }
+    if (optional.every((key) => typeof m[key] === "number")) return node
+    const metrics = { ...m }
+    for (const key of optional) metrics[key] = number(m[key]) ? (m[key] as number) : null
+    return { ...node, metrics }
   })
 }
 

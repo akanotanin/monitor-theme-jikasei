@@ -15,6 +15,22 @@ for (const patch of [{ load: null }, { load: [1, "bad", 3] }, { cpu: "bad" }, { 
 }
 console.log("invalid live reports are isolated")
 
+// ★2026-11-06：tcp / udp / procs 是可选的（老 agent 整列不报）。缺一个不许把整块 metrics 作废，
+// 否则那台机器连 CPU / 内存 / 网速一起空白，还会按「没有数据」沉到列表最后一屏。
+const base = node.metrics!
+for (const missing of ["tcp", "udp", "procs"] as const) {
+  const { [missing]: _gone, ...rest } = base
+  const out = safeNodes([{ ...node, metrics: rest } as unknown as Node])[0]
+  assert.equal(out.metrics?.[missing], null, `${missing} 缺失时降级成 null`)
+  assert.equal(out.metrics?.cpu, base.cpu, `${missing} 缺失不该抹掉其它读数`)
+}
+// 承重那几列坏掉时仍然整块作废（宁可不显示，也不显示一半的假读数）
+for (const patch of [{ cpu: undefined }, { net_rx: null }, { month_tx: "8" }]) {
+  const bad = { ...node, metrics: { ...base, ...patch } } as unknown as Node
+  assert.equal(safeNodes([bad])[0].metrics, null)
+}
+console.log("optional live fields degrade without blanking the node")
+
 // Tabs follow the node order; ungrouped nodes and a hub without the field add none.
 assert.deepEqual(groupsOf([{ group: "东京" }, { group: "" }, {}, { group: "香港" }, { group: "东京" }]), ["东京", "香港"])
 console.log("groups follow the node order")

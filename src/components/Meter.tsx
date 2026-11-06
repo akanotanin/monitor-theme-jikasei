@@ -32,7 +32,10 @@ export function Meter({ label, pct, foot, empty = "—", icon: Icon, plain = fal
   // null means the metric has no ceiling to fill, so the bar stays empty rather
   // than reporting 0%. What replaces the percentage depends on the reason:
   // unknown for a node with no metrics, ∞ for a plan with no limit.
-  const filled = pct === null ? 0 : Math.min(100, Math.max(0, pct))
+  // `NaN` 也要挡：Math.min/Math.max 只夹越界、不夹非数 —— `width: "NaN%"` 是非法声明，
+  // 浏览器丢掉之后块仍是 auto，进度条会**画满**（读数还印成 "NaN%"）。读到坏值应当是空条 + 「—」。
+  const valid = typeof pct === "number" && Number.isFinite(pct)
+  const filled = valid ? Math.min(100, Math.max(0, pct)) : 0
   return (
     <div className="min-w-0">
       <div className="flex items-baseline justify-between gap-2">
@@ -41,7 +44,7 @@ export function Meter({ label, pct, foot, empty = "—", icon: Icon, plain = fal
           <span className="truncate">{label}</span>
         </span>
         <span className="tnum text-xs font-medium">
-          {pct === null ? empty : `${filled < 10 ? filled.toFixed(1) : filled.toFixed(0)}%`}
+          {valid ? `${filled < 10 ? filled.toFixed(1) : filled.toFixed(0)}%` : empty}
         </span>
       </div>
       <div className={`w-full overflow-hidden rounded-full bg-muted ${plain ? "my-1.5 h-1" : "mt-1.5 h-1.5"}`}>
