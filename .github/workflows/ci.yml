@@ -5,8 +5,10 @@ on:
     branches: [master]
     # Prose changes nothing a compiler or linter can check.
     paths-ignore: ["**.md", "LICENSE"]
+  # Every PR runs, even a prose-only one: `build` is a required status check on
+  # master, and a workflow skipped by paths-ignore reports no status at all —
+  # the PR would then sit at "Expected — Waiting for status to be reported".
   pull_request:
-    paths-ignore: ["**.md", "LICENSE"]
 
 # A new push supersedes any run still in progress for the same ref.
 concurrency:
