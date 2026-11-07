@@ -16,10 +16,15 @@ import { remarksOnCards, type RemarkPlacement } from "@/lib/site-settings"
 /**
  * This period's usage as the plan meters it. The hub computes it; the switch
  * below serves only a hub from before `month_used`.
+ *
+ * ★两个 `month_*` 计数缺失时按 0 兜（与 summary.ts 对 day_rx / day_tx 的处理同一套，
+ *   2026-11-07）：缺一个就是 NaN，而 NaN 会顺着 percent() 进进度条的 width（"NaN%" 是
+ *   非法声明，浏览器丢掉之后块仍是 auto，条反而**画满**），读数还会印成「NaN%」。
  */
 export function monthUsage(node: Node): number {
   if (typeof node.month_used === "number") return node.month_used
-  const { month_rx: rx, month_tx: tx } = node
+  const rx = node.month_rx || 0
+  const tx = node.month_tx || 0
   switch (node.traffic_mode) {
     case "up":
       return tx

@@ -96,7 +96,9 @@ const CHIPS = 3
  * 一条 0% 的实心条会被读成「用得很少」，而真相是「不知道」。
  */
 function Readout({ label, value, pct, title }: { label: string; value: string; pct: number | null; title?: string }) {
-  const filled = pct === null ? 0 : Math.min(100, Math.max(0, pct))
+  // 与 Meter 同一条护栏（2026-11-07）：`NaN` 进 `width` 是非法声明，块会退成 auto、条反而画满。
+  const valid = typeof pct === "number" && Number.isFinite(pct)
+  const filled = valid ? Math.min(100, Math.max(0, pct)) : 0
   return (
     <div className="min-w-0" title={title}>
       <div className="truncate text-xs text-muted-foreground">{label}</div>
@@ -125,6 +127,9 @@ export function WideCard({ node, onOpen, onWarm, terms, remarkPlacement, selecte
   // 底注只有一行，只取前 CHIPS 枚。访客那边 hub 只下发公有那几枚，所以同一个位置他们看到的就是公有。
   const chips = remarksOnCards(remarkPlacement ?? "both") ? remarkChips(node).slice(0, CHIPS) : []
   const note = noteText(node)
+  // 总流量那条：与 Meter 同一条护栏（NaN 在 width 里是非法声明，块退成 auto、条反而画满）。
+  const trafficPct = node.traffic_limit > 0 ? percent(monthUsage(node), node.traffic_limit) : 0
+  const trafficBar = Number.isFinite(trafficPct) ? Math.min(100, Math.max(0, trafficPct)) : 0
   return (
     <Card
       onClick={onOpen}
@@ -229,7 +234,7 @@ export function WideCard({ node, onOpen, onWarm, terms, remarkPlacement, selecte
           <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-foreground/70 transition-[width] duration-500"
-              style={{ width: `${node.traffic_limit > 0 ? percent(monthUsage(node), node.traffic_limit) : 0}%` }}
+              style={{ width: `${trafficBar}%` }}
             />
           </div>
 

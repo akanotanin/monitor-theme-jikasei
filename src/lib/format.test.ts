@@ -4,7 +4,7 @@
 //
 // Nothing imports it, so the bundle never includes it.
 import {
-  axisBytes, axisTop, bytes, CYCLE_SHORT, cycleName, cycleNameShort, CYCLES, cpuName, daysUntil, despike, innerTicks, osName, pair, quarters, rate, timeTicks, uptime, zoomSpan,
+  axisBytes, axisTop, bytes, clockBeijing, CYCLE_SHORT, cycleName, cycleNameShort, CYCLES, cpuName, daysUntil, despike, innerTicks, niceScale, osName, pair, quarters, rate, timeTicks, uptime, zoomSpan,
 } from "./format.ts"
 
 let failed = 0
@@ -36,6 +36,12 @@ eq(axisBytes(1048575), "1 MB", "axisBytes 同样进位（轴刻度用它）")
 // pair: one unit when both sides share it, two when they do not.
 eq(pair(300 * 1024 ** 2, 900 * 1024 ** 2), "300.00 / 900.00 MB", "同单位只写一次")
 eq(pair(300 * 1024 ** 2, 3 * 1024 ** 3), "300 MB / 3.00 GB", "跨单位各写各的")
+// ★2026-11-07：pair 与 bytes() 是同一套数字，两条规则也必须同源 —— 一是四舍五入顶到 1024 要
+//   升一档（否则印「1024 / 1024 B」），二是两侧都 <1 时 unitOf 给 -1，不能落到 UNITS[-1]
+//   （原先 pair(0.5, 0.9) 印的是「512.00 / 921.60 undefined」）。
+eq(pair(0.5, 0.9), "0 B / 0 B", "亚字节两端退回 bytes()，不印 undefined")
+eq(pair(1023.999, 1023.999), "1.00 / 1.00 KB", "四舍五入顶到 1024 时升一档")
+eq(pair(1023.4, 1023.4), "1023 / 1023 B", "没顶到 1024 就留在原档")
 
 // rate: the same three significant digits as bytes(), plus the two rules the
 // summary cards forced on it -- the KB bin prints no decimal, and every bin stops
@@ -88,6 +94,28 @@ for (const max of [3_000, 300_000, 3_000_000, 300_000_000]) {
   eq(top / max < 2, true, `${max} B/s 的轴顶不能浪费整块面板`)
 }
 
+// niceScale（自绘图的自动量程）：非负数据的下沿不许落到 0 以下 —— 平直且 <1ms 的线路
+// 原先从 -0.5 起、刻度印「-0.5ms」「-1ms」（2026-11-07 审出来的；1.36.0 那条护栏写在 pad
+// 之后，条件恒假，等于没修）。
+{
+  const flat = niceScale(0.5, 0.5)
+  eq(flat.lo, 0, "平直 0.5ms：下沿是 0")
+  eq(flat.hi, 1.5, "平直 0.5ms：上沿留 1ms 余量")
+  eq(flat.ticks, [0, 0.5, 1, 1.5], "平直 0.5ms：刻度从 0 起")
+  const zero = niceScale(0, 0)
+  eq(zero.lo, 0, "平直 0ms：下沿是 0")
+  eq(zero.ticks.every((v) => v >= 0), true, "平直 0ms：没有负刻度")
+  // 绝对值 >1 的平直线仍贴着自己的 ±10%（20ms 的抖动要看得见，不被抬到 0 起）。
+  eq(niceScale(20, 20).ticks, [18, 19, 20, 21, 22], "平直 20ms：±10% 余量")
+  // 负数数据照旧落在 0 以下 —— 这条护栏只对非负数生效。
+  const below = niceScale(-3, -3)
+  eq(below.ticks.every((v) => v < 0), true, "负数数据：刻度仍在 0 以下")
+  eq(below.ticks.some((v) => v <= -3) && below.ticks.some((v) => v >= -3), true, "负数数据：范围覆盖数据")
+  // 普通量程：上下沿各向外扩到步长的整数倍（延迟轴不从 0 起）。
+  eq(niceScale(184, 300), { lo: 150, hi: 300, ticks: [150, 200, 250, 300] }, "普通量程扩到整步长")
+  eq(niceScale(184, 301).hi, 350, "轴顶盖得住数据（301 落在下一格）")
+}
+
 // timeTicks: round clock values, phased on local midnight rather than the epoch,
 // and never more than requested.
 {
@@ -107,6 +135,12 @@ for (const max of [3_000, 300_000, 3_000_000, 300_000_000]) {
   )
   eq(timeTicks(to, to - day), [], "反向区间不产出刻度")
 }
+
+// clockBeijing：「今日流量」浮层的峰值时刻用**固定 UTC+8**，与运行环境的时区无关
+// （那个窗口本身按北京时间 0 点裁，见 @/lib/today-traffic 的 dayStart）。
+eq(clockBeijing(Date.UTC(2026, 0, 1, 0, 5)), "08:05", "UTC 00:05 → 北京 08:05")
+eq(clockBeijing(Date.UTC(2026, 0, 1, 20, 30)), "04:30", "UTC 20:30 → 次日北京 04:30")
+eq(clockBeijing(Date.UTC(2026, 5, 30, 15, 59)), "23:59", "UTC 15:59 → 北京 23:59")
 
 // daysUntil: whole days, negative once past, null when there is no date.
 {

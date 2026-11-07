@@ -113,7 +113,12 @@ function Block({ title, hint, detail, wide = false, children }: {
       onPointerEnter={detail ? (e) => { if (e.pointerType === "mouse") setOpen(true) } : undefined}
       onPointerLeave={detail ? (e) => { if (e.pointerType === "mouse") setOpen(false) } : undefined}
       onFocus={detail ? () => setOpen(true) : undefined}
-      onBlur={detail ? () => setOpen(false) : undefined}
+      // ★2026-11-07：焦点挪进**浮层自己**（那一节可聚焦的明细滚动区）不算「离开」——
+      //   原来是无条件 `setOpen(false)`，可是 React 的 onBlur 走的是会冒泡的 focusout：
+      //   Tab 从这块进到浮层的滚动区时，这里先收到 focusout，浮层当场卸载、焦点掉回 body，
+      //   那枚「键盘用户拿得到被裁掉的那几十行」的滚动区永远走不到。判据与 CardStyleMenu
+      //   的 onBlur 同源（relatedTarget 还在子树里就不关）。
+      onBlur={detail ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) setOpen(false) } : undefined}
       onClick={detail ? () => setOpen(true) : undefined}
       // ★2026-11-06：这块是 role="button"，原先却没有键盘激活路径 —— Esc 关掉浮层之后
       //   焦点还在块上，按 Enter / 空格毫无反应（只能 Tab 走再 Tab 回来靠 onFocus 重开）。

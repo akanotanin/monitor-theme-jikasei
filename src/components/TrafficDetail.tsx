@@ -4,11 +4,10 @@ import { ArrowDown, ArrowUp } from "lucide-react"
 import { DetailScroll } from "@/components/DetailScroll"
 import { Country } from "@/components/NodeCard"
 import type { Node } from "@/lib/api"
-import { bytes, clock, rate } from "@/lib/format"
+import { bytes, clockBeijing, rate } from "@/lib/format"
 import {
-  PEAK_LIMIT,
   fetchTrafficPeaks,
-  trafficTotal,
+  peakTargets,
   type TrafficPeak,
 } from "@/lib/today-traffic"
 
@@ -32,6 +31,10 @@ export function TrafficDetail({ nodes }: { nodes: Node[] }) {
   const [peaks, setPeaks] = useState<Map<number, TrafficPeak>>(() => new Map())
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(0)
+  // 这一轮**真的取了峰值**的那几台：浮层列出来的名单就是它（见 @/lib/today-traffic 的
+  // peakTargets）。不能跟着每两秒一次的推送重排 —— 排名一换，新挤进前 48 的那台没取过峰值，
+  // 行里只能写「—」，读起来像「这台没有采样」（2026-11-07 修）。
+  const [targets, setTargets] = useState<Node[]>(() => peakTargets(nodes))
   // 取数用的名单：跟着当前这一批走（**不能**在挂载那一刻锁死 —— 浮层开着时新增/下线一台，
   // id 集合变了、effect 会用旧名单重取，新那台永远等不到峰值、还白打一轮请求）。
   const listRef = useRef(nodes)
@@ -41,10 +44,13 @@ export function TrafficDetail({ nodes }: { nodes: Node[] }) {
 
   useEffect(() => {
     let alive = true
+    // 这一轮要列的名单（与下面取峰值用的是同一份，两处不会各排各的）。
+    const list = peakTargets(listRef.current)
+    setTargets(list)
     setPeaks(new Map())
     setLoaded(false)
     setFailed(0)
-    void fetchTrafficPeaks(listRef.current, {
+    void fetchTrafficPeaks(list, {
       onPeak: (id, peak) => {
         if (!alive) return
         setPeaks((prev) => new Map(prev).set(id, peak))
@@ -65,7 +71,10 @@ export function TrafficDetail({ nodes }: { nodes: Node[] }) {
   // 也就是「列出来的每一台都有峰值」。早先是全列、只给前 48 台取峰值 —— 两百台时后 152 行
   // 全写着「—」，那既不是「没有采样」也不是「没取」，读起来就是个错。
   const total = nodes.length
-  const rows = [...nodes].sort((a, b) => trafficTotal(b) - trafficTotal(a)).slice(0, PEAK_LIMIT)
+  // 名单与顺序固定成**取峰值的那一份**；行里的读数仍取当前这一帧（今日流量照常每两秒跳）。
+  // 已经被删掉的台从行里落掉（id 集合一变，上面那个 effect 会重新取名单位）。
+  const current = new Map(nodes.map((node) => [node.id, node]))
+  const rows = targets.map((node) => current.get(node.id)).filter((node): node is Node => node !== undefined)
 
   return (
     <>
@@ -122,7 +131,8 @@ function PeakArrow({ icon: Icon, value, at, pending }: {
     <span className="tnum inline-flex min-w-0 items-center gap-1 truncate">
       <Icon className="size-3 shrink-0" aria-hidden />
       <span className="truncate">{rate(value)}</span>
-      <span className="shrink-0 text-muted-foreground">{clock(at)}</span>
+      {/* 峰值窗口按北京时间今天 0 点裁，钟点也要用北京时间 —— 访客本机时区是另一把尺子。 */}
+      <span className="shrink-0 text-muted-foreground">{clockBeijing(at)}</span>
     </span>
   )
 }

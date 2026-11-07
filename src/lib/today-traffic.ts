@@ -105,6 +105,18 @@ export function trafficTotal(node: Node): number {
 /** 浮层里最多给多少台取峰值：今天流量最大的那些，其余那几台只剩「今日流量」一栏。 */
 export const PEAK_LIMIT = 48
 
+/**
+ * 浮层要列（也是要取峰值）的那几台：今日流量最大的 PEAK_LIMIT 台。
+ *
+ * ★两处必须用**同一份**名单（2026-11-07 修）：浮层原来自己每次渲染都按当时的今日流量重排
+ * 前 48 台，而峰值只在节点 id 集合变化时取一次 —— 开着浮层时排名一变，新挤进前 48 的那台
+ * 没取过峰值，行里只能写「—」，读起来像「这台没有采样」。现在两端共用这一个函数，浮层显示
+ * 的名单就是取过峰值的那一份。
+ */
+export function peakTargets(nodes: Node[]): Node[] {
+  return [...nodes].sort((a, b) => trafficTotal(b) - trafficTotal(a)).slice(0, PEAK_LIMIT)
+}
+
 /** 缓存 60 秒。 */
 const TTL = 60_000
 const cache = new Map<number, { at: number; peak: TrafficPeak }>()
@@ -164,9 +176,8 @@ export async function fetchTrafficPeaks(nodes: Node[], options: {
   const failed: number[] = []
   // 只给今天流量最大的那些取峰值（见 PEAK_LIMIT）。浮层也只列这些台（2026-10-31 起）——
   // 列出来却没取峰值的行会是一排「—」，读起来像「这些机器没有采样」，比不列更容易误会。
-  const queue = [...nodes]
-    .sort((a, b) => trafficTotal(b) - trafficTotal(a))
-    .slice(0, PEAK_LIMIT)
+  // 名单与浮层共用 peakTargets（2026-11-07），两处不会各排各的。
+  const queue = peakTargets(nodes)
 
   let next = 0
   const worker = async () => {

@@ -212,11 +212,18 @@ export function useNodes() {
     let socket: WebSocket | null = null
     let poll: ReturnType<typeof setInterval> | null = null
     let retry: ReturnType<typeof setTimeout> | null = null
+    // 看门狗（见 watch）：一帧都没读到的定时器。
+    let silent: ReturnType<typeof setTimeout> | null = null
     let closed = false
     let visible = document.visibilityState !== "hidden"
+    // 中断过（页面藏起来 / 连接静默死掉）：下一次收到数据时把走势线的采样清掉 ——
+    // 它是按位置画的，中断前后的两个点会被连成「中间什么也没发生」的一段（见 sample）。
+    let gap = false
 
     const receive = (list: Node[]) => {
       const safe = safeNodes(list)
+      if (gap) speedHistory.clear()
+      gap = false
       sample(safe)
       setNodes(safe)
       setError(null)
@@ -232,10 +239,61 @@ export function useNodes() {
         })
 
     const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/ws`
+    /**
+     * 一条连接要走人时先把回调摘掉：它随后报的死（以及迟到的帧）都不该被当成「现在这条」的事。
+     * 换连接时**不**先 `close()` 再等握手 —— 真死掉的连接要等满 60 秒关闭握手才报死，
+     * 那段时间页面就是一行不动的旧数据。
+     */
+    const letGo = (ws: WebSocket | null) => {
+      if (!ws) return
+      ws.onmessage = null
+      ws.onerror = null
+      ws.onclose = null
+      try {
+        ws.close()
+      } catch {
+        // 已经没了。
+      }
+    }
+    const stopWatch = () => {
+      if (silent) {
+        clearTimeout(silent)
+        silent = null
+      }
+    }
+    /**
+     * 看门狗：**10 秒没读到一帧**就当这条连接已经死了（hub 每 2 秒推一次，5 个周期）。
+     *
+     * 为什么必须有：连接可能半开 —— 路径上的 NAT 忘了这条连接、对端机器直接掉电/断网，
+     * 浏览器既收不到帧也收不到 close（Chrome 要等 TCP keepalive，约 450 秒才认）。
+     * 那时只靠 `onclose` 的重连与兜底轮询都不会启动，状态页就一直显示几分钟前的在线状态与
+     * 流量，而且什么都不报 —— 比报错更糟。换一条新连接，并把旧的那条就地摘掉。
+     *
+     * 只有**真的读出一帧**才重新上弦：读不出来的帧（坏 JSON）也算静默。
+     */
+    const watch = () => {
+      stopWatch()
+      silent = setTimeout(() => {
+        silent = null
+        if (closed || !visible) return
+        setError("实时数据中断，正在重新连接")
+        gap = true
+        letGo(socket)
+        socket = null
+        // 新连接建好之前先把数据补上（/api/nodes 与推送是同一份快照）。
+        fetchOnce()
+        connect()
+      }, 10_000)
+    }
+
     // A hub restart closes every stream. Without reconnecting, a page that
     // outlives a deploy would remain on the fallback poll for the rest of its
     // life, refreshing at a fifth of the live rate with no indication.
     const connect = () => {
+      if (retry) {
+        clearTimeout(retry)
+        retry = null
+      }
       let ws: WebSocket
       try {
         ws = new WebSocket(url)
@@ -243,11 +301,24 @@ export function useNodes() {
         poll ??= setInterval(fetchOnce, 5000)
         return
       }
+      // 换上新的一条之前把旧的那条摘干净：重连定时器与看门狗都可能走到这里，两条并存会白占
+      // 一个 hub 的流名额（反代那头是按 IP 限并发的）。
+      if (socket) letGo(socket)
       socket = ws
+      watch()
       ws.onmessage = (event) => {
         // 重连换代之后，旧连接迟到的帧不算数。
         if (socket !== ws) return
-        receive(JSON.parse(event.data).nodes)
+        let list: Node[] | undefined
+        try {
+          list = JSON.parse(event.data).nodes
+        } catch {
+          return
+        }
+        if (!Array.isArray(list)) return
+        // 这一帧读出来了，连接确实还活着。
+        watch()
+        receive(list)
         // The stream has returned; the poll was only covering for it.
         if (poll) {
           clearInterval(poll)
@@ -258,6 +329,7 @@ export function useNodes() {
       ws.onclose = () => {
         // 隐藏时我们自己关的连接（以及它随后报的死）都不该把轮询/重连挂回去 —— 那是回前台的事。
         if (closed || socket !== ws || !visible) return
+        stopWatch()
         poll ??= setInterval(fetchOnce, 5000)
         retry = setTimeout(connect, 5000)
       }
@@ -269,11 +341,16 @@ export function useNodes() {
       visible = next
       if (visible) {
         // 回前台：先把数据补上（藏起来那段一帧都没收），再把连接接回去。
+        gap = true
         fetchOnce()
         if (!socket || socket.readyState > WebSocket.OPEN) connect()
       } else {
-        // 藏起来：连接让出去（它自己那条 onclose 见 visible=false，不会挂上轮询/重连）。
-        socket?.close()
+        // 藏起来：连接让出去（它自己那条 onclose 见 visible=false，不会挂上轮询/重连），
+        // 看门狗也一起停 —— 后台里不该有任何定时器。
+        gap = true
+        stopWatch()
+        letGo(socket)
+        socket = null
         if (poll) { clearInterval(poll); poll = null }
         if (retry) { clearTimeout(retry); retry = null }
       }
@@ -288,8 +365,10 @@ export function useNodes() {
 
     return () => {
       closed = true
+      stopWatch()
       document.removeEventListener("visibilitychange", onVisibility)
-      socket?.close()
+      letGo(socket)
+      socket = null
       if (poll) clearInterval(poll)
       if (retry) clearTimeout(retry)
     }
