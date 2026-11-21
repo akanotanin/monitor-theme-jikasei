@@ -119,8 +119,12 @@ export function peakTargets(nodes: Node[]): Node[] {
 
 /** 缓存 60 秒。 */
 const TTL = 60_000
-const cache = new Map<number, { at: number; peak: TrafficPeak }>()
-const inflight = new Map<number, Promise<TrafficPeak>>()
+// ★缓存项带**北京日历日的起点**（2026-11-07 二审）：键原先只有 node.id，于是 23:59:30 取到
+//   「昨天 23:57 的峰值」之后，00:00:20 再取还在 60 秒 TTL 内、直接把昨天那份还回来 ——
+//   与浮层尾巴写的「按北京时间今天 00:00 起」当场矛盾。带上 day 之后，跨零点第一次取就会
+//   重算（窗口也自动从 24h 收到 1h，见 windowFor）。
+const cache = new Map<number, { at: number; day: number; peak: TrafficPeak }>()
+const inflight = new Map<string, Promise<TrafficPeak>>()
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -145,17 +149,24 @@ async function fetchOne(node: Node, now: number): Promise<TrafficPeak> {
 
 /** 取一台的峰值（命中缓存就直接给）。 */
 export function peakFor(node: Node, now = Date.now()): Promise<TrafficPeak> {
+  const day = dayStart(now)
   const hit = cache.get(node.id)
-  if (hit && now - hit.at < TTL) return Promise.resolve(hit.peak)
-  const running = inflight.get(node.id)
+  // 同一天、且还没过期才算命中。
+  if (hit && hit.day === day && now - hit.at < TTL) return Promise.resolve(hit.peak)
+  // 在飞的那一份也按 (id, 日) 归一：跨零点前发出的那份不该被上一轮复用（它的窗口是昨天的）。
+  const key = `${node.id}@${day}`
+  const running = inflight.get(key)
   if (running) return running
   const job = fetchOne(node, now)
     .then((peak) => {
-      cache.set(node.id, { at: Date.now(), peak })
+      // `at` 用调用方给的 `now`，不用 `Date.now()`（2026-11-07 二审）：两者是同一次
+      // 「现在」的两种写法，混用会让「60 秒 TTL」在注入时钟的场合永远判成过期（单测里
+      // 就是这么发现的）—— 而生产里它俩差的那几毫秒没有意义。
+      cache.set(node.id, { at: now, day: dayStart(now), peak })
       return peak
     })
-    .finally(() => inflight.delete(node.id))
-  inflight.set(node.id, job)
+    .finally(() => inflight.delete(key))
+  inflight.set(key, job)
   return job
 }
 

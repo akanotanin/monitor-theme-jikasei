@@ -46,10 +46,13 @@ export function summarize(nodes: Node[]): Fleet {
   for (const node of nodes) {
     // `|| 0`：老 hub 没有 day_rx/day_tx 这几个字段，缺一个就整行合计成 NaN，
     // 那时候 bytes(NaN) 会把四张卡片一起写成 0 B。
-    fleet.dayRx += node.day_rx || 0
-    fleet.dayTx += node.day_tx || 0
-    fleet.totalRx += node.total_rx || 0
-    fleet.totalTx += node.total_tx || 0
+    // ★负数按 0 计（2026-11-21 三审）：today-traffic 的 trafficTotal 一直是
+    //   `Math.max(0, …)`，而这里只挡了 undefined/NaN —— 同一个坏样本于是让概览卡片与
+    //   「今日流量」浮层给出两个不同的合计（卡片 0 B、浮层 100 B）。两处共用同一口径。
+    fleet.dayRx += Math.max(0, node.day_rx || 0)
+    fleet.dayTx += Math.max(0, node.day_tx || 0)
+    fleet.totalRx += Math.max(0, node.total_rx || 0)
+    fleet.totalTx += Math.max(0, node.total_tx || 0)
     if (!node.online) continue
     fleet.online++
     const m = node.metrics

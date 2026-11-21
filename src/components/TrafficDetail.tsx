@@ -6,6 +6,7 @@ import { Country } from "@/components/NodeCard"
 import type { Node } from "@/lib/api"
 import { bytes, clockBeijing, rate } from "@/lib/format"
 import {
+  dayStart,
   fetchTrafficPeaks,
   peakTargets,
   type TrafficPeak,
@@ -42,6 +43,29 @@ export function TrafficDetail({ nodes }: { nodes: Node[] }) {
     listRef.current = nodes
   })
 
+  /**
+   * 跨零点重取（2026-11-07 二审）：峰值窗口是「北京时间今天 0 点起」，而这一块只在
+   * **id 集合**变化时才重跑 —— 浮层开着跨过零点，行里的峰值与时刻会一直停在昨天。
+   * 这里按「离下一个北京零点还有多久」排一个定时器，到点把 `round` 加一，effect 重跑。
+   * 缓存项也带了日（见 @/lib/today-traffic），所以重取不会命中昨天那份。
+   * 定时器最长 1 小时一跳：前台闲置的标签页不该养着一个 24 小时的定时器（也避开
+   * setTimeout 超过 2^31ms 的平台上限），到点再算下一次。
+   */
+  const [round, setRound] = useState(0)
+  useEffect(() => {
+    let timer = 0
+    const tick = () => {
+      const now = Date.now()
+      const next = dayStart(now) + 86_400_000
+      timer = window.setTimeout(() => {
+        if (Date.now() >= next) setRound((n) => n + 1)
+        else tick()
+      }, Math.min(next - now + 1_000, 3_600_000))
+    }
+    tick()
+    return () => window.clearTimeout(timer)
+  }, [])
+
   useEffect(() => {
     let alive = true
     // 这一轮要列的名单（与下面取峰值用的是同一份，两处不会各排各的）。
@@ -65,7 +89,7 @@ export function TrafficDetail({ nodes }: { nodes: Node[] }) {
     return () => {
       alive = false
     }
-  }, [key])
+  }, [key, round])
 
   // 机器多时（2026-10-31 站长提「机器特别多的时候」）：**只列**今日流量最大的 PEAK_LIMIT 台，
   // 也就是「列出来的每一台都有峰值」。早先是全列、只给前 48 台取峰值 —— 两百台时后 152 行
@@ -126,11 +150,14 @@ function PeakArrow({ icon: Icon, value, at, pending }: {
   pending: boolean
 }) {
   if (pending) return <span className="tnum">读取中…</span>
-  if (!value || at === null || at === undefined) return <span className="tnum">—</span>
+  // ★判据只看 `at`（2026-11-21 三审）：原先 `!value` 把「峰值确实是 0 B/s」也当成没有采样，
+  //   印成「—」—— 一台整天没流量的机器明明有采样、峰值就是 0，却和「读取失败 / 没有数据」
+  //   共用同一个符号（而尾巴又另有一句「N 台读取失败」表达第三种状态）。
+  if (at === null || at === undefined || !Number.isFinite(at)) return <span className="tnum">—</span>
   return (
     <span className="tnum inline-flex min-w-0 items-center gap-1 truncate">
       <Icon className="size-3 shrink-0" aria-hidden />
-      <span className="truncate">{rate(value)}</span>
+      <span className="truncate">{rate(value ?? 0)}</span>
       {/* 峰值窗口按北京时间今天 0 点裁，钟点也要用北京时间 —— 访客本机时区是另一把尺子。 */}
       <span className="shrink-0 text-muted-foreground">{clockBeijing(at)}</span>
     </span>

@@ -235,8 +235,14 @@ export function fxNote(used: string[], skipped: string[] = [], fx: FxSnapshot = 
   const fixedCodes = codes.filter((code) => fixed.has(code))
   const liveNote = `每日汇率：${liveCodes.map(price).join("，")}`
   const fixedNote = `固定汇率 ${fx.date}：${fixedCodes.map(price).join("，")}`
+  // ★「一个币种都没用上」有两种情形（2026-11-21 三审）：真·全是人民币记账，与
+  //   **所有外币都因缺汇率被跳过**。后者原先也写「人民币记账，无需折算」—— 那台机器明明
+  //   记的是外币（只是算不进合计），文案与数字（monthly=null）当场说岔。本函数的注释要求
+  //   「文案与数字同源，不许说岔」，这里正是那条要求落地的地方。
+  //   判据是 `used` 本身空不空，不是 `codes`：`codes` 是**去掉 CNY 之后**的列表，
+  //   `["CNY"] + skipped:["XYZ"]` 时它也是空，但人民币确实用上了，那种要说「人民币记账」。
   const head = codes.length === 0
-    ? "人民币记账，无需折算"
+    ? (used.length === 0 && skipped.length ? "所用币种均无汇率，未计入合计" : "人民币记账，无需折算")
     : !fx.live || liveCodes.length === 0
       ? fixedNote
       : fixedCodes.length === 0 ? liveNote : `${liveNote}；${fixedNote}`

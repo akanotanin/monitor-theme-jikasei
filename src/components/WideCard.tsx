@@ -149,7 +149,8 @@ export function WideCard({ node, onOpen, onWarm, terms, remarkPlacement, selecte
       data-node-card={node.id}
       data-selected={selected ? "1" : undefined}
       // 卡片内边距照参考站那一档：上下 12px / 左右 16px（其余几档是四面 16px）。
-      className={`min-w-0 cursor-pointer gap-0 px-4 py-3 transition-colors hover:border-foreground/25 ${selected ? "outline-2 outline-offset-1 outline-ring" : ""}`}
+      // 焦点环显式写全，理由与 NodeCard 同一处（原先只有 selected 才挂，Tab 聚焦是 1.76:1）。
+      className={`min-w-0 cursor-pointer gap-0 px-4 py-3 transition-colors hover:border-foreground/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground ${selected ? "outline-2 outline-offset-1 outline-ring" : ""}`}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}

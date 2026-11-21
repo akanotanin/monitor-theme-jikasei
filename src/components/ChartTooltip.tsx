@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useSyncExternalStore, type ReactNode } from "react"
 
 /**
  * 图表 tooltip：本主题自己画的那一枚。
@@ -21,7 +21,7 @@ export type TooltipEntry = {
 }
 
 export type ChartTooltipProps = {
-  /** recharts 注入。 */
+  /** 由 Chart 传入（原先由 recharts 注入，自绘之后这几个字段都是可选的，便于单测直接摆）。 */
   active?: boolean
   payload?: TooltipEntry[]
   label?: string | number
@@ -47,6 +47,24 @@ const finite = (entry: TooltipEntry) =>
 // 640px：与卡片网格的 `sm:` 断点同一处，窄屏上一张 tooltip 最多也就压住七十来字。
 const NARROW = 640
 
+/**
+ * 窄屏判据：**订阅** media query，不是渲染期读一次 `window.innerWidth`
+ * （2026-11-07 二审）。原先那种写法有两个毛病：渲染期读浏览器全局（React 19 的并发渲染下
+ * 不保证与提交时一致），以及 tooltip 开着时跨 640px 缩放不会重算 —— 于是「另有 N 条」的
+ * 折叠一直按旧宽度算。与 Globe 的 useNarrow 同一套做法（useSyncExternalStore）。
+ */
+const NARROW_MQ = typeof matchMedia === "function" ? matchMedia(`(max-width: ${NARROW - 1}px)`) : null
+function useNarrow(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      NARROW_MQ?.addEventListener("change", notify)
+      return () => NARROW_MQ?.removeEventListener("change", notify)
+    },
+    () => NARROW_MQ?.matches ?? false,
+    () => false,
+  )
+}
+
 export function ChartTooltip({
   active,
   payload,
@@ -59,12 +77,13 @@ export function ChartTooltip({
   emptyText,
   sortKey,
 }: ChartTooltipProps) {
+  // hook 必须在任何提前 return 之前（规则：每次渲染的调用顺序一致）。
+  const narrow = useNarrow()
   if (!active || !payload?.length) return null
   const rows = payload.filter((entry) => finite(entry) || (keepEmpty?.(entry) ?? false))
   if (!rows.length) return null
   const key = sortKey ?? ((entry: TooltipEntry) => Number(entry.value))
   const ordered = worstFirst ? [...rows].sort((a, b) => key(b) - key(a)) : rows
-  const narrow = typeof window !== "undefined" && window.innerWidth < NARROW
   const shown = narrow && capNarrow ? ordered.slice(0, capNarrow) : ordered
 
   return (
@@ -137,7 +156,10 @@ export function PingTooltip({
       capNarrow={5}
       format={(value) => `${value} ms`}
       // 没答上来的排最后：它们是「没有值」，不是「很快」。
-      sortKey={(entry) => (entry.value == null ? Number.MAX_SAFE_INTEGER : Number(entry.value))}
+      // ★降序排序（`key(b) - key(a)`）里要给**最小**的键才排在后面（2026-11-21 三审）：
+      //   原先给的是 `MAX_SAFE_INTEGER`，于是超时的线路被顶到最前面、最慢的那条反而被挤
+      //   出 `capNarrow={5}` —— 与这行注释正好相反。
+      sortKey={(entry) => (entry.value == null ? -Number.MAX_SAFE_INTEGER : Number(entry.value))}
       keepEmpty={(entry) => lossOf(entry) > 0}
       emptyText="无响应"
       trailing={(entry) => {

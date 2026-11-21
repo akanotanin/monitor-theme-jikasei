@@ -35,6 +35,10 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
   onPick: (next: CardStyle) => void
 }) {
   const [open, setOpen] = useState(false)
+  // 这次是**键盘**打开的吗（2026-11-07 二审）：鼠标点开时把焦点硬塞给第一个选项是错的 ——
+  // 选项会当场亮起蓝框、而且指针还停在按钮上，看起来像「自己跳了一下」。只有键盘
+  // （Enter / Space / ↑↓）打开才需要把焦点送到菜单里，否则 Tab 用户按完 Enter 还得再按 Tab。
+  const openedByKeyboard = useRef(false)
   const box = useRef<HTMLSpanElement>(null)
   const menu = useRef<HTMLSpanElement>(null)
   // 浮层的落点（宿主 + 坐标），开着的时候才非空；见下面 useLayoutEffect 那段注释。
@@ -71,7 +75,11 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
     if (!open) return
     const onDown = (e: PointerEvent) => {
       const el = e.target
-      if (!(el instanceof HTMLElement) || !(box.current?.contains(el) || menu.current?.contains(el))) setOpen(false)
+      // ★`instanceof HTMLElement` 会漏掉 SVG（2026-11-21 三审）：选项左侧的图标是 <svg>，
+      //   点在图标上时 `el instanceof HTMLElement` 为 false → 直接走关闭分支；pointerdown
+      //   把菜单卸掉，随后的 click 也没有落点 —— 点了没反应、菜单还关了（真机实测复现）。
+      //   判「是不是 Element」就够，`contains` 本来就接受 Node。
+      if (!(el instanceof Element) || !(box.current?.contains(el) || menu.current?.contains(el))) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false)
@@ -82,8 +90,11 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
     // ↑↓ / Home / End 在选项间移动，Esc 收起来并把焦点还给触发按钮。原先只有「点别处 /
     // 按 Esc 收起」，键盘用户 Tab 进来之后方向键毫无反应、Tab 走开菜单还挂在屏幕上。
     const items = () => Array.from(menu.current?.querySelectorAll<HTMLButtonElement>("[data-style-option]") ?? [])
-    const start = items().find((el) => el.getAttribute("aria-checked") === "true") ?? items()[0]
-    start?.focus()
+    if (openedByKeyboard.current) {
+      const start = items().find((el) => el.getAttribute("aria-checked") === "true") ?? items()[0]
+      start?.focus()
+    }
+    openedByKeyboard.current = false
     const onNav = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setOpen(false)
@@ -117,7 +128,20 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
         aria-expanded={open}
         aria-label="卡片形态"
         title="卡片形态"
-        onClick={() => setOpen((v) => !v)}
+        onClick={(e) => {
+          // React 的 onClick 拿不到 pointerType，但 `detail` 是 0/1/2 —— 键盘触发（Enter /
+          // Space 合成的 click）的 detail 是 0，鼠标/触摸点击是 ≥1。
+          openedByKeyboard.current = e.detail === 0
+          setOpen((v) => !v)
+        }}
+        onKeyDown={(e) => {
+          // ↓ 直接开菜单并落到当前项上（WAI-ARIA menu button 的常规行为）。
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault()
+            openedByKeyboard.current = true
+            setOpen(true)
+          }
+        }}
       >
         <LayoutGrid />
       </Button>
@@ -148,6 +172,9 @@ export function CardStyleMenu({ value, siteDefault, onPick }: {
               onClick={() => {
                 onPick(v)
                 setOpen(false)
+                // 焦点回到触发按钮（2026-11-07 二审）：原先只有 Esc 那条路会还焦点，
+                // 选完一项之后焦点停在已经卸载的菜单项上、掉回 body —— 键盘用户得从头 Tab。
+                box.current?.querySelector<HTMLElement>(".card-style-toggle")?.focus()
               }}
             >
               <Icon className="size-4 shrink-0 text-muted-foreground" />

@@ -41,6 +41,15 @@ eq(pair(300 * 1024 ** 2, 3 * 1024 ** 3), "300 MB / 3.00 GB", "跨单位各写各
 //   （原先 pair(0.5, 0.9) 印的是「512.00 / 921.60 undefined」）。
 eq(pair(0.5, 0.9), "0 B / 0 B", "亚字节两端退回 bytes()，不印 undefined")
 eq(pair(1023.999, 1023.999), "1.00 / 1.00 KB", "四舍五入顶到 1024 时升一档")
+// ★顶档（PB）与 bytes() 同一条夹子（2026-11-21 三审）：坏样本（1e30）原先在这里印成
+//   「888178419700125.25 / … PB」，而 bytes(1e30) 印的是 999 PB —— 同一份数据显示两种量级。
+eq(pair(1e30, 1e30), "999.00 / 999.00 PB", "PB 顶档夹到 999，与 bytes() 口径一致")
+// ★「只让顶到 1024 的那一侧升档」（2026-11-21 三审）：两侧一起升会把 1023 B 的用量
+//   凭空放大成 1 KB（而 bytes(1023.4) 印的是「1023 B」）—— 同一份数据两种量级。
+//   跨档时两侧各带单位，避免读者以为两个数同档。
+eq(pair(1023.4, 1023.6), "1023 B / 1.00 KB", "只有 total 侧顶到 1024：只升那一侧，用量仍是 B")
+eq(pair(1023.6, 1024), "1.00 KB / 1.00 KB", "两侧都过 1024：一起写 KB")
+eq(pair(1023, 2048), "1023 B / 2.00 KB", "两侧不同档：各带单位")
 eq(pair(1023.4, 1023.4), "1023 / 1023 B", "没顶到 1024 就留在原档")
 
 // rate: the same three significant digits as bytes(), plus the two rules the
@@ -105,6 +114,19 @@ for (const max of [3_000, 300_000, 3_000_000, 300_000_000]) {
   const zero = niceScale(0, 0)
   eq(zero.lo, 0, "平直 0ms：下沿是 0")
   eq(zero.ticks.every((v) => v >= 0), true, "平直 0ms：没有负刻度")
+  // ★极小量程的刻度不许被舍成同一个数（2026-11-21 三审）：原先写死
+  //   `Math.round(v * 1e6) / 1e6`，量程小于 1e-6 时 5 个刻度全是 0 —— 图表用
+  //   `key={`g${v}`}`，重复 key 会让 React 只画出一条网格线，标签也全叠在轴底。
+  {
+    for (const [lo, hi] of [[0, 1e-9], [1e-12, 1e-11], [0, 1e-7]] as [number, number][]) {
+      const s = niceScale(lo, hi)
+      eq(new Set(s.ticks).size, s.ticks.length, `niceScale(${lo}, ${hi}) 的刻度不许重复（${s.ticks}）`)
+      eq(s.ticks.length >= 2, true, `niceScale(${lo}, ${hi}) 至少给两枚刻度`)
+      for (let i = 1; i < s.ticks.length; i++) {
+        eq(s.ticks[i] > s.ticks[i - 1], true, `niceScale(${lo}, ${hi}) 刻度严格递增（${s.ticks}）`)
+      }
+    }
+  }
   // 绝对值 >1 的平直线仍贴着自己的 ±10%（20ms 的抖动要看得见，不被抬到 0 起）。
   eq(niceScale(20, 20).ticks, [18, 19, 20, 21, 22], "平直 20ms：±10% 余量")
   // 负数数据照旧落在 0 以下 —— 这条护栏只对非负数生效。
@@ -214,7 +236,33 @@ eq(Object.keys(CYCLE_SHORT).sort(), Object.keys(CYCLES).sort(), "短写法与 CY
   const spanOf = (r: { lo: number; hi: number }) => r.hi - r.lo
   const a1 = R(25, 50, 33, 0.4, 0.02, 1)
   eq(Math.abs(spanOf(a1) - 1) < 1e-9, true, `收窄到 1ms 下限即停（跨度 ${spanOf(a1)}）`)
-  eq(Math.abs(a1.hi - 33 - 0.6) < 1e-9 && Math.abs(33 - a1.lo - 0.4) < 1e-9, true, "夹到下限时按锚点比例收：锚点在框里仍是 40%")
+  // ★ratio 的口径是**从绘图区顶端往下**的像素比（Chart.tsx:219 算的就是它）：
+  //   ratio=0.4 表示光标在框里偏上那一档，那么「光标下方」只占 40%、上方占 60%。
+  //   早先这条断言按相反方向写（lo = anchor − 0.4·floor），把错误实现钉成了「期望」——
+  //   于是 Chart 传进来的 ratio 一贴边，锚点就镜像到对侧（2026-11-07 二审）。
+  eq(Math.abs(a1.hi - 33 - 0.4) < 1e-9 && Math.abs(33 - a1.lo - 0.6) < 1e-9, true, "夹到下限时按锚点比例收：锚点在框里仍是 40%")
+  // 方向两侧都要钉：光标贴近顶端（ratio=0.05）时，锚点必须仍留在 5% 那一档。
+  {
+    const near = R(10, 30, 29, 0.05, 1e-4, 1)
+    const at = (near.hi - 29) / spanOf(near)
+    eq(Math.abs(at - 0.05) < 1e-6, true, `贴顶端缩放：锚点仍在 5%（实际 ${(at * 100).toFixed(1)}%）`)
+    const far = R(10, 30, 11, 0.95, 1e-4, 1)
+    const at2 = (far.hi - 11) / spanOf(far)
+    eq(Math.abs(at2 - 0.95) < 1e-6, true, `贴底端缩放：锚点仍在 95%（实际 ${(at2 * 100).toFixed(1)}%）`)
+  }
+  // ★夹完边界要补宽（2026-11-07 二审）：贴 0 收窄时下沿被夹到 0，若只夹不补，跨度会
+  //   一步跌到 floor 以下、继续滚塌到 1e-22（图被 clipPath 剪光 = 一片空白）。
+  {
+    let r = { lo: 0, hi: 1.2 }
+    // 光标压在下半图（ratio 0.95），30 格滚轮，每格 deltaY=100 → factor=e^0.15
+    const f = Math.exp(100 * 0.0015)
+    for (let i = 0; i < 30; i++) {
+      const anchor = r.hi - 0.95 * (r.hi - r.lo)
+      r = zoomSpan({ lo: r.lo, hi: r.hi, anchor, ratio: 0.95, factor: 1 / f, floor: 0.3, cap: 1000 })
+      eq(r.hi - r.lo >= 0.3 - 1e-9, true, `第 ${i + 1} 格：跨度不低于 floor（${(r.hi - r.lo).toExponential(2)}）`)
+      eq(r.lo >= 0 && r.hi <= 1000, true, `第 ${i + 1} 格：仍在 [0, cap] 里`)
+    }
+  }
   eq(spanOf(R(25, 50, 33, 0.4, 2, 1)), 50, "外滚 2×：25 → 50")
   const b1 = R(1.1, 1.5, 1.3, 0.5, 0.835, 0.1)
   eq(spanOf(b1) < 0.4 && spanOf(b1) > 0.3, true, `亚毫秒收窄：0.4 → ${spanOf(b1).toFixed(3)}（旧版会放大到 1.0）`)

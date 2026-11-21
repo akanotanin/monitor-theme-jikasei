@@ -44,7 +44,10 @@ export function Meter({ label, pct, foot, empty = "—", icon: Icon, plain = fal
           <span className="truncate">{label}</span>
         </span>
         <span className="tnum text-xs font-medium">
-          {valid ? `${filled < 10 ? filled.toFixed(1) : filled.toFixed(0)}%` : empty}
+          {/* ★先取整再判档（2026-11-21 三审）：原先判的是**未取整**的 filled，于是 9.96 走
+              一位小数印成「10.0%」、10.04 走零位印成「10%」—— 同一个数值档两种写法，还多出
+              一位没意义的有效数字。判据与显示值用同一个数。 */}
+          {valid ? (() => { const r = Math.round(filled * 10) / 10; return `${r < 10 ? r.toFixed(1) : Math.round(r).toFixed(0)}%` })() : empty}
         </span>
       </div>
       <div className={`w-full overflow-hidden rounded-full bg-muted ${plain ? "my-1.5 h-1" : "mt-1.5 h-1.5"}`}>

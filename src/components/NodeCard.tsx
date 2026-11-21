@@ -76,10 +76,12 @@ export function offlineSeconds(node: Node): number {
  * 或者旗子文件没被装上，都走这一条，不留一枚破图。
  */
 export function Country({ node }: { node: Node }) {
-  const [missing, setMissing] = useState(false)
+  // ★记「哪个码」失败，而不是一个布尔（2026-11-21 三审）：同一个卡片（key=id 不变）的国家码
+  //   从 A 改成 B 时，A 曾经 404 过的话 B 也就永久退化成文字徽标、不再尝试图片。
+  const [badCode, setBadCode] = useState<string | null>(null)
   const code = (node.country || "").trim().toUpperCase()
   if (!code) return null
-  if (missing) {
+  if (badCode === code) {
     return (
       <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground">
         {code}
@@ -98,7 +100,7 @@ export function Country({ node }: { node: Node }) {
       // 白底旗在卡片上仍有边界。画布是正方形，`object-cover` 正好裁掉上下留白，
       // `-translate-y-px` 抵消行盒与图标基线之间的 1px 落差。
       className="h-[18px] w-6 shrink-0 -translate-y-px rounded-[3px] object-cover ring-1 ring-border/70"
-      onError={() => setMissing(true)}
+      onError={() => setBadCode(code)}
     />
   )
 }
@@ -324,7 +326,12 @@ export function NodeCard({ node, onOpen, onOpenLatency, onWarm, latencyLines, ca
       // data-selected 是「当前被键盘选中」的标记（护栏读它，不用去解析类名）。
       data-node-card={node.id}
       data-selected={selected ? "1" : undefined}
-      className={`min-w-0 cursor-pointer gap-0 p-4 transition-colors hover:border-foreground/25 ${selected ? "outline-2 outline-offset-1 outline-ring" : ""}`}
+      // 焦点环显式写全（2026-11-07 二审）：卡是列表页最主要的交互单元（role=button + tabIndex），
+      // 原先只有「搜索框 ↑↓ 选中」才挂 outline，Tab 聚焦时走的是全局 `outline-ring/50` ——
+      // 亮色 1.76:1、暗色 2.05:1，远低于 WCAG 2.2 的 3:1，键盘用户等于看不见焦点。
+      // 与 Summary / CompactList / DetailScroll 三处逐字一致（全值的 `outline-foreground`：
+      // 用正文色而不是 --ring —— 后者在亮色下只有 3.5:1，见 index.css 那段注释）。
+      className={`min-w-0 cursor-pointer gap-0 p-4 transition-colors hover:border-foreground/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground ${selected ? "outline-2 outline-offset-1 outline-ring" : ""}`}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onOpen())}

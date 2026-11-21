@@ -524,8 +524,17 @@ if (!REAL && !UPSTREAM) {
         const sr = svg.getBoundingClientRect()
         const pr = svg.querySelector('rect[fill="transparent"]').getBoundingClientRect()
         const plotT = pr.top - sr.top
+        const plotL = pr.left - sr.left
         return JSON.stringify({
-          rel: { plotT, plotB: plotT + pr.height },
+          rel: { plotT, plotB: plotT + pr.height, plotL, plotR: plotL + pr.width },
+          // 横轴的刻度文字：不是 text-anchor=end（那些是 Y 轴），也不是图例那几枚
+          xlabels: [...svg.querySelectorAll('text')].filter((t) => {
+            const a = t.getAttribute('text-anchor')
+            return a !== 'end' && a !== 'start'
+          }).map((t) => {
+            const rr = t.getBoundingClientRect()
+            return { text: t.textContent, l: Math.round((rr.left - sr.left) * 10) / 10, r: Math.round((rr.right - sr.left) * 10) / 10 }
+          }),
           labels: [...svg.querySelectorAll('text')].filter((t) => t.getAttribute('text-anchor') === 'end').map((t) => {
             const rr = t.getBoundingClientRect()
             return { text: t.textContent, t: Math.round((rr.top - sr.top) * 10) / 10, b: Math.round((rr.bottom - sr.top) * 10) / 10 }
@@ -541,6 +550,15 @@ if (!REAL && !UPSTREAM) {
       check(`${where}：网格线也都画在绘图区里（没有越界刻度）`,
         m.grid.length > 0 && badGrid.length === 0,
         badGrid.length ? JSON.stringify(badGrid.slice(0, 3)) : `${m.grid.length} 条全在框里`)
+      // ★X 轴标签也不许横出绘图区（2026-11-21 三审）：这段 SVG 带 overflow-visible，
+      //   越界的那半截会被画到图表框外面（第一个标签压 Y 轴、最后一个越右沿）。
+      //   诚实标注：当前夹具下 `timeTicks` 生成的刻度本来就落在框内，所以这条断言去掉代码里
+      //   的边界夹也照样绿（做过变异测试）—— 它是「防止以后换成别的相位/步长时越界」，不是
+      //   「证明现在这条夹子必要」。真要靠它抓回归，得先造一组贴边的夹具。
+      const badX = m.xlabels.filter((l) => l.l < m.rel.plotL - 2 || l.r > m.rel.plotR + 2)
+      check(`${where}：X 轴时间标签都不横出绘图区（左右 2px 容差）`,
+        m.xlabels.length > 0 && badX.length === 0,
+        badX.length ? JSON.stringify(badX.slice(0, 3)) : `${m.xlabels.length} 枚全在框里`)
     }
     await axisInside('初始（自动量程）')
 

@@ -167,7 +167,7 @@ function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, re
   remarkPlacement?: RemarkPlacement
   /** 搜索命中词：名字里描色（见 Highlight）。没在搜时是空数组。 */
   terms?: string[]
-  /** 键盘光标（↑↓）停在这一行上：铺一层浅底 —— 表格里 outline 的渲染各家不一，底色最稳。 */
+  /** 键盘光标（↑↓）停在这一行上、或焦点落到行内那枚名称按钮上：铺一层浅底 —— 表格里 outline 的渲染各家不一，底色最稳（`<tr>` 自身不可聚焦，所以用 focus-within 而不是 focus-visible）。 */
   selected?: boolean
 }) {
   const m = node.metrics
@@ -195,7 +195,7 @@ function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, re
         onPointerOver={onWarm}
         onFocus={onWarm}
         onTouchStart={onWarm}
-        className={`cursor-pointer outline-none transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 ${open ? "bg-muted/30" : ""} ${selected ? "bg-accent" : ""}`}
+        className={`cursor-pointer outline-none transition-colors hover:bg-muted/50 focus-within:bg-muted/50 ${open ? "bg-muted/30" : ""} ${selected ? "bg-accent" : ""}`}
       >
         {/* 名称列不写宽度、也不居中：定宽表把余量全给它，机器名长短不一时其余列纹丝不动。
             折角 → 国旗 → 名字：折角是「点得进去」的提示，展开时转成朝下；国旗与另外三种
@@ -206,9 +206,13 @@ function Row({ node, span, open, onToggle, onOpenDetail, onWarm, historyDays, re
             <Country node={node} />
             <button
               type="button"
-              className="min-w-0 max-w-full truncate rounded-sm text-left text-sm font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="min-w-0 max-w-full truncate rounded-sm text-left text-sm font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"
               aria-expanded={open}
-              aria-controls={`compact-detail-${node.id}`}
+              // aria-controls 只在**展开时**挂（2026-11-07 二审）：收起的行没有渲染，
+              // 一个指向不存在 id 的 IDREF 是悬空引用（读屏会报/忽略，规范要求可解析）。
+              // 不改成「常驻 + hidden」是因为那会把每一行的 NodeDetail 全挂上去（重），
+              // 也会打破护栏里「tbody 行数 = 机器数」那条断言。
+              aria-controls={open ? `compact-detail-${node.id}` : undefined}
               onClick={(e) => { e.stopPropagation(); onToggle() }}
             >
               <TextHighlight text={node.name} terms={terms} />

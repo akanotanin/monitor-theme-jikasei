@@ -46,8 +46,10 @@ const CACHES = [
   { what: '站名', key: 'jikasei:site_name', places: [
     ['src/App.tsx', /TITLE_CACHE_KEY\s*=\s*"([^"]+)"/g],
     ['public/title-probe.js', /var KEY\s*=\s*"([^"]+)"/g],
-    // 只认 `jikasei:` 前缀那一条：index.html 里现在还有首帧明暗那段读的 `theme`（见下一条）。
-    ['index.html', /localStorage\.getItem\("(jikasei:[^"]+)"\)/g],
+    // ★精确到站名这个键（2026-11-21 三审）：原先用 `jikasei:` 前缀通配，首帧明暗那段新读的
+    //   `jikasei:site_dark` 也会被当成「站名」，直接判这条护栏失败。前缀通配另有一条专门管
+    //   `jikasei:site_dark`（见下面那段），别让两条互相吃。
+    ['index.html', /localStorage\.getItem\("(jikasei:site_name)"\)/g],
   ] },
   // 明暗这一档同源两处：App 的 useTheme 读 / 写 / 删，index.html 的首帧脚本事先读一次。
   { what: '明暗', key: 'theme', places: [
@@ -72,7 +74,22 @@ const html = readFileSync('index.html', 'utf8')
   if (!probeTag) bad.push(`index.html 里没有引入 /title-probe.js（标签页的占位值就没法早点换掉）`)
   else if (!/\basync\b/.test(probeTag[0])) bad.push(`/title-probe.js 的引入没有 async：普通脚本/defer 会拖住入口与首绘（见 index.html 注释里的实测数）`)
 }
+// ★ 站点明暗档的缓存键（2026-11-21 三审）：首帧那段内联脚本读 `jikasei:site_dark`，
+//   而写它的是 App 的 useTheme。两边字面量必须一致 —— 首尾两处各写一个字符串，
+//   改一边忘了另一边就是「首帧永远退回系统偏好」，重演固定暗色站闪亮色。
+{
+  const KEY = 'jikasei:site_dark'
+  if (!html.includes(`localStorage.getItem("${KEY}")`)) {
+    bad.push(`index.html 的首帧明暗脚本没读 ${KEY}（站长设固定暗色时仍会闪一屏亮色）`)
+  }
+  if (!readFileSync('src/App.tsx', 'utf8').includes(`"${KEY}"`)) {
+    bad.push(`src/App.tsx 里没有写 ${KEY}（首帧脚本读的那个键就永远是空的）`)
+  }
+}
 // 站点图标的两条静态引用：hub 1.4.0 认的就是这两个路径，写成别的名字等于把兜底丢了。
+// 只钉 `svg` 与 `apple-touch-icon` 两条（2026-11-21 三审复核）：`.ico` 不写在 <link> 里是
+// 刻意的 —— hub 只给 favicon.svg 注入内容版本号，多一条 .ico 等于多一个不带版本号的图标 URL、
+// 多一次请求。文件仍然打进包里，给按约定直接来要 /favicon.ico 的老客户端。
 for (const icon of ['/favicon.svg', '/apple-touch-icon.png']) {
   if (!html.includes(`href="${icon}"`)) bad.push(`index.html 里没有引用 ${icon}（站点图标的兜底就断了）`)
 }

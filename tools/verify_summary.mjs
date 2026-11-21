@@ -421,11 +421,14 @@ const block = (dom, title) => tile(dom, title).blocks.find((b) => b.title === ti
 const readBudgetDetail = (title = '月度预算') => evalJS(`(async () => {
   const card = [...document.querySelectorAll('[data-slot=card]')].find((c) => c.innerText.startsWith('月度预算'))
   if (!card) return null
-  const b = [...card.children].find((x) => x.innerText.startsWith(${JSON.stringify(title)}))
+  // ★2026-11-07：块的外层容器改成 role=group，开关是里面一枚真按钮（data-block-toggle）。
+  const b = [...card.querySelectorAll('[data-block-toggle]')].find((x) => x.innerText.startsWith(${JSON.stringify(title)}))
   if (!b) return null
   b.focus()
   await new Promise((r) => setTimeout(r, 90))
-  const d = b.querySelector('[data-budget-detail]')
+  // ★2026-11-07：浮层是**按钮的兄弟**（块容器的子节点），不在按钮里面 —— button 里不能套
+  //   可聚焦的滚动区（ARIA）。所以从块容器（role=group）上取。
+  const d = b.parentElement && b.parentElement.querySelector('[data-budget-detail]')
   if (!d) return null
   const cs = getComputedStyle(d)
   // 2026-10-31 三段式：滚动从浮层挪到了中间那节（表头/尾巴固定），判据跟着改。
@@ -443,17 +446,18 @@ const readBudgetDetail = (title = '月度预算') => evalJS(`(async () => {
 const readTrafficDetail = () => evalJS(`(async () => {
   const card = [...document.querySelectorAll('[data-slot=card]')].find((c) => c.innerText.startsWith('今日流量'))
   if (!card) return null
-  const b = [...card.children].find((x) => x.innerText.startsWith('今日流量'))
+  const b = [...card.querySelectorAll('[data-block-toggle]')].find((x) => x.innerText.startsWith('今日流量'))
   if (!b) return null
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur()
   await new Promise((r) => setTimeout(r, 40))
   b.focus()
+  const host = b.parentElement
   for (let i = 0; i < 40; i++) {
     await new Promise((r) => setTimeout(r, 100))
-    const d = b.querySelector('[data-budget-detail]')
+    const d = host && host.querySelector('[data-budget-detail]')
     if (d && !/读取中/.test(d.innerText)) break
   }
-  const d = b.querySelector('[data-budget-detail]')
+  const d = host && host.querySelector('[data-budget-detail]')
   if (!d) return null
   const r = d.getBoundingClientRect()
   return {
@@ -680,7 +684,7 @@ let classicNet = null
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur()
     await new Promise((r) => setTimeout(r, 60))
     const card = [...document.querySelectorAll('[data-slot=card]')].find((c) => c.innerText.startsWith('月度预算'))
-    const b = [...card.children].find((x) => x.innerText.startsWith('月度预算'))
+    const b = [...card.querySelectorAll('[data-block-toggle]')].find((x) => x.innerText.startsWith('月度预算'))
     b.focus()
     await new Promise((r) => setTimeout(r, 90))
     const opened = !!document.querySelector('[data-budget-detail]')

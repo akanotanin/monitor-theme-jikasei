@@ -1,7 +1,7 @@
 // 「今日流量」明细浮层的口径：窗口怎么取、峰值怎么挑、按什么排序。
 // 跑法同另外几个：`npm test`（Node 自己剥类型，不需要 runner）。
 // 没有任何东西 import 它，所以不进 bundle。
-import { NO_PEAK, dayStart, peakOf, peakToday, trafficTotal, windowFor, PEAK_LIMIT, type TrafficRow } from "./today-traffic.ts"
+import { NO_PEAK, clearTrafficPeakCache, dayStart, peakFor, peakOf, peakToday, trafficTotal, windowFor, PEAK_LIMIT, type TrafficRow } from "./today-traffic.ts"
 import type { Node } from "./api.ts"
 
 let failed = 0
@@ -91,6 +91,52 @@ function node(over: Partial<Node> = {}): Node {
   eq(peakToday(rows, now), { down: 5 * 1024 ** 2, downAt: today * 1000, up: 2 * 1024 ** 2, upAt: today * 1000 },
     "只算今天 0 点之后的桶（昨晚那一大截不许当成今天的峰值）")
   eq(peakToday([{ ts: yesterday, net_rx_max: 1 }], now), NO_PEAK, "今天的窗口里只有昨晚的桶：空峰值（写「—」）")
+}
+
+/* ── ③c 缓存按「北京日历日」分开（2026-11-07 二审） ──────────────────── */
+{
+  // 23:59:30 取到的那份峰值属于「昨天」；00:00:20 再取时必须**重算**，不能还在 60 秒
+  // TTL 内把昨天那份还回来 —— 浮层尾巴写着「按北京时间今天 00:00 起」，那是自相矛盾。
+  //
+  // 这是**真的**驱动 peakFor：换掉 globalThis.fetch（today-traffic 走的是 ./api.ts 的
+  // 真 api()），按请求时刻返回不同的桶，并数请求次数 —— 命中缓存时不会再有请求。
+  const bj = (d: number, h: number, m = 0, s = 0) => Date.UTC(2026, 10, d, h, m, s) - 8 * 3_600_000
+  const night = Math.floor(bj(21, 23, 57) / 1000)
+  const dawn = Math.floor(bj(22, 0, 0) / 1000)
+  let served = 0
+  // 「现在」由测试摆：请求一进来就按这一刻决定回哪一段的桶。
+  // 伪时钟：`peakFor` 的 TTL 用的是传进来的 `now`（见 today-traffic.ts 里那条注释），
+  // 所以这里摆出来的时刻对「算哪一天」与「过没过期」是同一个口径。
+  let clock = bj(21, 23, 59, 30)
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => {
+    served++
+    const rows = clock < bj(22, 0, 0)
+      ? [{ ts: night, net_rx_max: 1719, net_tx_max: 100 }]
+      : [{ ts: dawn, net_rx_max: 1059, net_tx_max: 80 }]
+    return new Response(JSON.stringify({ metrics: rows, ping: [], probes: {}, loss: {} }), {
+      status: 200, headers: { "content-type": "application/json" },
+    })
+  }) as typeof fetch
+  try {
+    clearTrafficPeakCache()
+    const n = node({ id: 77 })
+    const before = await peakFor(n, clock)
+    eq(before.down, 1719, "23:59:30：取到昨晚 23:57 那一桶")
+    eq(served, 1, "第一次取：真的发了一次请求")
+    // 同一刻、TTL 内再取：命中缓存，不再发请求。
+    const again = await peakFor(n, clock + 20_000)
+    eq(again.down, 1719, "同一刻 20 秒后再取：仍是同一份")
+    eq(served, 1, "同一天且 TTL 内：命中缓存，不发第二次请求")
+    // ★跨零点（只过了 50 秒、仍在 60 秒 TTL 内）：必须重算。
+    clock = bj(22, 0, 20)
+    const after = await peakFor(n, clock)
+    eq(after.down, 1059, "★00:00:20（TTL 内）：重算得到今天的桶，不是昨晚那份")
+    eq(served, 2, "★跨零点：确实重新发了请求（旧口径这里会是 1）")
+  } finally {
+    globalThis.fetch = realFetch
+    clearTrafficPeakCache()
+  }
 }
 
 /* ── ④ 排序与上限 ─────────────────────────────────────────────────── */

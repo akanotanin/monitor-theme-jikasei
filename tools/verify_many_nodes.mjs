@@ -162,17 +162,22 @@ async function boot(width, height) {
 
 /** 打开某一块读数（默认「月度预算」）的浮层，读几何与三段。 */
 const readPop = (title) => evalJS(`(async () => {
-  const b = [...document.querySelectorAll('[tabindex="0"]')].find((x) => x.innerText.startsWith(${JSON.stringify(title)}))
+  // ★2026-11-07：块的外层容器已改成 role=group（ARIA：button 里不许套可聚焦的滚动区），
+  //   开关那枚真按钮带 data-block-toggle —— 护栏按它取块，别再按 tabindex。
+  const b = [...document.querySelectorAll('[data-block-toggle]')].find((x) => x.innerText.startsWith(${JSON.stringify(title)}))
   if (!b) return null
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur()
   await new Promise((r) => setTimeout(r, 60))
   b.focus()
+  // ★2026-11-07：浮层是块容器（role=group）的子节点、按钮的**兄弟**（button 里不能套
+  //   可聚焦的滚动区），所以从按钮的父级取。
+  const host = b.parentElement
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 100))
-    const d = b.querySelector('[data-budget-detail]')
+    const d = host && host.querySelector('[data-budget-detail]')
     if (d && !/读取中/.test(d.innerText)) break
   }
-  const d = b.querySelector('[data-budget-detail]')
+  const d = host && host.querySelector('[data-budget-detail]')
   if (!d) return null
   const sc = d.querySelector('[data-detail-scroll]')
   const head = d.querySelector('[data-detail-head]')
@@ -185,7 +190,8 @@ const readPop = (title) => evalJS(`(async () => {
   return {
     flipped: d.hasAttribute('data-flip'),
     rect: { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), h: Math.round(r.height) },
-    blockRect: { top: Math.round(br.top), bottom: Math.round(br.bottom) },
+    // 块容器（按钮的父级）的矩形：浮层贴的是它的下沿，不是标签行那一格。
+    blockRect: { top: Math.round((b.parentElement || b).getBoundingClientRect().top), bottom: Math.round((b.parentElement || b).getBoundingClientRect().bottom) },
     maxHeight: cs.maxHeight,
     vp: { w: innerWidth, h: innerHeight },
     rows: rows.length,
@@ -203,8 +209,10 @@ const readPop = (title) => evalJS(`(async () => {
 /** 滚到底之后再读一次：表头还在不在、最后一行是否完整、尾巴是否可见。 */
 const readAfterScroll = (title) => evalJS(`(async () => {
   await new Promise((r) => setTimeout(r, 200))   // 等 scroll 事件回来、React 提交那一次 setState
-  const b = [...document.querySelectorAll('[tabindex="0"]')].find((x) => x.innerText.startsWith(${JSON.stringify(title)}))
-  const d = b && b.querySelector('[data-budget-detail]')
+  // ★2026-11-07：块的外层容器已改成 role=group（ARIA：button 里不许套可聚焦的滚动区），
+  //   开关那枚真按钮带 data-block-toggle —— 护栏按它取块，别再按 tabindex。
+  const b = [...document.querySelectorAll('[data-block-toggle]')].find((x) => x.innerText.startsWith(${JSON.stringify(title)}))
+  const d = b && b.parentElement && b.parentElement.querySelector('[data-budget-detail]')
   if (!d) return null
   const sc = d.querySelector('[data-detail-scroll]')
   const head = d.querySelector('[data-detail-head]')

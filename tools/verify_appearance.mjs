@@ -83,6 +83,11 @@ async function load({ config, systemDark = false, visitor = null, globePref = un
   await send('Page.navigate', { url: `${BASE}/` })
   for (let i = 0; i < 60; i++) { await sleep(200); if (await js('!!document.querySelector("header")')) break }
   await sleep(1200)
+  // ★站点明暗档的缓存必须在**首帧采样之前**清掉（2026-11-21 三审）：App 在 themeMode 为
+  //   system/auto 时会把 `auto` 写进 `jikasei:site_dark`，首帧脚本按它决定「要不要绕过系统
+  //   偏好」。同一个 profile 里上一趟场景留下的值会让「第一帧就是暗色」那条断言看到假红。
+  //   这里先清一次、再 reload 让首帧在干净状态下重新跑（下面的第一帧采样接着这条路）。
+  await js("localStorage.removeItem('jikasei:site_dark')")
   // ★ 访客那一项要**显式清掉**才算「没记过」：同一个 profile 里上一次场景写下的 theme 会留着，
   //   不清理就会把「跟着站点走」验成一个带残留值的状态（看着通过、其实没验到）。
   if (visitor === null) await js("localStorage.removeItem('theme')")
@@ -315,6 +320,11 @@ const firstFrame = async (systemDark, visitor) => {
   // （翻面会把「第一帧对不对」和「配置到没到」混在一起，判据就不干净了）。
   CONFIG = { themeMode: 'system', globeOn: true }
   await js("localStorage.removeItem('theme')")
+  // ★站点明暗档的缓存也要清（2026-11-21 三审）：themeMode 是 system 时 App 会往
+  //   `jikasei:site_dark` 写 `auto`，首帧脚本按它决定要不要绕过系统偏好 —— 同一 profile 里
+  //   上一趟留下的 `light`/`dark` 会让「第一帧就是暗色」这条断言看到假红（它验的本来是
+  //   「内联脚本在不在、快不快」）。
+  await js("localStorage.removeItem('jikasei:site_dark')")
   if (visitor) await js(`localStorage.setItem('theme', ${JSON.stringify(visitor)})`)
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: systemDark ? 'dark' : 'light' }] })
   await send('Page.navigate', { url: `${BASE}/` })

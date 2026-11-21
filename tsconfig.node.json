@@ -14,6 +14,11 @@
     "noEmit": true,
 
     /* Linting */
+    // ★显式声明（2026-11-21 三审）：所有 tsconfig 原先都没写 strict，靠的是 TypeScript 6.0
+    //   把 `--strict` 的默认值改成 true 这件事（`tsc --help` 里写着 `default: true`）——
+    //   属于**隐式依赖工具链默认值**。哪天 tsc 落在 6.0 之前、或未来版本再改默认，严格检查
+    //   会静默消失而 `npm run build` 照样绿。写死它。
+    "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,

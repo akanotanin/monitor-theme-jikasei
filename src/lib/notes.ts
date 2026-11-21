@@ -47,15 +47,6 @@ export function ownTags(node: { remark?: string | null }): string[] {
 export type RemarkChip = { text: string; own: boolean }
 
 /**
- * 卡片与详情页共用的那一份备注：**私有在前、公有在后**，都拆成一枚枚小卡片。
- *
- * 合并的好处是「一处写、处处看得到」：站长给自己标的那些（私有）与写给访客的那些（公开）排在同
- * 一处，列表与详情页用的是同一套版式。而 hub 只把私有备注下发给**登录的管理员**，所以同一个函数
- * 在访客那边拿到的就只有公有那几枚——不需要两套分支，也不会漏泄。
- *
- * 两个字段都没有（或只有空白）→ 空数组，页面上一个像素都不占。
- */
-/**
  * 整页详情那一块会不会占位：**这台机器有备注** 且 站长把备注摊在详情页（`remarksOnDetail`）。
  *
  * 两处共用它，免得各写一遍、改一处漏一处：
@@ -73,6 +64,15 @@ export function hasDetailRemarks(
   return remarksOnDetail(placement) && remarkChips(node).length > 0
 }
 
+/**
+ * 卡片与详情页共用的那一份备注：**私有在前、公有在后**，都拆成一枚枚小卡片。
+ *
+ * 合并的好处是「一处写、处处看得到」：站长给自己标的那些（私有）与写给访客的那些（公开）排在同
+ * 一处，列表与详情页用的是同一套版式。而 hub 只把私有备注下发给**登录的管理员**，所以同一个函数
+ * 在访客那边拿到的就只有公有那几枚——不需要两套分支，也不会漏泄。
+ *
+ * 两个字段都没有（或只有空白）→ 空数组，页面上一个像素都不占。
+ */
 export function remarkChips(node: { public_remark?: string | null; remark?: string | null }): RemarkChip[] {
   const own = ownTags(node).map((text) => ({ text, own: true }))
   const pub = hubTags(node).map((text) => ({ text, own: false }))

@@ -912,7 +912,12 @@ export function layoutLabels(cam: Camera, points: GlobeNode[], sides: Map<string
     const list = all.filter((item) => !item.hidden)
     if (!list.length) return
     list.sort((a, b) => a.py - b.py || a.index - b.index)
-    const gap = list.length > 14 ? 11 : 13
+    // ★间距固定 13（2026-11-21 三审）：这里原先写 `list.length > 14 ? 11 : 13`，但上面那段
+    //   已经 `list.length > MAX_LABEL_ROWS(14) → continue`，进到这里的最多 14 行 —— `> 14`
+    //   恒假，11 那一档**永远不可达**（死代码）。设计意图也只是 13：`14 × 13 = 182` 正好落进
+    //   12~204 的设计带（见 MAX_LABEL_ROWS 的注释）。留着那句会让下一次调上限的人以为
+    //   「超过 14 行会自动压紧」，实际不会。
+    const gap = 13
     const mean = list.reduce((sum, item) => sum + item.py, 0) / list.length
     let y0 = mean - ((list.length - 1) * gap) / 2
     if (y0 < 12) y0 = 12

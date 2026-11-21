@@ -69,8 +69,18 @@ export function useGlobeVisible(siteDefault: boolean): [boolean, () => void] {
  * 列表用哪种卡片形态。返回的是**最终生效**的那一档与一个选择函数：
  * 访客选的记下来；选成和站长设置一样的那档时**把记录删掉**（= 重新"跟着站长走"，
  * 以后站长改默认，这位访客也会跟着变）。
+ *
+ * ★`ready`（站点设置已从 hub 回来）之前**不删记录**（2026-11-07 二审）：配置异步到达，
+ *   首帧的 `siteDefault` 还是 `DEFAULTS.cardStyle`（detailed）。若站长设的是 compact，
+ *   访客在这一瞬间点了「详细」（他看到的默认档），`next === siteDefault` 成立 → 删记录 →
+ *   `picked` 归 null；等配置到达（compact）生效档当场跳成 compact，那一下点击被吞掉。
+ *   未就绪时把选择**照原样存下来**：等配置到了，如果它正好等于站长那档，再删（见下面
+ *   的 effect），这样「点一次就记住」在两种时序下都成立。
  */
-export function useCardStyle(siteDefault: ThemeConfig["cardStyle"]): [ThemeConfig["cardStyle"], (next: ThemeConfig["cardStyle"]) => void] {
+export function useCardStyle(
+  siteDefault: ThemeConfig["cardStyle"],
+  ready: boolean,
+): [ThemeConfig["cardStyle"], (next: ThemeConfig["cardStyle"]) => void] {
   const [picked, setPicked] = useState<ThemeConfig["cardStyle"] | null>(() => {
     try {
       return cardStyleOrNull(localStorage.getItem(CARD_STYLE_KEY))
@@ -78,19 +88,35 @@ export function useCardStyle(siteDefault: ThemeConfig["cardStyle"]): [ThemeConfi
       return null
     }
   })
+  // 配置到达后补一次「跟站长走」的收尾：之前因为 `ready === false` 而存下的那一档，
+  // 若正好等于站长的新默认，就当作「跟着站长」——**渲染期推导**，不放进 effect。
+  // （在 effect 里 setState 会多渲染一轮，而且 linter 会报 set-state-in-effect；
+  //  这里本来就是「从 state 算出该显示什么」，派生值正该在渲染里算。）
+  // 正常路径下 `ready` 之前不会存下与站长相同的档，所以这一条是为上面那个时序兜底的。
+  const follows = ready && picked !== null && picked === siteDefault
+  useEffect(() => {
+    if (!follows) return
+    try {
+      localStorage.removeItem(CARD_STYLE_KEY)
+    } catch {
+      // 记不住就记不住：当前这一档仍然按站长那档生效。
+    }
+  }, [follows])
   const choose = useCallback(
     (next: ThemeConfig["cardStyle"]) => {
-      setPicked(next === siteDefault ? null : next)
+      // 未就绪：先老实地存下来，别拿一个「还不是真的」的站长默认去比。
+      const follow = ready && next === siteDefault
+      setPicked(follow ? null : next)
       try {
-        if (next === siteDefault) localStorage.removeItem(CARD_STYLE_KEY)
+        if (follow) localStorage.removeItem(CARD_STYLE_KEY)
         else localStorage.setItem(CARD_STYLE_KEY, next)
       } catch {
         // 记不住就只影响这一次会话：当前这一档仍然会立刻生效。
       }
     },
-    [siteDefault],
+    [siteDefault, ready],
   )
-  return [picked ?? siteDefault, choose]
+  return [follows ? siteDefault : (picked ?? siteDefault), choose]
 }
 
 // 类型、默认值、收窄与迁移都在 site-settings.ts；这里只留取数据与页面侧的钩子，
@@ -141,9 +167,14 @@ export function useLocalFarm(): string {
 /**
  * 读回本站的设置。任何失败都回落默认值：后台没存过（Hub 回 `{}`）、旧 hub 没这个接口、
  * 反代拦了——都不该让公开页白屏或缺一块。收窄与迁移见 `normalizeConfig`。
+ *
+ * 第二个返回值是「设置**真的**从 hub 回来了」。页面本身的渲染不需要它（默认值就是默认值），
+ * 但凡是「拿访客的选择去和站长那档比」的地方都需要 —— 比较之前得先确认那个「站长那档」
+ * 不是本地的 DEFAULTS 冒充的（见 useCardStyle）。
  */
-export function useThemeConfig(): ThemeConfig {
+export function useThemeConfig(): [ThemeConfig, boolean] {
   const [config, setConfig] = useState(DEFAULTS)
+  const [ready, setReady] = useState(false)
   useEffect(() => {
     let active = true
     api<Partial<ThemeConfig>>(`/themes/${SHORT}/config`)
@@ -151,11 +182,13 @@ export function useThemeConfig(): ThemeConfig {
         if (!active) return
         // 逐项收窄 + 旧值迁移都在 site-settings.ts（那里能单测）。
         setConfig(normalizeConfig(saved))
+        setReady(true)
       })
       .catch(() => {
         // 取不到设置（旧 hub、反代拦了）就维持默认值：公开页照常渲染，不该白屏或缺一块。
+        // ready 保持 false —— 这一轮没有「站长那档」可谈，别拿 DEFAULTS 去当它。
       })
     return () => { active = false }
   }, [])
-  return config
+  return [config, ready]
 }

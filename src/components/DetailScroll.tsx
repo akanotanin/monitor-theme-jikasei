@@ -40,7 +40,7 @@ export function DetailScroll({ children }: { children: ReactNode }) {
       tabIndex={0}
       role="group"
       aria-label="明细"
-      className="detail-scroll block space-y-1 px-2.5 py-1.5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="detail-scroll block space-y-1 px-2.5 py-1.5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-foreground"
     >
       {children}
     </span>

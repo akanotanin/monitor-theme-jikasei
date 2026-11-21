@@ -168,15 +168,29 @@ export function TimeChart({
   const h = size.h
   const plotW = Math.max(1, w - left - RIGHT)
   const plotH = Math.max(1, h - TOP - BOTTOM)
-  const t0 = view.length ? view[0].ts : 0
-  const t1 = view.length ? view[view.length - 1].ts : 1
+  // ★时间范围只认真实的正时间戳（2026-11-21 三审）：老 hub 缺 `ts`、或某条采样写成 0 时，
+  //   `t0` 会变成 0 —— 于是 X 轴跨到 1970 年、刻度全印成「00:00」（真机复现过：4 枚标签
+  //   全是 00:00），整条线还被压到最左侧的一个像素里。这里把非正/非有限的时间戳整行剔掉，
+  //   后面的 extent / 画线 / 命中都走这同一份，别再各自读原始 view。
+  const timed = view.filter((row) => Number.isFinite(row.ts) && row.ts > 0)
+  const t0 = timed.length ? timed[0].ts : 0
+  const t1 = timed.length ? timed[timed.length - 1].ts : 1
   const span = Math.max(1, t1 - t0)
 
   // 刻度：零起点用 quarters(top)，自动档用数据量程取整齐步长。
-  const autoExtent = extentOf(view, series.map((s) => s.key))
-  // 零起点的轴顶：容量还没报上来时 `top` 是 0，刻度与量程必须用**同一个**兜底值 ——
-  // `quarters(0)` 会给出五条重复的 0，而 `hi` 取的是 1，刻度就全挤在轴底（2026-11-07 审出来的）。
-  const zeroTop = top > 0 ? top : 1
+  const autoExtent = extentOf(timed, series.map((s) => s.key))
+  // 零起点的轴顶：容量还没报上来时 `top` 是 0（新节点首次上线、hub 还没报 mem_total /
+  // disk_total，或 safeNodes 把整块 metrics 作废而 node.mem_total 仍是 0）。
+  // ★兜底值必须**跟着刻度格式器走**（2026-11-07 二审）：`quarters(1)` 在字节轴上印出的四条
+  //   刻度是「0 B / 0 B / 0 B / 0 B / 1 B」—— 重复标签且顶格那个数看着像个读数；而在计数轴
+  //   上它会变成「0 / 0 / 1 / 1 / 1」（`String(Math.round(v))` 把 0.25/0.5/0.75 全舍成 0 或 1）。
+  //   所以按「这一轴印什么」取一档能四分到底的值：
+  //     · 字节轴（给了 yFormat）：1024 → 0 B / 256 B / 512 B / 768 B / 1 KB
+  //     · 百分比轴（unit 是 %）：4  → 0% / 1% / 2% / 3% / 4%
+  //     · 计数轴：4 → 0 / 1 / 2 / 3 / 4
+  // （百分比轴与计数轴同一个数：4 四分下来正好是 0/1/2/3/4，两边都是整值。）
+  const axisUnit = yFormat ? 1024 : 4
+  const zeroTop = top > 0 ? top : axisUnit
   const autoScale =
     domain === "auto"
       ? niceScale(...(autoExtent ?? [0, 1]))
@@ -190,13 +204,15 @@ export function TimeChart({
   const y = (value: number) => TOP + plotH - ((value - scale.lo) / yRange) * plotH
 
   // 滚轮监听器只装一次，量程与几何从 ref 里现读（渲染期间写 ref 是「最新值」的标准做法，
-  // 放 layout effect 里保证每次渲染后都对齐）。`dataLo/dataHi` 是**自动量程**的范围，滚轮
-  // 跨度的下限由它推出来 —— 一并放进 ref：挂在外面的话监听器会闭包住第一次渲染时的旧值
-  // （数据晚到一帧就永远按「余量 0」算，见下面 floor），而把 `autoExtent` 写进依赖数组又会
-  // 让它每渲染都换一个身份、监听器反复重装。
-  const wheelRef = useRef({ lo: 0, hi: 0, plotH: 0, dataLo: 0, dataHi: 0 })
+  // 放 layout effect 里保证每次渲染后都对齐）。`axisLo/axisHi` 是**自动档轴量程**（niceScale
+  // 之后那一段，不是数据本身的量程），滚轮跨度的下限由它推出来 —— 一并放进 ref：挂在外面的话
+  // 监听器会闭包住第一次渲染时的旧值（数据晚到一帧就永远按「余量 0」算，见下面 floor），
+  // 而把 `autoExtent` 写进依赖数组又会让它每渲染都换一个身份、监听器反复重装。
+  // ★为什么用轴量程而不是数据量程（2026-11-07 二审）：数据平直时（整窗都是 20ms）数据量程
+  //   是 0，floor 退化成 1e-9、夹子形同不存在；而轴的跨度是 4（18..22），才是「1/4 量程」。
+  const wheelRef = useRef({ lo: 0, hi: 0, plotH: 0, axisLo: 0, axisHi: 0, plotW: 0, left: 0 })
   useLayoutEffect(() => {
-    wheelRef.current = { lo: scale.lo, hi: scale.hi, plotH, dataLo: autoExtent?.[0] ?? 0, dataHi: autoExtent?.[1] ?? 0 }
+    wheelRef.current = { lo: scale.lo, hi: scale.hi, plotH, axisLo: autoScale.lo, axisHi: autoScale.hi, plotW, left }
   })
   // 滚轮缩放（`wheelZoom` 且 domain=auto）：非 passive（要 preventDefault 住页面滚动），
   // 光标压着的那个值当锚点收放；夹子两道（跨度 ≥ ZOOM_MIN_SPAN、顶端 ≤ zoomCapOf）。
@@ -206,6 +222,19 @@ export function TimeChart({
     const onWheel = (e: WheelEvent) => {
       const st = wheelRef.current
       if (st.plotH <= 0) return
+      // ★Ctrl / ⌘ + 滚轮还给它（2026-11-21 三审）：那是**浏览器/系统级缩放**（触控板双指捏合
+      //   在 Chrome 里也报成 ctrlKey=true 的 wheel）。吞掉它等于把页面上唯一能放大文字的手势
+      //   锁在这张图里，弱视访客想放大读数反而把图缩没了。
+      if (e.ctrlKey || e.metaKey) return
+      // ★只接管**绘图区**（2026-11-21 三审）：监听器挂在整块容器上，鼠标停在左侧 Y 轴标签
+      //   或下方时间轴时本来是想滚页面，却会把图缩掉。这里按几何判一下 —— 横向落在
+      //   `[left, left+plotW]`、纵向落在 `[TOP, TOP+plotH]` 才算。
+      {
+        const r = el.getBoundingClientRect()
+        const px = e.clientX - r.left
+        const py = e.clientY - r.top
+        if (px < st.left || px > st.left + st.plotW || py < TOP || py > TOP + st.plotH) return
+      }
       e.preventDefault()
       // deltaMode：0=像素（绝大多数）、1=行、2=页；先归一到「像素」口径。
       let d = e.deltaY
@@ -219,11 +248,16 @@ export function TimeChart({
       const ratio = Math.min(Math.max((e.clientY - rect.top - TOP) / st.plotH, 0), 1)
       // 锚点 = 光标当前压着的那个值。缩放后它还钉在同一行像素上——滚轮「手感」的全部就是这一条。
       const anchor = st.hi - ratio * (st.hi - st.lo)
-      // 跨度下限：min(1ms, 自动量程的 1/4)。亚毫秒线路的自动量程本来就窄于 1ms，固定 1ms 会把
+      // 跨度下限：min(1ms, 自动轴量程的 1/4)。亚毫秒线路的自动量程本来就窄于 1ms，固定 1ms 会把
       // 第一格滚轮变成「放大 + 锚点跳走」、下沿贴 0 时更会双向卡死（2026-10-15 审出来，量程数学
       // 与三道夹子都挪进 format.ts 的 zoomSpan，配了单测）。范围从 ref 现读，不闭包旧值。
-      const floor = Math.min(ZOOM_MIN_SPAN, Math.max((st.dataHi - st.dataLo) * 0.25, 1e-9))
-      setYZoom(zoomSpan({ lo: st.lo, hi: st.hi, anchor, ratio, factor: f, floor, cap: zoomCapOf(st.dataHi) }))
+      // ★这里取的是 `axisLo/axisHi`（niceScale 之后的那一段）：数据平直时数据量程是 0，
+      //   按它算出来的 floor 会退化成 1e-9，夹子等于不存在（2026-11-07 二审）。
+      const axisSpan = Math.max(0, st.axisHi - st.axisLo)
+      const floor = Math.min(ZOOM_MIN_SPAN, Math.max(axisSpan * 0.25, 1e-9))
+      // cap 也从轴量程推：数据只有一点点点时 `zoomCapOf(dataHi)` 会把上限压到 1000，
+      // 而轴本身可能已经在 1000 以上，那时往上滚一格就被夹回来（看起来像「滚轮失灵」）。
+      setYZoom(zoomSpan({ lo: st.lo, hi: st.hi, anchor, ratio, factor: f, floor, cap: Math.max(zoomCapOf(st.axisHi), st.hi) }))
     }
     el.addEventListener("wheel", onWheel, { passive: false })
     return () => el.removeEventListener("wheel", onWheel)
@@ -231,33 +265,50 @@ export function TimeChart({
 
   // 默认刻度印法：小数位**跟着刻度步长走**（步长 0.25 就印两位）—— 一位小数会把 0.25 印成
   // 「0.3」，网格线画在真值上、标签却对不上（2026-10-15 与 kanso 同步）。
+  // ★上限不是 3 位（2026-11-21 三审）：步长小于 5e-4 时，3 位小数会把几枚不同的刻度印成
+  //   同一个字符串（0.00005 与 0.0001 都印成「0」）—— Y 轴看起来是一排重复的 0。
+  //   改成「步长需要几位就给几位」，封顶 20 位（toFixed 的上限）。
   const yDigits = (() => {
     const t = scale.ticks
     if (t.length < 2) return 1
     const stepV = Math.abs(t[1] - t[0])
-    for (let d = 0; d <= 3; d++) if (Math.abs(Math.round(stepV * 10 ** d) / 10 ** d - stepV) < stepV * 1e-9) return d
-    return 3
+    if (!Number.isFinite(stepV) || stepV <= 0) return 1
+    for (let d = 0; d <= 20; d++) if (Math.abs(Math.round(stepV * 10 ** d) / 10 ** d - stepV) < stepV * 1e-9) return d
+    return 20
   })()
-  const yLabel = yFormat ?? ((value: number) => String(Math.round(value * 10 ** yDigits) / 10 ** yDigits))
-  const xTicks = view.length > 1 ? timeTicks(t0, t1).filter((t) => t >= t0 && t <= t1) : []
+  const yLabel = yFormat ?? ((value: number) => (yDigits <= 20 ? value.toFixed(yDigits) : String(value)))
+  const xTicks = timed.length > 1 ? timeTicks(t0, t1).filter((t) => t >= t0 && t <= t1) : []
   const clock = clockFor(hours)
   // 撞在一起的刻度标签直接丢掉（原来靠 recharts 的 minTickGap，这里自己算）：
   // 按 11px 的近似字宽排一遍，与前一个标签的右沿重叠就不画。
-  const keptX: number[] = []
-  let edge = -Infinity
-  for (const t of xTicks) {
-    const half = (clock(t).length * CHAR) / 2
-    const cx = x(t)
-    if (cx - half < edge + 6) continue
-    keptX.push(t)
-    edge = cx + half
+  // ★两端也要夹（2026-11-21 三审）：原先只挡「与前一个标签重叠」，第一个标签的左沿可能压到
+  //   Y 轴标签上、最后一个的右沿可能越出绘图区右沿 —— 而这张 SVG 带 `overflow-visible`，
+  //   越界那半截会被画到图表框外面。`left` 是绘图区左沿，`left + plotW` 是右沿。
+  //   ★但夹完要保证**至少留一枚**：窄屏（390px 下绘图区只有 ~283px）时，40 分钟窗口的刻度
+  //   间距本就贴边，一律 `continue` 会把 X 轴清空（实测：6 枚 → 0 枚）。所以分两轮 ——
+  //   先按「边界 + 间距」挑；挑不出东西就退回「只按间距」（宁可让首尾那半截贴边，也不能
+  //   让横轴一个字都不印）。
+  const pickX = (respectEdges: boolean) => {
+    const out: number[] = []
+    let edge = -Infinity
+    for (const t of xTicks) {
+      const half = (clock(t).length * CHAR) / 2
+      const cx = x(t)
+      if (respectEdges && (cx - half < left || cx + half > left + plotW)) continue
+      if (cx - half < edge + 6) continue
+      out.push(t)
+      edge = cx + half
+    }
+    return out
   }
+  let keptX = pickX(true)
+  if (keptX.length === 0) keptX = pickX(false)
 
   /** 一条曲线：null 断开重起一笔（不连桥）。 */
   const lineOf = (s: ChartSeries) => {
     let d = ""
     let pen = false
-    for (const row of view) {
+    for (const row of timed) {
       const v = num(row[s.key])
       if (v === null) {
         pen = false
@@ -286,7 +337,7 @@ export function TimeChart({
       )
       run = []
     }
-    for (const row of view) {
+    for (const row of timed) {
       const v = num(row[s.key])
       if (v === null) {
         flush()
@@ -312,7 +363,7 @@ export function TimeChart({
       out.push(`M${up}L${down}Z`)
       run = []
     }
-    for (const row of view) {
+    for (const row of timed) {
       const pair = row[s.key]
       const lo = num(Array.isArray(pair) ? pair[0] : null)
       const hi = num(Array.isArray(pair) ? pair[1] : null)
@@ -337,13 +388,13 @@ export function TimeChart({
     let best = 0
     let gap = Infinity
     for (let i = 0; i < view.length; i++) {
-      const d = Math.abs(view[i].ts - target)
+      const d = Math.abs(timed[i].ts - target)
       if (d < gap) { gap = d; best = i }
     }
     return best
   }
 
-  const hovered = hover === null ? null : view[Math.min(Math.max(hover, 0), view.length - 1)]
+  const hovered = hover === null ? null : timed[Math.min(Math.max(hover, 0), timed.length - 1)]
   const payload = hovered
     ? series.map((s) => ({
         dataKey: s.key,

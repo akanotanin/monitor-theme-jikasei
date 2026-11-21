@@ -97,8 +97,8 @@ export function SearchRow({ value, onChange, onClose, onMove, onEnter }: {
  *   ③ `type="search"` 自带的那个小叉由 index.css 的 `::-webkit-search-cancel-button` 关掉，
  *      两个长得差不多、做同一件事的按钮并排只会让人犹豫点哪个。
  */
-const SQUARE_INPUT = "search-input relative z-[1] h-9 w-full min-w-0 rounded-md border border-transparent bg-transparent px-2.5 text-sm text-transparent outline-none transition-all placeholder:text-transparent hover:bg-accent focus:bg-transparent sm:focus:border-input sm:focus:px-8 sm:focus:text-foreground sm:focus:ring-[3px] sm:focus:ring-ring/30 sm:focus:placeholder:text-muted-foreground dark:hover:bg-accent/50"
-const ROW_INPUT = "search-input relative z-[1] h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-8 text-sm outline-none transition-all placeholder:text-muted-foreground focus:ring-[3px] focus:ring-ring/30"
+const SQUARE_INPUT = "search-input relative z-[1] h-9 w-full min-w-0 rounded-md border border-transparent bg-transparent px-2.5 text-sm text-transparent outline-none transition-all placeholder:text-transparent hover:bg-accent focus:bg-transparent sm:focus:border-input sm:focus:px-8 sm:focus:text-foreground sm:focus:ring-[3px] sm:focus:ring-ring/80 sm:focus:placeholder:text-muted-foreground dark:hover:bg-accent/50"
+const ROW_INPUT = "search-input relative z-[1] h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-8 text-sm outline-none transition-all placeholder:text-muted-foreground focus:ring-[3px] focus:ring-ring/80"
 
 function Field({ value, onChange, onActivate, onClose, onMove, onEnter, autoFocus, className, title, variant = "square" }: {
   value: string

@@ -1,13 +1,15 @@
 {
   "name": "monitor-theme-jikasei",
   "private": true,
-  "version": "1.36.1",
+  "//engines": "★单测直接用 node 跑 .ts（见 test 脚本）：Node 22/23 需要 --experimental-strip-types，24 起默认开启。本机实测 22.23.2 也能跑，但 CI 钉的是 24 —— 两边差着主版本时行为会漂。",
+  "engines": { "node": ">=22.6.0" },
+  "version": "1.37.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts && node src/lib/summary.test.ts && node src/lib/money.test.ts && node src/lib/fx.test.ts && node src/lib/site-settings.test.ts && node src/lib/notes.test.ts && node src/lib/ranges.test.ts && node src/lib/globe.test.ts && node src/lib/search.test.ts && node src/lib/today-traffic.test.ts",
+    "test": "node src/lib/format.test.ts && node src/lib/api.test.ts && node src/lib/summary.test.ts && node src/lib/money.test.ts && node src/lib/fx.test.ts && node src/lib/site-settings.test.ts && node src/lib/notes.test.ts && node src/lib/ranges.test.ts && node src/lib/globe.test.ts && node src/lib/search.test.ts && node src/lib/today-traffic.test.ts && node src/lib/api-timeout.test.ts",
     "check": "node scripts/check-config.mjs",
     "preview": "vite preview",
     "package": "npm run build && npm run check && node scripts/package.mjs"

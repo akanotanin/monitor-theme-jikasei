@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react"
 
 import {
   camera, clampLat, globeCaption, globeNodes, globeProfile, graticule, inkWidthWith, landPaths, layoutLabels,
@@ -66,6 +66,8 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
   onWarm: () => void
 }) {
   const narrow = useNarrow()
+  // 圆盘渐变那个 id（见下面 <radialGradient> 的注释）：同页两颗地球不撞。
+  const shadeId = `globe-shade-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`
   /**
    * ★ 窄屏（≤720px）**不再降档**。2026-10-07 站长看过手机上的 low 档之后说「地球太简陋了」——
    * 那一档只有 104 个点的粗岸线（一格 60° 的网、不画扫掠、不画引线），确实就是一张草图。
@@ -80,7 +82,17 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
     () => prepareRings(profile.land === "coarse" ? COARSE_WORLD_OUTLINES : WORLD_OUTLINES),
     [profile],
   )
+  /**
+   * ★roving tabindex（2026-11-21 三审）：整颗地球只占**一个** Tab 停靠点，针之间用
+   *   方向键移动。原先每枚针都是 `tabIndex=0` —— 100 台机群要按 100 次 Tab 才能走到下面的
+   *   列表/页脚，键盘用户等于被这颗地球堵住了（WCAG 2.4.3 的焦点顺序）。
+   *   `activeIdx` 记住哪一枚持有 Tab 停靠点；节点集合变了就夹回范围内。
+   */
+  const [rawIdx, setActiveIdx] = useState(0)
   const points = useMemo(() => globeNodes(nodes), [nodes])
+  // 节点集合变小后把索引夹回范围内 —— 在渲染期夹（不放进 effect：effect 里 setState 会多跑
+  // 一轮渲染，lint 的 set-state-in-effect 也会拦）。
+  const activeIdx = points.length === 0 ? 0 : Math.min(rawIdx, points.length - 1)
   const rows = useMemo(() => regionRows(nodes), [nodes])
   // 「全部」那一行的悬停说明：合计里有多少台认不出国家（不上地球与地区列表）——
   // 「全部 N」与地区分项合计对不上这件事，就在那里有一句明面上的说法。
@@ -169,6 +181,15 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const d = drag.current
     if (!d || e.pointerId !== d.id) return
+    // ★指针已经不在按下的状态却还挂在拖动里（2026-11-21 三审）：`setPointerCapture` 失败时
+    //   （触屏上很常见），手指在**容器外**松开既收不到 pointerup 也收不到 pointercancel，
+    //   `drag.current` 与 `dragging` 就永远停在那里 —— `spinning = inView && !dragging && …`
+    //   恒为 false，地球从此不再自转，没有任何路径能恢复。与 Chart.tsx 的平移同一套自愈。
+    if ((e.buttons & 1) === 0) {
+      drag.current = null
+      setDragging(false)
+      return
+    }
     const dx = e.clientX - d.x
     const dy = e.clientY - d.y
     // 3px 以内不算拖：手指点一下总要抖一两个像素，当成拖就成了"点不动"。
@@ -289,22 +310,35 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
         onPointerMove={onPointerMove}
         onPointerUp={(e) => endDrag(e, true)}
         onPointerCancel={(e) => endDrag(e, false)}
+        // ★捕获被系统收回时也要收尾（2026-11-21 三审）：手机上竖划让浏览器接管、或指针被
+        //   别的元素抢走时，pointerup/cancel 都可能不来，只有这条一定会来。
+        onLostPointerCapture={(e) => endDrag(e, false)}
       >
         {/* 地球是下面那张列表的另一种画法，不是唯一的入口。但从 2026-10-12 起它**键盘可达**：
             每一枚针的命中圆都是一枚真焦点（tabIndex + role=button + aria-label），Tab 走到
             哪枚、Enter/Space 就打开那台机器 —— 所以不再对整个 svg 说 aria-hidden，
             改为只把纯绘制件（标签文字、台数角标）标掉，语义全部落在针上。 */}
-        <svg viewBox={canvas.viewBox} preserveAspectRatio="xMidYMid meet" role="group" aria-label="节点地球">
+        {/* `--globe-shade` 把渐变 id 交给 CSS（见 index.css 里 .globe-disk 的注释）：CSS 的
+            fill 会盖住 SVG 的呈现属性，所以光在 JSX 上写 fill 不够。 */}
+        <svg
+          viewBox={canvas.viewBox}
+          preserveAspectRatio="xMidYMid meet"
+          role="group"
+          aria-label="节点地球"
+          style={{ "--globe-shade": `url(#${shadeId})` } as React.CSSProperties}
+        >
           <defs>
-            {/* 圆盘里那层明暗：中心几乎透明、边上压到 `--globe-rim`（上游同一套停点）。 */}
-            <radialGradient id="globe-shade" cx="38%" cy="36%" r="68%">
+            {/* 圆盘里那层明暗：中心几乎透明、边上压到 `--globe-rim`（上游同一套停点）。
+                id 用 `useId()` 而不是硬编码的 `globe-shade`：同页出现第二颗地球时会撞 id、
+                后挂的那颗把前一颗的渐变抢走（2026-11-07 二审；Chart 的 clipPath 早就这么做）。 */}
+            <radialGradient id={shadeId} cx="38%" cy="36%" r="68%">
               <stop offset="0%" stopColor="currentColor" stopOpacity="0.06" />
               <stop offset="70%" stopColor="currentColor" stopOpacity="0" />
               <stop offset="100%" stopColor="var(--globe-rim)" stopOpacity="1" />
             </radialGradient>
           </defs>
           <circle className="globe-ocean" cx={VIEW.cx} cy={VIEW.cy} r={VIEW.r} />
-          <circle className="globe-disk" cx={VIEW.cx} cy={VIEW.cy} r={VIEW.r} fill="url(#globe-shade)" />
+          <circle className="globe-disk" cx={VIEW.cx} cy={VIEW.cy} r={VIEW.r} fill={`url(#${shadeId})`} />
           {land.fill && <path className="globe-land" d={land.fill} />}
           {land.stroke && <path className="globe-coast" d={land.stroke} />}
           {wires.map((wire, i) => (
@@ -320,8 +354,27 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
           {arcs.map((arc, i) => (
             <path key={i} className="globe-link" d={arc.d} />
           ))}
-          {placed.map((p) => (
-            <Pin key={p.key} p={p} onOpen={onOpen} onWarm={onWarm} />
+          {placed.map((p, i) => (
+            <Pin
+              key={p.key}
+              p={p}
+              onOpen={onOpen}
+              onWarm={onWarm}
+              tabbable={i === Math.min(activeIdx, placed.length - 1)}
+              onArrow={(to) => {
+                const last = placed.length - 1
+                const next =
+                  to === "first" ? 0
+                  : to === "last" ? last
+                  : to === "next" ? Math.min(i + 1, last)
+                  : Math.max(i - 1, 0)
+                setActiveIdx(next)
+                // 焦点跟过去：Pin 的命中圆带 data-index，直接按它找 DOM。
+                const svg = host.current?.querySelector("svg")
+                const el = svg?.querySelector<SVGCircleElement>(`circle.hit[data-index="${placed[next].index}"]`)
+                el?.focus()
+              }}
+            />
           ))}
           {marker && (
             <g className="globe-selected">
@@ -388,7 +441,15 @@ export function Globe({ nodes, dark, region, onRegion, onOpen, onWarm }: {
  * （onWarm，与卡片「摸到就预热」同一套）。焦点圈画在 index.css 的 `.hit:focus-visible`。
  * 标签文字与台数角标标 aria-hidden：它们与命中圆的 aria-label 是同一份信息，别播两遍。
  */
-function Pin({ p, onOpen, onWarm }: { p: Placed; onOpen: (id: number) => void; onWarm: () => void }) {
+function Pin({ p, onOpen, onWarm, tabbable, onArrow }: {
+  p: Placed
+  onOpen: (id: number) => void
+  onWarm: () => void
+  /** roving tabindex：只有当前这一枚是 Tab 停靠点（见 Globe 里 activeIdx 的注释）。 */
+  tabbable: boolean
+  /** 方向键：把停靠点挪给相邻的针（Home/End 跳首尾）。 */
+  onArrow: (key: "next" | "prev" | "first" | "last") => void
+}) {
   const cx = p.px.toFixed(1)
   const cy = p.py.toFixed(1)
   return (
@@ -426,7 +487,7 @@ function Pin({ p, onOpen, onWarm }: { p: Placed; onOpen: (id: number) => void; o
         data-region={p.region.key}
         data-online={p.online ? "1" : "0"}
         data-count={p.count}
-        tabIndex={0}
+        tabIndex={tabbable ? 0 : -1}
         role="button"
         aria-label={p.count > 1 ? `${p.region.label}：${p.count} 台，打开其中第一台` : `打开 ${p.name}`}
         onFocus={onWarm}
@@ -435,7 +496,19 @@ function Pin({ p, onOpen, onWarm }: { p: Placed; onOpen: (id: number) => void; o
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault()
             onOpen(p.id)
+            return
           }
+          // ★roving tabindex 的方向键（2026-11-21 三审）：左右/上下在针之间移动，
+          //   Home/End 跳首尾。移动后焦点也要跟过去（否则按了键、焦点圈不动）。
+          const to =
+            e.key === "ArrowRight" || e.key === "ArrowDown" ? "next" as const
+            : e.key === "ArrowLeft" || e.key === "ArrowUp" ? "prev" as const
+            : e.key === "Home" ? "first" as const
+            : e.key === "End" ? "last" as const
+            : null
+          if (!to) return
+          e.preventDefault()
+          onArrow(to)
         }}
       />
     </g>
@@ -459,10 +532,14 @@ function RegionFlag({ code }: { code: string }) {
   )
 }
 
-const NARROW = matchMedia("(max-width: 720px)")
-const REDUCE = matchMedia("(prefers-reduced-motion: reduce)")
+// ★模块顶层不要裸调 matchMedia（2026-11-21 三审）：没有它的环境（非浏览器预渲染、某些
+//   嵌入式 WebView）会在**导入时**就抛，整块应用白屏。ChartTooltip 早就是这么写的
+//   （`typeof matchMedia === "function" ? … : null`），两处口径要一致。
+const NARROW = typeof matchMedia === "function" ? matchMedia("(max-width: 720px)") : null
+const REDUCE = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : null
 
-function subscribe(query: MediaQueryList, notify: () => void) {
+function subscribe(query: MediaQueryList | null, notify: () => void) {
+  if (!query) return () => {}
   query.addEventListener("change", notify)
   return () => query.removeEventListener("change", notify)
 }
@@ -474,10 +551,10 @@ function subscribe(query: MediaQueryList, notify: () => void) {
  * 免得后人以为那里漏了判断。上游在这个宽度上干脆不画地球；本主题照画，只是不为省电降档。
  */
 function useNarrow(): boolean {
-  return useSyncExternalStore((notify) => subscribe(NARROW, notify), () => NARROW.matches)
+  return useSyncExternalStore((notify) => subscribe(NARROW, notify), () => NARROW?.matches ?? false, () => false)
 }
 
 /** 系统开了「减弱动态效果」就不自转（跟着系统设的改变，不是只在挂载时读一次）。 */
 function useReducedMotion(): boolean {
-  return useSyncExternalStore((notify) => subscribe(REDUCE, notify), () => REDUCE.matches)
+  return useSyncExternalStore((notify) => subscribe(REDUCE, notify), () => REDUCE?.matches ?? false, () => false)
 }

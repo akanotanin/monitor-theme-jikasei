@@ -45,13 +45,13 @@
      于是给延迟曲线一份真正的色相环（1-9 依次是蓝 / 橙 / 青 / 紫 / 红 / 绿 /
      蓝青 / 黄 / 品红）。亮色下压亮度保证白底可读，深色下抬亮度，色相不变，
      所以同一台机器在两种主题下是同一种颜色。 */
+  /* 调色板按图表的取色顺序排（NodeDetail 里那张表逐档引用）。删档之前先 grep 一遍 ——
+     零引用的色档留着只会让「改调色板」看起来有并不存在的消费方。 */
   --chart-1: oklch(0.58 0.17 250);
   --chart-2: oklch(0.66 0.16 45);
   --chart-3: oklch(0.6 0.13 190);
   --chart-4: oklch(0.55 0.18 295);
   --chart-5: oklch(0.58 0.19 20);
-  --chart-6: oklch(0.58 0.15 150);
-  --chart-7: oklch(0.6 0.12 220);
   --chart-8: oklch(0.66 0.14 70);
   --chart-9: oklch(0.58 0.18 335);
   /* 进度条按"越满越危险"上色，所以这里有真正的绿与琥珀：单色阶表达不了严重度。 */
@@ -119,7 +119,11 @@
      2026-10-17 13% → **15%**：卡片抬高那轮把卡缘线一并提一档（合成后线/底 1.49 → 1.67），
      暗底上卡片的轮廓才立得住；同一支暖墨，只动透明度。 */
   --border: oklch(0.885 0.012 85 / 15%);
-  --input: oklch(0.885 0.012 85 / 16%);
+  /* ★表单边框单独一档（2026-11-21 三审）：16% alpha 合成到卡片上只有 1.51:1，而
+     WCAG 1.4.11 对「必要边界」（输入框）要求 3:1 —— 无焦点时输入框几乎看不见轮廓。
+     `--border` 仍是 15%（卡片描边属装饰，可豁免）。实测 16%→1.51:1、34%→2.56:1、
+     40%→3.03:1，取 40% 才真正过 3:1。 */
+  --input: oklch(0.885 0.012 85 / 40%);
   --ring: oklch(0.6 0.008 85);
   /* 与亮色同一份色相，只抬亮度：深色底上压暗的线会糊在一起。 */
   --chart-1: oklch(0.72 0.15 250);
@@ -127,8 +131,6 @@
   --chart-3: oklch(0.74 0.12 190);
   --chart-4: oklch(0.7 0.16 295);
   --chart-5: oklch(0.7 0.17 20);
-  --chart-6: oklch(0.74 0.14 150);
-  --chart-7: oklch(0.74 0.11 220);
   --chart-8: oklch(0.8 0.13 75);
   --chart-9: oklch(0.72 0.16 335);
   --ok: oklch(0.74 0.14 155);
@@ -172,8 +174,6 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --color-chart-6: var(--chart-6);
-  --color-chart-7: var(--chart-7);
   --color-chart-8: var(--chart-8);
   --color-chart-9: var(--chart-9);
   --color-ok: var(--ok);
@@ -181,11 +181,35 @@
 }
 
 @layer base {
-  * { @apply border-border outline-ring/50; }
+  /* 全局焦点环用 **foreground**（2026-11-07 二审）。原来这里写 `outline-ring/50`：所有没
+     自己声明 focus-visible 样式的元素（卡片、原生按钮…）Tab 到哪里都只有 1.76:1（亮）/
+     2.05:1（暗）的一圈淡线 —— 门槛是 3:1。换成全值 `--ring` 也只到 3.49 / 4.95，刚过线；
+     `--ring/80` 在亮色反而更差（2.33，半透明=与底色混）。
+     焦点环要的是「一眼看见」，用正文色（18.0 / 13.8）最稳，也与本族主题一贯的口径一致
+     （monitor-theme-hardening：焦点环别用 --ring）。 */
+  * { @apply border-border outline-foreground; }
   /* Reserve the scrollbar's width on every page: without it, leaving a route
      whose content exceeds the fold widens the page. */
   html { scrollbar-gutter: stable; }
   body { @apply bg-background text-foreground; }
+}
+
+/* 系统开了「减弱动态效果」：骨架脉冲、卡片过渡、地球自转全部停下（地球那条在 Globe.tsx
+   里按同一个 media query 关了自转）。原先只有地球看这个设置，页面里其余动画照跑 ——
+   对前庭功能敏感的人是实打实的困扰（WCAG 2.3.3）。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    /* ★delay 也要清（2026-11-21 三审）：只压 duration 时，带 delay 的入场动画会先停
+       delay 那么久、再以 0.01ms 播完 —— 观感是「隔了一拍闪一下」，比不动更难受。 */
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Tabular figures keep live numbers from shifting as they update. */
@@ -248,7 +272,13 @@
 .globe-ocean { fill: var(--globe-ocean); }
 .globe-land { fill: var(--globe-land); stroke: none; stroke-linejoin: round; stroke-linecap: round; }
 .globe-coast { fill: none; stroke: var(--foreground); stroke-width: 0.55; stroke-opacity: 0.36; }
-.globe-disk { fill: url(#globe-shade); stroke: var(--foreground); stroke-width: 1.05; stroke-opacity: 0.42; }
+/* ★渐变的 id 由 JSX 用 useId() 生成（同页两颗地球不撞），这里**不能**写死 url(#globe-shade)：
+   CSS 规则的优先级高于 SVG 的 fill 呈现属性，写死之后 JSX 上的 fill={url(#…)} 永远不生效、
+   而那个硬编码 id 又已经不存在 —— 圆盘渐变与 --globe-rim 那圈直接失效（2026-11-21 三审抓到：
+   是我把 id 改成 useId 时漏掉这一条 CSS）。
+   改成读变量：Globe 在 <svg> 的 style 上写 `--globe-shade: url(#<useId>)`。留一个兜底值
+   给「变量没设」（老浏览器 / 样式被单独抽出）的情形。 */
+.globe-disk { fill: var(--globe-shade, url(#globe-shade)); stroke: var(--foreground); stroke-width: 1.05; stroke-opacity: 0.42; }
 .globe-wire { fill: none; stroke: var(--foreground); stroke-opacity: 0.1; }
 .globe-sweep { fill: none; stroke: var(--foreground); }
 .globe-base { stroke: var(--foreground); stroke-opacity: 0.4; stroke-width: 1; }
@@ -389,7 +419,9 @@
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 1.6;
-  opacity: 0.62;
+  /* 去掉 opacity（2026-11-07 二审）：0.62 把 5.26:1 压成 **2.51:1**，12px 小字的最低要求
+     是 4.5:1 —— 亮色下这行署名基本读不清。「低调」靠 muted-foreground 这一档本身就够了
+     （5.26 / 8.96），不需要再乘一次透明度。 */
 }
 .theme-credit a { color: inherit; text-decoration: none; }
 .theme-credit a:hover { text-decoration: underline; }
@@ -465,7 +497,6 @@
    类名跟着控件自己的高度走（size-9 = 36px 等），一眼看得出撑完是多少：
      tap-9   36×36 → 44×44（顶栏那几枚图标、搜索方框）
      tap-8   32 高  → 44    （站名）
-     tap-10  40 高  → 44
      tap-y-6 24 高  → 44 高，横向不动 —— 密排的分段按钮之间别互相盖住
    地区列表（.globe-reg）行距只有 8px，上下各撑 4px 到 28px 就不重叠了，再大就得动视觉。 */
 .tap { position: relative; }
@@ -477,8 +508,6 @@
 .tap.absolute { position: absolute; }
 .tap-9::before { inset: -4px; }
 .tap-8::before { inset: -6px; }
-.tap-10::before { inset: -2px; }
-.tap-y-9::before { inset: -4px 0; }
 .tap-y-6::before { inset: -10px 0; }
 .globe-reg { position: relative; }
 .globe-reg::before { content: ""; position: absolute; inset: -4px 0; border-radius: 4px; }

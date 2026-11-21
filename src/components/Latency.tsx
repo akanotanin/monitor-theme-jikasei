@@ -228,17 +228,35 @@ export function LatencyPanel({ node, lines, onOpen, adaptive = false }: { node: 
         : "mt-4 space-y-1.5 border-t pt-4"}
     >
       {rows.map((p) => {
-        const last = [...p.points].reverse().find((pt) => pt.latency !== null)
+        // ★「当前延迟」取**最后一个采样**（2026-11-21 三审）：原先取「最后一个非 null」，
+        //   探测最近半小时一直超时时，这一行仍把几十分钟前的旧值当当前值印出来 —— 而同一行
+        //   右边的丢包率是全窗口口径，两个数放在一起读起来像同一时刻的。取最后一点，null
+        //   就照下面既有分支显示「超时」，那才是当前状态。
+        const last = p.points.length ? p.points[p.points.length - 1] : undefined
         const ms = last?.latency ?? null
         const tone = toneOf(ms, p.loss)
         const gray = toneClass(tone)
         return (
           <div
             key={p.id}
+            // ★键盘可达（2026-11-07 二审）：这一行鼠标能点开「网络延迟」页签，键盘却进不来 ——
+            //   同一份数据在详情页里是有键盘路径的，卡面上这一条不该只给鼠标用。
+            //   用 role=button + tabIndex + Enter/Space（行内都是 span/img，套 <button> 会
+            //   带进表格/网格的默认样式，改动面更大）。
+            role={onOpen ? "button" : undefined}
+            tabIndex={onOpen ? 0 : undefined}
             className={adaptive
-              ? `group col-span-4 grid grid-cols-subgrid items-center gap-x-2 text-xs ${onOpen ? "cursor-pointer" : ""}`
-              : `group flex items-center gap-2 text-xs ${onOpen ? "cursor-pointer" : ""}`}
+              ? `group col-span-4 grid grid-cols-subgrid items-center gap-x-2 rounded-sm text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground ${onOpen ? "cursor-pointer" : ""}`
+              : `group flex items-center gap-2 rounded-sm text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground ${onOpen ? "cursor-pointer" : ""}`}
             onClick={onOpen ? (e) => { e.stopPropagation(); onOpen() } : undefined}
+            onKeyDown={onOpen ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                // 空格默认会滚页面；Enter 会冒泡到卡片把它也点开 —— 两件都拦掉。
+                e.preventDefault()
+                e.stopPropagation()
+                onOpen()
+              }
+            } : undefined}
             title={onOpen ? "打开详情 · 网络延迟" : undefined}
           >
             {/* 线路名列：自适应档按内容收缩（上限 80px = 老固定列宽，超长截断 + title 悬停看全）；

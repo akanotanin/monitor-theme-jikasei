@@ -31,6 +31,17 @@ type Me = {
 // The tab title cache key, shared with the inline script in index.html. Kept as the
 // theme's own key so two themes on one origin cannot fight over it.
 const TITLE_CACHE_KEY = "jikasei:site_name"
+/**
+ * 站点明暗档的缓存键（2026-11-21 三审）。
+ *
+ * 首帧那段内联脚本（index.html）原先只认 `theme` 记录与系统偏好，**不认识站点的 themeMode** ——
+ * 而 themeMode 要等 `/themes/jikasei/config` 回来才知道。于是「站长设固定暗色、访客系统亮色」
+ * 这一档首帧必闪一屏亮色，恰恰是那段脚本要消灭的东西。App 拿到 config 后把这一档写进
+ * localStorage，首帧脚本就能读到；写的是**归一化后的 dark/light**（auto 的北京时间判据在
+ * 这一段里算不了，留给 App 自己纠正）。
+ * scripts/check-config.mjs 钉着这个键在两边逐字一致。
+ */
+const SITE_DARK_KEY = "jikasei:site_dark"
 
 // 页脚署名（右下角那行）里指向的源码仓库 —— 与 theme.json 的 `url` 是同一个地址
 // （面板卡片上的「源码」也指这里）。两处一起改。
@@ -231,6 +242,20 @@ function useTheme(siteMode: ThemeMode) {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark)
+    // 顺手把「站点这一档」留给首帧脚本（见 SITE_DARK_KEY 的注释）：它读不到 themeMode，
+    // 只能读这个归一化后的布尔。存储被禁用时静默跳过。
+    // ★存**档位本身**，不存算出来的明暗（2026-11-21 三审，两次回归之后定稿）：
+    //   第一版存了归一化后的 dark/light，于是 auto 档在夜里算出的 `dark` 被写进缓存，
+    //   第二天白天系统/时间变了，首帧却照旧读那个旧结论 —— `verify_appearance` 的
+    //   「系统暗：第一帧就已经是暗色」当场红（缓存里留着上一趟 auto 算出的 light）。
+    //   现在只存 `themeMode` 原值：`dark` / `light` 两档首帧直接用；`auto` / `system` 存成
+    //   `auto`，首帧脚本看到它就退回系统偏好（夜里那一档由 App 挂载后纠正，与改这条之前
+    //   表现一致 —— 那本来就是唯一没法在首帧算准的一档）。
+    try {
+      localStorage.setItem(SITE_DARK_KEY, siteMode === "auto" || siteMode === "system" ? "auto" : siteMode)
+    } catch {
+      // 隐私模式：首帧退回「跟系统」，与加这条之前一样。
+    }
     /**
      * 原生控件那一档跟着走（滚动条、下拉、日期选择器）。CSS 的 :root / .dark 已经各写了一份，
      * 这里再写一次**内联**：index.html 的首帧脚本为了让第一帧就是对的，会把 colorScheme 作为
@@ -263,7 +288,7 @@ function useTheme(siteMode: ThemeMode) {
     }
     meta.content = color
     head.append(meta)
-  }, [dark])
+  }, [dark, fromSite, siteMode])
 
   return [
     dark,
@@ -283,7 +308,9 @@ function useTheme(siteMode: ThemeMode) {
 }
 
 export default function App() {
-  const config = useThemeConfig()
+  // 第二个值 `configReady` =「设置真的从 hub 回来了」（见 useThemeConfig）。拿访客的选择去和
+  // 站长那档比之前必须先确认它（否则比的是本地 DEFAULTS，见 useCardStyle 的注释）。
+  const [config, configReady] = useThemeConfig()
   // 明暗：站长那一档（`themeMode`）当默认，访客点过顶栏那枚图标就以他的为准。
   const [dark, toggleTheme] = useTheme(config.themeMode)
   // 顶栏那枚入口图标（1.25.0 起没有设置项）：挂载即探一次本站约定的 `/chicken/`，
@@ -291,7 +318,7 @@ export default function App() {
   const farmUrl = useLocalFarm()
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
-  const { nodes, error, closed } = useNodes()
+  const { nodes, error, closed, stalled } = useNodes()
   // 筛选三件套（分组 / 地区 / 搜索词）：**初始值从地址栏读**（刷新、收藏、别人分享的链接
   // 都因此带着筛选进来），之后变化再写回去（见下面的 replaceState 那段）。
   const [group, setGroup] = useState<string | null>(() => readListState().group)
@@ -316,7 +343,7 @@ export default function App() {
   // ★ 站长那档是「节点地球」的**闸门**：他关掉时 `globeOn` 一律是 false，顶栏那枚开关也一起
   //   不挂（见下面那段渲染条件）——关掉的整块不该在页面上留一枚点了没落点的按钮。
   const [globeOn, toggleGlobe] = useGlobeVisible(config.globeOn)
-  const [cardStyle, chooseStyle] = useCardStyle(config.cardStyle)
+  const [cardStyle, chooseStyle] = useCardStyle(config.cardStyle, configReady)
 
   // 整页容器宽：**所有六档共用一条列线**（顶栏 / 主区 / 页脚三处同一个 max-w）。
   // ★2026-10-30 站长要求：宽卡从「1080 容器 × 两列（卡片 510）」改成「1280 容器 × 三列」
@@ -459,8 +486,16 @@ export default function App() {
    * 值取**归一化后**的 `groupNow / regionNow` —— 悬空的选择（分组解散、地区没了）
    * 已经被回落成「全部」，地址栏里就不该还留着那个死值。
    */
+  // 地址栏只在「节点列表已到」之后才写（见下面 effect 的注释）。提成变量是为了让
+  // exhaustive-deps 能静态检查（写 `nodes === null` 这种表达式它会只报「缺 nodes」）。
+  const listLoaded = nodes !== null
   useEffect(() => {
     if (open !== null) return
+    // ★节点列表还没到时不许写地址栏（2026-11-07 二审）：那一刻 `groupView([])` 会把
+    //   `group` 归一化成 null（分组还不存在），200ms 后的 replaceState 就把分享链接里的
+    //   `?group=东京&region=JP` 永久抹掉了 —— 内存里的筛选其实是对的，只是地址栏被写坏。
+    //   刷新 / 收藏 / 复制地址都发生在「节点刚到之前」，所以这个窗口是真会被踩到的。
+    if (!listLoaded) return
     const url = pageUrl(null, null, { group: groupNow, region: regionNow, q: query })
     // ★2026-11-06：每敲一个字写一次地址栏，Safari 有 100 次 / 30 秒 的硬限制（超了抛
     //   SecurityError，异常发生在 effect 里会把整棵树卸载 = 白屏），输入法组字期间更密。
@@ -473,7 +508,7 @@ export default function App() {
       }
     }, 200)
     return () => window.clearTimeout(timer)
-  }, [open, groupNow, regionNow, query])
+  }, [open, groupNow, regionNow, query, listLoaded])
 
   /**
    * 进详情 / 回列表都走这里，把**当前筛选**一并写进地址（刷新或分享详情链接时，列表那一屏
@@ -639,7 +674,18 @@ export default function App() {
       </header>
 
       <main className={`mx-auto w-full ${shell} flex-1 space-y-5 px-4 py-4 sm:px-6`}>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {/* 两条提示分两种口径：
+            · `error` = 某次请求失败（红字、会被下一次成功清掉）；
+            · `stalled` = **推送通道断了、页面上的数字不再更新**（看门狗的告警，琥珀色、
+              只在真的收到一帧后消失）。它比 error 更重要：页面看起来完全正常，只有这条
+              提示说明「你现在读到的读数是旧的」。
+            role="status" 而不是 "alert"：它可能出现很久，不该打断读屏正在读的内容。 */}
+        {stalled && (
+          <p role="status" className="flex items-center gap-2 text-sm text-warn">
+            <span aria-hidden>◍</span>实时数据中断，正在重新连接（下面的读数可能已过期）
+          </p>
+        )}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
         {open !== null ? (
           !nodes ? (
@@ -648,7 +694,12 @@ export default function App() {
             <Suspense fallback={<DetailSkeleton hasRemarks={hasDetailRemarks(selected, config.remarkPlacement)} hasConnections={!!selected.metrics} hasPrice={selected.price > 0} hasSpecs={selected.cpu_cores > 0 || selected.mem_total > 0} />}>
               {/* 整页详情与紧凑展开里是同一个组件：保留天数也要一起给它，
                   否则「展开里有 30 天、点进去只有 7 天」会显得不一致。 */}
-              <NodeDetail node={selected} historyDays={me.history_days} remarkPlacement={config.remarkPlacement} />
+              {/* ★`key` 必须带上 id（2026-11-21 三审）：NodeDetail 的页签初值只在**挂载**
+                  那一次读 `location.search`（`useState` 初始化器），而 App 渲染它时没有 key ——
+                  浏览器前进/后退在两条详情页之间切换时 React 会复用同一个组件实例，
+                  `?tab=latency` 于是不生效（页签与地址栏脱节）。给 id 当 key 就强制重挂载。
+                  只加 id、不加 tab：同一台机器上「资源 ⇄ 延迟」互相切换时不该重置缩放/滚动。 */}
+              <NodeDetail key={selected.id} node={selected} historyDays={me.history_days} remarkPlacement={config.remarkPlacement} />
             </Suspense>
           ) : (
             <p className="py-16 text-center text-sm text-muted-foreground">
@@ -694,9 +745,20 @@ export default function App() {
                 当前筛选下没有匹配「{found.query.trim()}」的节点 —— 名称、地区、系统三处都能搜
                 （多个词用空格隔开，要同时命中）；点搜索框里那枚 × 清掉。
               </p>
-            ) : globeOn && regions.shown.length === 0 && view.shown.length > 0 ? (
+            ) : regions.shown.length === 0 && view.shown.length > 0 ? (
+              // ★这里原先带着 `globeOn &&`（2026-11-21 三审去掉）：地区筛选的**唯一**取消入口
+              //   长在地球那一列里，站长把地球设成关闭之后 —— 访客点开一条带 `?region=JP` 的
+              //   分享/收藏链接，列表被筛死，既没有地球、也没有这一行提示，还没有任何按钮能
+              //   取消，看起来就是「站点坏了」。提示与那枚「取消筛选」在地球关掉时更重要。
               <p className="text-sm text-muted-foreground">
-                这个地区里当前没有节点 —— 点上面那一列的「全部」取消筛选。
+                这个地区里当前没有节点 ——{" "}
+                {globeOn ? (
+                  "点上面那一列的「全部」取消筛选。"
+                ) : (
+                  <button type="button" className="underline underline-offset-2" onClick={() => setRegion(null)}>
+                    点这里取消地区筛选
+                  </button>
+                )}
               </p>
             ) : null}
             <NodeList view={listView} group={group} onGroup={setGroup} onOpen={openNode} onWarm={warmDetail}
@@ -775,21 +837,31 @@ function SiteIcon() {
  * 每块 12 张（约 30ms，短于 50ms 的长任务线），块与块之间用 `setTimeout(0)` 让浏览器先画一帧。
  * 少于一块的量（≤24 台）完全不改变行为 —— 护栏用的都是小夹具，不受影响。
  */
-function useProgressive(total: number, first = 24, step = 12): number {
+function useProgressive(total: number, first = 24, step = 12): [number, (index: number) => void] {
   const [limit, setLimit] = useState(() => Math.min(total, first))
   // 换了筛选/搜索（total 变了），列表换了，重新从第一批开始 —— 渲染期直接比，不放进 effect
   // （effect 里同步 setState 会白白多跑一轮渲染）。
+  // ★只在 total **变小**时才重置（2026-11-21 三审）：hub 上加一台机、或某台下线被筛掉，
+  //   total 就会 +1/-1，而原先任何变化都把 limit 打回 24 —— 第 25 张往后全部卸载再重挂，
+  //   滚动深时文档高度瞬间变矮（滚动位置被夹）、紧凑档已展开的行会把 NodeDetail 卸载重取。
+  //   变大时只需保证 limit 不超过 total（它本来就不会），已展开的数量照留。
   const [seenTotal, setSeenTotal] = useState(total)
   if (seenTotal !== total) {
     setSeenTotal(total)
-    setLimit(Math.min(total, first))
+    if (total < seenTotal) setLimit(Math.min(total, first))
   }
   useEffect(() => {
     if (limit >= total) return
     const timer = setTimeout(() => setLimit((n) => Math.min(total, n + step)), 0)
     return () => clearTimeout(timer)
   }, [limit, total, step])
-  return limit
+  // ★把某一台「立刻挂上」（2026-11-21 三审）：搜索框 ↑↓ 选的是**完整命中列表**，而 DOM 里
+  //   只挂了前 limit 张 —— 选中落到未挂载的那一台时 cursorId 有值但查不到元素，既没有描边
+  //   也没有滚动，按 ↓ 看起来「没反应」。这里让调用方按需把 limit 抬到下标之后。
+  const reveal = useCallback((index: number) => {
+    setLimit((n) => (n > index ? n : Math.min(total, index + 1)))
+  }, [total])
+  return [limit, reveal]
 }
 
 function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyle, historyDays, remarkPlacement, terms, cursorId }: {
@@ -817,13 +889,16 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
 }) {
   const { groups, current, shown, tabs, total, showTabs } = view
   // 首屏先画一屏的量，剩下的分帧补上（见 useProgressive）。
-  const list = shown.slice(0, useProgressive(shown.length))
-  // 键盘选中（↑↓）的那台滚进视野：block: nearest —— 够不着才拉，不打断访客自己滚到的地方。
-  // 分批挂载还没轮到它时（选择挂在第 25 台开外）查询落空，等下一批挂上来光标再动自然会被看见。
+  const [limit, reveal] = useProgressive(shown.length)
+  const list = shown.slice(0, limit)
+  // 键盘选中（↑↓）的那台：先确保它已经被挂上（分批挂载还没轮到它时 `querySelector` 会落空，
+  // 按 ↓ 看起来「没反应」），再滚进视野 —— block: nearest，够不着才拉，不打断访客自己滚到的地方。
   useEffect(() => {
     if (cursorId === null) return
+    const index = shown.findIndex((node) => node.id === cursorId)
+    if (index >= 0) reveal(index)
     document.querySelector(`[data-node-card="${cursorId}"]`)?.scrollIntoView({ block: "nearest" })
-  }, [cursorId])
+  }, [cursorId, shown, reveal])
   // 归一化后的值回写给 App（悬空的选中态被回落时纠正一次，见 groupView 的注释）。
   useEffect(() => {
     if (current !== group) onGroup(current)

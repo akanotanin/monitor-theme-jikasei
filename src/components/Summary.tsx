@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { ArrowDown, ArrowUp } from "lucide-react"
 
 import { Card } from "@/components/ui/card"
@@ -67,6 +67,8 @@ function Block({ title, hint, detail, wide = false, children }: {
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
+  // 浮层的 id（aria-controls 指过来）：useId 的冒号等字符剔掉，与 Chart 的 clipPath 同款。
+  const popId = `block-pop-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`
   const ref = useRef<HTMLDivElement | null>(null)
   // ★2026-10-31 机器多的情况：浮层再长也不许吊出视口。开的时候量一次**这块下面还剩多少空间**，
   //   把浮层的高度上限压到「剩下的那点」——矮窗口（实测 1440×420）里 min(24rem, 60vh) 仍会
@@ -75,12 +77,15 @@ function Block({ title, hint, detail, wide = false, children }: {
   //   不做「向上弹」：这一行在页面顶部、下面就是卡片列表，空间永远在下边；上翻的判据在这套
   //   布局里永远不会成立，写了也是没法验的死代码。
   const popRef = useRef<HTMLSpanElement | null>(null)
+  // 「这一下 blur 是鼠标按下引起的」（见 onBlur 的注释）：pointerdown 到 click 之间不关浮层。
+  const pointerDownRef = useRef(false)
   // 开着的浮层：点别处 / Esc 收起（与 NodeCard 那枚浮层同一个做法）。
   useEffect(() => {
     if (!open) return
     const onDown = (e: PointerEvent) => {
       const el = e.target
-      if (!(el instanceof HTMLElement) || !ref.current?.contains(el)) setOpen(false)
+      // ★同 CardStyleMenu：`instanceof HTMLElement` 漏 SVG（2026-11-21 三审）。
+      if (!(el instanceof Element) || !ref.current?.contains(el)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false) }
     document.addEventListener("pointerdown", onDown)
@@ -88,48 +93,130 @@ function Block({ title, hint, detail, wide = false, children }: {
     return () => { document.removeEventListener("pointerdown", onDown); document.removeEventListener("keydown", onKey) }
   }, [open])
   // 量可用空间并压上限。用 layout effect：改高度发生在同一帧里，看不见浮层先长出来再被压。
+  // ★依赖只有 `open`（2026-11-07 二审）：原来把 `detail` 也放进依赖，而 `detail` 是调用方
+  //   每次渲染都新建的元素（`detail={<TrafficDetail …/>}`）—— WS 每 2 秒推一帧 → 这一块
+  //   每 2 秒重渲染 → 依赖变化 → 每 2 秒强制一次「展开到自然高度 + 再压回去」的同步布局。
+  //   内容长高（峰值逐台回来）交给 ResizeObserver：它盯的正是浮层自己的盒子。
   useLayoutEffect(() => {
     if (!open) return
     const pop = popRef.current
     const host = ref.current
     if (!pop || !host) return
-    pop.style.maxHeight = "none"                   // 先按自然高度量（CSS 那道上限先让开）
-    const natural = pop.offsetHeight
-    const box = host.getBoundingClientRect()
-    const room = Math.round(window.innerHeight - box.bottom - 8)   // 留 8px 别贴着屏幕边
-    const want = Math.min(natural, 384, Math.round(window.innerHeight * 0.6))
-    // 下限 120px：再挤也比「整块看不见」强（120px 还能露出表头 + 两行 + 尾巴的开头）。
-    pop.style.maxHeight = `${Math.max(120, Math.min(want, room))}px`
-  }, [open, detail])
+    const fit = () => {
+      pop.style.maxHeight = "none"                   // 先按自然高度量（CSS 那道上限先让开）
+      const natural = pop.offsetHeight
+      const box = host.getBoundingClientRect()
+      const room = Math.round(window.innerHeight - box.bottom - 8)   // 留 8px 别贴着屏幕边
+      const want = Math.min(natural, 384, Math.round(window.innerHeight * 0.6))
+      // 下限 120px：再挤也比「整块看不见」强（120px 还能露出表头 + 两行 + 尾巴的开头）。
+      const next = `${Math.max(120, Math.min(want, room))}px`
+      if (pop.style.maxHeight !== next) pop.style.maxHeight = next
+      // ★横向也要夹（2026-11-21 三审）：浮层是 `w-max` 的绝对定位盒，默认 `left-0` ——
+      //   卡片在**右半列**时浮层往右铺、在手机上横出视口（390px 下实测右沿到 425）；
+      //   一律改成 `right-0` 又会把**左半列**的浮层推出去（实测 left=-49）。
+      //   所以按卡片的实际位置挑锚边：右边放不下就靠右、左边放不下就靠左，都放得下就靠左
+      //   （保持与原先一致的观感）。
+      const pad = 8
+      const vw = window.innerWidth
+      const w = pop.offsetWidth
+      const leftIfLeft = box.left
+      const leftIfRight = box.right - w
+      // ★两边都必须显式写：类里那个 `left-0` 会让「只设 right」变成「左右都钉住」——
+      //   `w-max` 的盒子于是被拉到「左沿=卡片左沿、右沿=卡片右沿」以外，实测 CSS 里
+      //   left 与 right 同时是 0px、浮层照样横出视口。所以挑定一边时，另一边写 `auto`。
+      if (leftIfRight >= pad && leftIfLeft + w > vw - pad) {
+        pop.style.left = "auto"
+        pop.style.right = "0px"
+      } else if (leftIfLeft >= pad) {
+        pop.style.right = "auto"
+        pop.style.left = "0px"
+      } else {
+        pop.style.right = "auto"
+        pop.style.left = `${Math.round(pad - box.left)}px`   // 两边都放不下：硬贴左边留 8px
+      }
+    }
+    fit()
+    // 行往里加（峰值一台一台回来）时浮层高度会变 —— 重新量一次。用 rAF 排队再量：
+    // 回调里改高度会再触发一次通知，直接同步改容易踩「ResizeObserver loop」。
+    let queued = 0
+    const ro = new ResizeObserver(() => {
+      if (queued) return
+      queued = requestAnimationFrame(() => { queued = 0; fit() })
+    })
+    ro.observe(pop)
+    return () => { ro.disconnect(); if (queued) cancelAnimationFrame(queued) }
+  }, [open])
 
   return (
+    // ★容器不再是 `role="button"`（2026-11-07 二审）。ARIA 规范里 button 的后代一律是
+    //   presentational —— 而浮层里那节 `DetailScroll` 是**可聚焦的滚动区**（键盘用户靠它
+    //   读到被裁掉的几十行）。「button 里套 tabIndex=0 的滚动区」是非法结构，NVDA / JAWS
+    //   会把滚动区从可访问树里吞掉，那个设计目标直接落空。
+    //   现在的形状：容器 `role="group"`，三段读数照旧扁平（标签 / 大数 / 小字，护栏按这个
+    //   结构逐段量），只是**标签行本身**换成一枚真 `<button>`（aria-expanded /
+    //   aria-controls）。浮层是容器的兄弟节点，不在按钮里面。
+    //   另外 `onClick` 改成 toggle、触屏也能按 —— 原先只开不关，手机上点开之后没有任何
+    //   手势能把它收起来（Esc 触屏没有、点浮层本身不算「外面」）。
     <div
       ref={ref}
-      className={`relative flex min-w-0 flex-col ${detail !== undefined ? "rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" : ""}`}
+      className={`relative flex min-w-0 flex-col ${detail !== undefined ? "rounded-md" : ""}`}
       title={detail ? undefined : hint}
-      tabIndex={detail ? 0 : undefined}
-      role={detail ? "button" : undefined}
-      aria-expanded={detail ? open : undefined}
+      role={detail ? "group" : undefined}
       onPointerEnter={detail ? (e) => { if (e.pointerType === "mouse") setOpen(true) } : undefined}
       onPointerLeave={detail ? (e) => { if (e.pointerType === "mouse") setOpen(false) } : undefined}
-      onFocus={detail ? () => setOpen(true) : undefined}
-      // ★2026-11-07：焦点挪进**浮层自己**（那一节可聚焦的明细滚动区）不算「离开」——
-      //   原来是无条件 `setOpen(false)`，可是 React 的 onBlur 走的是会冒泡的 focusout：
-      //   Tab 从这块进到浮层的滚动区时，这里先收到 focusout，浮层当场卸载、焦点掉回 body，
-      //   那枚「键盘用户拿得到被裁掉的那几十行」的滚动区永远走不到。判据与 CardStyleMenu
-      //   的 onBlur 同源（relatedTarget 还在子树里就不关）。
-      onBlur={detail ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) setOpen(false) } : undefined}
-      onClick={detail ? () => setOpen(true) : undefined}
-      // ★2026-11-06：这块是 role="button"，原先却没有键盘激活路径 —— Esc 关掉浮层之后
-      //   焦点还在块上，按 Enter / 空格毫无反应（只能 Tab 走再 Tab 回来靠 onFocus 重开）。
+      // 焦点挪进**浮层自己**（那一节可聚焦的明细滚动区）不算「离开」—— React 的 onBlur
+      // 走的是会冒泡的 focusout：Tab 从按钮进到浮层的滚动区时，这里先收到 focusout，
+      // 浮层当场卸载、焦点掉回 body，那枚滚动区永远走不到。判据与 CardStyleMenu 同源。
+      // ★鼠标按下的那一下不能算「焦点离开」（2026-11-21 三审）：pointerdown → focus 的序列里
+      //   focusout 会带着一个在 div 之外的 relatedTarget 先到，于是「悬停已开、点一下想固定住」
+      //   的浮层被这一下 blur 关掉（真机实测：真实鼠标点击后 aria-expanded 变 false）。
+      //   用一支 ref 标出「这次 blur 是鼠标按下引起的」，那种情况不关 —— 鼠标路径的关闭由
+      //   pointerleave 与 document 的 pointerdown 判据负责，这里只管键盘与焦点真的走掉。
+      onBlur={detail ? (e) => {
+        if (e.currentTarget.contains(e.relatedTarget as globalThis.Node | null)) return
+        if (pointerDownRef.current) return
+        setOpen(false)
+      } : undefined}
+      onPointerDownCapture={detail ? () => {
+        pointerDownRef.current = true
+        // 同一拍里清掉：pointerdown 之后紧跟的是 focus/click，等都过完再放开。
+        setTimeout(() => { pointerDownRef.current = false }, 0)
+      } : undefined}
+      // ★Esc 之后把焦点还回那块标签按钮（2026-11-21 三审）：浮层里那节 `DetailScroll` 是
+      //   可聚焦的滚动区，键盘用户在里面按 Esc 收起来后，焦点原先掉到 <body> —— 要么从头
+      //   Tab 整页，要么重新发现刚才在哪一块。按钮本身没被卸载，直接 focus 即可。
+      //   CardStyleMenu 早就这么做了（`box.current?.querySelector('.card-style-toggle')?.focus()`）。
       onKeyDown={detail ? (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault()
-          setOpen((was) => !was)
-        } else if (e.key === "Escape") setOpen(false)
+        if (e.key !== "Escape") return
+        setOpen(false)
+        ref.current?.querySelector<HTMLElement>("[data-block-toggle]")?.focus()
       } : undefined}
     >
-      <div className="truncate text-xs text-muted-foreground">{title}</div>
+      {detail !== undefined ? (
+        <button
+          type="button"
+          data-block-toggle=""
+          className="truncate rounded-sm text-left text-xs text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground"
+          aria-expanded={open}
+          aria-controls={open ? popId : undefined}
+          // ★点击只负责「开」，不 toggle（2026-11-21 三审）：桌面鼠标移到标签上时
+          //   `onPointerEnter` 已经把浮层打开了，再点一下原先会 toggle 成关闭 —— 也就是
+          //   「想点一下固定住，结果把它关了」（pointerdown→focus 刚设成 true，click 又翻回去）。
+          //   分家：鼠标只开（关交给 pointerleave / Esc / 点别处），触屏仍是 toggle
+          //   （触屏没有 hover，也没有 Esc —— 再点一次必须是能收起的那条路），键盘也是 toggle。
+          onClick={(e) => {
+            const touch = e.nativeEvent instanceof PointerEvent && e.nativeEvent.pointerType === "touch"
+            if (touch || e.detail === 0) setOpen((was) => !was)
+            else setOpen(true)
+          }}
+          // 鼠标悬停已经开过了；键盘 Tab 到它时也开（与原先 onFocus 的行为一致）。
+          onFocus={() => setOpen(true)}
+        >
+          {title}
+        </button>
+      ) : (
+        <div className="truncate text-xs text-muted-foreground">{title}</div>
+      )}
       {children}
       {detail !== undefined && open && (
         // data-budget-detail：护栏认「浮层开没开、内容对不对」的锚点（与 data-latency 同一套做法）。
@@ -143,8 +230,11 @@ function Block({ title, hint, detail, wide = false, children }: {
         //      滚动（纸面滚动条同款）。高度上限仍是 min(24rem, 60vh)，写在 index.css。
         <span
           ref={popRef}
+          id={popId}
           data-budget-detail=""
-          className={`${wide ? "traffic-detail max-w-[min(22rem,calc(100vw-2rem))]" : "budget-detail max-w-[min(15rem,calc(100vw-2rem))]"} absolute left-0 top-full z-20 flex w-max flex-col rounded-md border bg-popover text-xs shadow-md`}
+          /* 横向锚边不写死在这里：由上面 fit() 按卡片在视口中的位置现算（见那里的注释）。
+             这行保留 `left-0` 只作为**首帧**的起点（fit 在同一帧的 layout effect 里就会改）。 */
+          className={`${wide ? "traffic-detail max-w-[min(22rem,calc(100vw-2rem))]" : "budget-detail max-w-[min(15rem,calc(100vw-2rem))]"} absolute top-full z-20 flex w-max flex-col rounded-md border bg-popover text-xs shadow-md left-0`}
         >
           {detail}
         </span>
@@ -204,7 +294,7 @@ function BudgetDetail({ head, items, note, rates }: { head: string; items: Budge
  */
 const BIG_BASE = 24
 const BIG_MIN = 16
-function Big({ children }: { children: ReactNode }) {
+function Big({ children, text }: { children: ReactNode; text: string }) {
   const ref = useRef<HTMLDivElement | null>(null)
   useLayoutEffect(() => {
     const el = ref.current
@@ -241,7 +331,11 @@ function Big({ children }: { children: ReactNode }) {
       timers.forEach((t) => window.clearTimeout(t))
       document.fonts?.removeEventListener?.("loadingdone", onDone)
     }
-  }, [children])
+    // ★依赖是**文本**不是 children（2026-11-21 三审）：children 是 JSX 数组，调用方每次渲染
+    //   都新建一个身份 —— WS 每 2 秒推一帧 → 这个 effect 每 2 秒重跑一遍：强制同步布局
+    //   （先清 fontSize/lineHeight 再 getBoundingClientRect）、新建 ResizeObserver、
+    //   挂四个定时器、还调一次 document.fonts.load。读数没变的时候这些全是白工。
+  }, [text])
   return <div ref={ref} className="tnum mt-1 truncate text-2xl font-semibold tracking-tight">{children}</div>
 }
 
@@ -364,7 +458,7 @@ function NodesBlock({ fleet, searching = false }: { fleet: Fleet; searching?: bo
     <Block title="节点">
       {/* 斜杠与总数照参考站降一档（16px / 常规字重 / 弱化灰），只有在线数是那个大数。
           空格照旧留着：抹掉它复制与读屏会得到「3/4」这种黏成一团的写法。 */}
-      <Big>
+      <Big text={`${fleet.online} / ${fleet.total}`}>
         {fleet.online} <span className="text-base font-normal text-muted-foreground">/ {fleet.total}</span>
       </Big>
       <Foot>
@@ -380,7 +474,7 @@ function BusiestBlock({ fleet }: { fleet: Fleet }) {
   return (
     <Block title="最忙节点">
       {/* 一位小数，与卡片里 CPU 那格同一个口径。 */}
-      <Big>{fleet.busiest ? `${fleet.busiest.cpu.toFixed(1)}%` : "—"}</Big>
+      <Big text={fleet.busiest ? `${fleet.busiest.cpu.toFixed(1)}%` : "—"}>{fleet.busiest ? `${fleet.busiest.cpu.toFixed(1)}%` : "—"}</Big>
       <Foot>
         {fleet.busiest ? fleet.busiest.name : "无在线节点"}
       </Foot>
@@ -423,11 +517,11 @@ export function SummaryCards({ nodes, group, finance = false, searching = false 
               「各节点剩余价值」——各有可计的机器才挂（明细为空时保持原生的 title 提示那副面孔）。 */}
           <Pair>
             <Block title="月度预算" hint={monthlyNote} detail={budget.monthlyItems.length > 0 ? <BudgetDetail head="各节点月摊" items={budget.monthlyItems} note={monthlyRule} rates={note} /> : undefined}>
-              <Big>{budget.monthly === null ? "—" : `≈${cny(budget.monthly)}`}</Big>
+              <Big text={budget.monthly === null ? "—" : `≈${cny(budget.monthly)}`}>{budget.monthly === null ? "—" : `≈${cny(budget.monthly)}`}</Big>
               <Foot>{budget.monthlyCount ? `${budget.monthlyCount} 台计费` : "未记录价格"}</Foot>
             </Block>
             <Block title="剩余价值" hint={remainingNote} detail={budget.remainingItems.length > 0 ? <BudgetDetail head="各节点剩余价值" items={budget.remainingItems} note={remainingRule} rates={note} /> : undefined}>
-              <Big>{budget.remaining === null ? "—" : `≈${cny(budget.remaining)}`}</Big>
+              <Big text={budget.remaining === null ? "—" : `≈${cny(budget.remaining)}`}>{budget.remaining === null ? "—" : `≈${cny(budget.remaining)}`}</Big>
               <Foot>{budget.remainingCount ? `${budget.remainingCount} 台未到期` : "无预付到期"}</Foot>
             </Block>
           </Pair>

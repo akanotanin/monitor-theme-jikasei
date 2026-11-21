@@ -19,6 +19,16 @@ export default defineConfig({
   // changeOrigin sends that hub its own name as Host, which the proxy or CDN in
   // front of it routes by.
   server: {
-    proxy: { "/api": { target: process.env.MONITOR_HUB || "http://127.0.0.1:9911", changeOrigin: true, ws: true } },
+    // ★三条都要代理（2026-11-21 三审）：应用除了 `/api` 还会请求
+    //   `/themes/<short>/config`（主题设置）与 `/chicken/api/nodes`（小鸡农场入口探测）。
+    //   原先只代理 `/api`，于是 `npm run dev` 下站点设置永远取不到（静默回落 DEFAULTS）、
+    //   农场入口永远不出现 —— 而上面那段注释恰恰写着「any hub with its status page open
+    //   can serve as the source」，实际做不到。
+    proxy: Object.fromEntries(
+      ["/api", "/themes", "/chicken"].map((path) => [
+        path,
+        { target: process.env.MONITOR_HUB || "http://127.0.0.1:9911", changeOrigin: true, ws: path === "/api" },
+      ]),
+    ),
   },
 })

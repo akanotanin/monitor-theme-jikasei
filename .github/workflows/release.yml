@@ -13,12 +13,12 @@ jobs:
     if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: npm
       - name: 校验 tag 与版本号
         env:
@@ -37,9 +37,30 @@ jobs:
             }
           '
       - run: npm ci
+      # ★发布前自己跑一遍门禁（2026-11-21 三审）：`ci.yml` 只在 push 到 master 与 PR 上
+      #   触发，**打 tag 不会触发它**（见 ci.yml:4-12 的 on:）。而 ci.yml 的注释又说
+      #   「this is the only gate a tag receives」—— 那个 gate 其实没接上：一个指向
+      #   未过 CI 的 commit 的 tag 会被原样打包、发布成 Release 资产，而 hub 那边就是照
+      #   tag + sha256 取这个包的。二十秒的 lint/test/check 换掉这个洞。
+      - name: 门禁（lint / 单测 / 一致性检查）
+        run: |
+          npm run lint
+          npm test
+          npm run check
       # package 自己会先 build，再校验 dist/ 是否比源码新，最后打 theme.tar.gz 并开包核对
       - name: 构建并打包
         run: npm run package
+      # ★打包必须可复现（2026-11-21 三审）：hub 的 web-theme.pin 按 sha256 认这个包，
+      #   站长「下载源码 + 自己构建」要能对上同一个值。连打两次比对 —— 一旦有人把
+      #   tar 的确定性开关去掉（mtime / 属主 / 排序），这里当场红。
+      - name: 校验打包可复现
+        run: |
+          first=$(sha256sum release/theme.tar.gz | cut -d' ' -f1)
+          npm run package >/dev/null
+          second=$(sha256sum release/theme.tar.gz | cut -d' ' -f1)
+          echo "第一次 $first"
+          echo "第二次 $second"
+          test "$first" = "$second" || { echo "打包不可复现：两次 sha256 不同" >&2; exit 1; }
       - name: 发布 Release
         env:
           GH_TOKEN: ${{ github.token }}

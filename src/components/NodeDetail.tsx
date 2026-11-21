@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { Check, Copy, Info } from "lucide-react"
 
@@ -159,7 +159,8 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
     if (!peekOpen) return
     const onDown = (e: PointerEvent) => {
       const el = e.target
-      if (!(el instanceof HTMLElement) || !peekRef.current?.contains(el)) setPeekOpen(false)
+      // ★同 CardStyleMenu：`instanceof HTMLElement` 漏 SVG（2026-11-21 三审）。
+      if (!(el instanceof Element) || !peekRef.current?.contains(el)) setPeekOpen(false)
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPeekOpen(false) }
     document.addEventListener("pointerdown", onDown)
@@ -204,10 +205,69 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   // the connection the agents report through. Rendered as an empty window, a 503
   // would misdirect the reader.
   const [failed, setFailed] = useState("")
-  // Where the brush has been dragged, so the axis reticks for the visible span
-  // rather than retaining the whole window's ticks.
   // Where the chart begins on screen, so its height can occupy the remainder.
   const [chartTop, setChartTop] = useState(0)
+  const chartColRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * 图表那一列的起始位置（px，文档坐标）：它的高度按「视口剩余」算，所以要这个 top。
+   *
+   * ★用 **useCallback 稳定的 callback ref**，不是内联箭头（2026-11-07 二审）：内联箭头
+   *   每次渲染都是新身份，React 会在每次提交时 detach(null) → attach(el)，于是活节点每
+   *   2 秒（每次推送）两次 `getBoundingClientRect()` + 两次 setState —— 一次强制重排加
+   *   一轮额外渲染。稳定身份只在元素真的挂上 / 换掉 / 卸下时被调用一次。
+   *   ★这里必须是**回调**而不是 `useLayoutEffect(..., [])`：这一列只长在「资源 / 延迟」
+   *   两个页签里，切页签时元素会重新挂载 —— effect 的依赖不变就不会重跑，量出来的
+   *   top 是上一个页签的，高度算成 0/负值之后图表连 svg 都不画。
+   */
+  const measureChartTop = useCallback((el: HTMLDivElement | null) => {
+    chartColRef.current = el
+    if (!el || embedded) return
+    // `+ scrollY`：getBoundingClientRect 从视口量，而这个 top 要当「文档里第几像素」用。
+    const top = el.getBoundingClientRect().top + scrollY
+    // 值没变就别 setState（重挂载时常见）。
+    setChartTop((was) => (Math.abs(was - top) < 0.5 ? was : top))
+  }, [embedded])
+  // 窗口缩放会改这个 top（上面的信息格换行、图表宽度变化），监听一次重的。
+  // ★还要盯**上面那块自己**的高度变化（2026-11-21 三审）：那段注释一直写着「ResizeObserver
+  //   盯布局变化」，实现里却只有 window.resize。而上面那排信息格会随实时推送增减 ——
+  //   `Fact` 在值缺失时返回 null，「TCP / UDP 连接」那一格就在 metrics 到达/失效时整格出现
+  //   或消失，这时 chartTop 不重算：图表高度按旧的 top 算，底部要么超出视口要么空一大块。
+  //   观察的是这一列的**父容器**（那一列本身的高度就是由 chartTop 决定的，盯它会自激）。
+  useEffect(() => {
+    if (embedded) return
+    const onResize = () => {
+      const el = chartColRef.current
+      if (!el) return
+      const top = el.getBoundingClientRect().top + scrollY
+      setChartTop((was) => (Math.abs(was - top) < 0.5 ? was : top))
+    }
+    window.addEventListener("resize", onResize)
+    // 同一次重排里量，避免「先看到旧高度再跳」。
+    // ★注意 effect 跑的时候 ref 还是 null（callback ref 在提交阶段才被调用），所以观察目标
+    //   要等下一拍再取；`observe` 对同一元素重复调用是幂等的。
+    let queued = 0
+    let ro: ResizeObserver | null = null
+    const attach = () => {
+      const parent = chartColRef.current?.parentElement
+      if (!parent || !ro) return
+      ro.disconnect()
+      ro.observe(parent)
+    }
+    if (typeof ResizeObserver === "function") {
+      ro = new ResizeObserver(() => {
+        if (queued) return
+        queued = requestAnimationFrame(() => { queued = 0; onResize() })
+      })
+      const raf = requestAnimationFrame(() => { attach() })
+      return () => {
+        window.removeEventListener("resize", onResize)
+        cancelAnimationFrame(raf)
+        ro?.disconnect()
+        if (queued) cancelAnimationFrame(queued)
+      }
+    }
+    return () => window.removeEventListener("resize", onResize)
+  }, [embedded])
 
   useEffect(() => {
     let active = true
@@ -248,7 +308,8 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   // One series per probe that reported, labelled from the names the samples
   // arrived with. Memoised, as are the two below: the node prop changes every few
   // seconds as live metrics arrive, and rebuilding the chart's data array on those
-  // renders would reset the brush.
+  // renders would make React re-key every path (the chart itself is positional —
+  // it draws whatever array it is handed).
   const pingSeries = useMemo(
     () =>
       [...new Set((data?.ping ?? []).map((p) => p.task_id))]
@@ -313,14 +374,12 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   // The hub stamps every sample with its bucket rather than the second the probe
   // finished, so probes reporting at the bucket's rate share rows instead of each
   // contributing its own: a day of four probes is 717 rows rather than 2,868. A
-  // slower probe leaves gaps in its own column, which is what `connectNulls`
-  // addresses.
+  // slower probe leaves gaps in its own column, and the chart breaks its path at
+  // null rather than bridging across them.
   //
   // Every probe and both versions of every sample are held here whether or not
-  // they are on screen: recharts resets the brush when the data array changes
-  // identity, and re-reads a controlled selection only when the index props
-  // change, which they do not. Hiding a probe or enabling despiking therefore
-  // selects a `dataKey` rather than rebuilding the array.
+  // they are on screen: hiding a probe or enabling despiking only changes which
+  // series the chart is handed, so the row array keeps its identity.
   const pingRows = useMemo(() => {
     const rows = new Map<
       number,
@@ -361,8 +420,8 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
     return [...rows.values()].sort((a, b) => a.ts - b.ts)
   }, [pingSeries])
 
-  // 延迟 tooltip 要按时间戳回查整行：recharts 只把光标下那几条曲线交给它，而丢包率
-  // 挂在同一行的另一列上（`l<id>`），得连行一起拿到。
+  // 延迟 tooltip 要按时间戳回查整行：图表只把光标下那几条曲线交给它，而丢包率挂在同一行
+  // 的另一列上（`l<id>`），得连行一起拿到。
   const rowByTs = useMemo(() => new Map(pingRows.map((row) => [row.ts, row])), [pingRows])
 
   return (
@@ -542,14 +601,12 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
           // of chips on a desktop and two on a phone, so any fixed reservation is
           // wrong on one of them.
           <div
-            // `+ scrollY`, because getBoundingClientRect is measured from the
-            // viewport and this callback runs on every render; a live node
-            // re-renders every two seconds, so a scrolled page would re-derive the
-            // height from a top that has moved.
-            ref={(el) => {
-              // 就地展开时高度写死，不再按视口撑满：它下面还压着别的行。
-              if (el && !embedded) setChartTop(el.getBoundingClientRect().top + scrollY)
-            }}
+            // ★不再用内联 ref（2026-11-07 二审）：那个箭头函数**每次渲染都是新身份**，
+            //   React 会在每次提交时先 detach（传 null）再 attach，于是活节点每 2 秒两次
+            //   `getBoundingClientRect()` + 两次 setState —— 一次强制重排 + 一轮额外渲染。
+            //   改成挂载时量一次 + ResizeObserver 盯布局变化（窗口缩放、上面那几行读数
+            //   换行都会改这个 top）。就地展开时高度写死，不再按视口撑满（下面还压着别的行）。
+            ref={measureChartTop}
             style={
               !embedded && chartTop
                 ? { height: `calc(100svh - ${Math.round(chartTop)}px - 1rem)` }
@@ -604,9 +661,8 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
             </div>
 
             {/* Under the chart: what it covers is picked at the top, what is
-                drawn in it is picked here. Recharts paints the brush into the
-                same SVG as the axis, so this is as close beneath as HTML
-                sits. */}
+                drawn in it is picked here. 图例紧贴图下方（HTML 与 SVG 是两块
+                独立的东西，这是能贴得最近的位置）。 */}
             {(pingSeries.length > 1 || pingSeries.some((s) => s.loss > 0)) && (
             <div className="flex flex-wrap items-center justify-center gap-1.5">
               {pingSeries.map((s) => {

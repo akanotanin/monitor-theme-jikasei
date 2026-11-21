@@ -178,7 +178,9 @@ const READ = `(() => {
     viewBox: svg ? svg.getAttribute('viewBox') : null,
     ocean: svg ? svg.querySelectorAll('.globe-ocean').length : 0,
     disk: svg ? svg.querySelectorAll('.globe-disk').length : 0,
-    shade: svg ? svg.querySelectorAll('#globe-shade stop').length : 0,
+    // ★2026-11-07：渐变的 id 改成了 useId（同页两颗地球不撞），不再写死那个 id。
+    //   按「圆盘自己的 radialGradient 里那几个 stop」数，与 id 无关。
+    shade: svg ? svg.querySelectorAll('radialGradient stop').length : 0,
     landPts: area.length / 2,
     coastPts: coords.length / 2,
     coastOutside: far,
@@ -526,7 +528,13 @@ const kbd = JSON.parse((await js(`(() => {
   return JSON.stringify({
     ariaHidden: svg.getAttribute('aria-hidden'), group: svg.getAttribute('role'), ariaLabel: svg.getAttribute('aria-label'),
     n: hits.length,
-    allFocusable: hits.every((h) => h.getAttribute('tabindex') === '0' && h.getAttribute('role') === 'button' && (h.getAttribute('aria-label') || '').startsWith('打开')),
+    // ★roving tabindex（2026-11-21 三审）：整颗地球只留**一个** Tab 停靠点，针之间用方向键走。
+    //   原先每枚针都是 tabIndex=0，100 台的机群要按 100 次 Tab 才能走到下面的列表 ——
+    //   「每一枚都能 Tab 到」这件事本身正是问题，所以判据从「全都 =0」改成「恰好一枚 =0、
+    //   其余 -1，并且每枚都是 role=button + 「打开 …」」。
+    roving: hits.filter((h) => h.getAttribute('tabindex') === '0').length,
+    restMinus1: hits.every((h) => h.getAttribute('tabindex') === '0' || h.getAttribute('tabindex') === '-1'),
+    allSemantic: hits.every((h) => h.getAttribute('role') === 'button' && (h.getAttribute('aria-label') || '').startsWith('打开')),
     firstLabel: hits[0] ? hits[0].getAttribute('aria-label') : null,
     labelsHidden: [...svg.querySelectorAll('.globe-label')].every((t) => t.getAttribute('aria-hidden') === 'true'),
     countsHidden: [...svg.querySelectorAll('.globe-count')].every((t) => t.getAttribute('aria-hidden') === 'true'),
@@ -535,8 +543,26 @@ const kbd = JSON.parse((await js(`(() => {
 check('★ 地球整块不再对读屏隐藏（role=group + 「节点地球」的名字）',
   kbd.ariaHidden === null && kbd.group === 'group' && !!kbd.ariaLabel,
   JSON.stringify({ ariaHidden: kbd.ariaHidden, group: kbd.group, label: kbd.ariaLabel }))
-check('★ 每一枚针都是真焦点（tabIndex=0 + role=button + 「打开 …」的 aria-label）',
-  kbd.n > 0 && kbd.allFocusable, `${kbd.n} 枚，首枚 label=${JSON.stringify(kbd.firstLabel)}`)
+check('★ 每一枚针都是真按钮（role=button + 「打开 …」的 aria-label）',
+  kbd.n > 0 && kbd.allSemantic, `${kbd.n} 枚，首枚 label=${JSON.stringify(kbd.firstLabel)}`)
+check('★ roving tabindex：整颗地球只占 1 个 Tab 停靠点（不是每枚针一个）',
+  kbd.roving === 1 && kbd.restMinus1, `tabindex=0 的 ${kbd.roving} 枚 / 共 ${kbd.n} 枚`)
+// 方向键要能把焦点挪到下一枚针上（roving 的另一半：不只是「少一个停靠点」，还得走得动）。
+const rove = await js(`(() => {
+  const hits = [...document.querySelectorAll('.globe-atlas svg .hit')];
+  if (hits.length < 2) return 'null';
+  hits[0].focus();
+  const before = document.activeElement?.getAttribute('data-index');
+  hits[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  return new Promise((r) => setTimeout(() => r(JSON.stringify({
+    before, after: document.activeElement?.getAttribute('data-index'),
+    zero: [...document.querySelectorAll('.globe-atlas svg .hit')].filter((h) => h.getAttribute('tabindex') === '0').length,
+  })), 120));
+})()`)
+const rv = (() => { try { return JSON.parse(rove) } catch { return {} } })()
+check('★ 方向键把焦点挪到下一枚针（roving 走得动）',
+  rv.after != null && rv.after !== rv.before && rv.zero === 1,
+  `${rv.before} → ${rv.after}，tabindex=0 剩 ${rv.zero} 枚`)
 check('装饰件不重复播报（标签文字与台数角标都 aria-hidden）', kbd.labelsHidden && kbd.countsHidden,
   `标签 ${kbd.labelsHidden} 角标 ${kbd.countsHidden}`)
 // 走到第一枚针上按 Enter：焦点环（.hit:focus-visible 的描边）应当画出来，Enter 进它的详情页。

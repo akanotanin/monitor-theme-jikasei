@@ -13,8 +13,9 @@ const unitOf = (n: number) => Math.min(Math.floor(Math.log(n) / Math.log(1024)),
  */
 export function bytes(n: number, digits?: number): string {
   // `< 1` rather than `< 0`: a fraction of a byte puts `unitOf` at -1 and prints
-  // "512 undefined".
-  if (!n || n < 1) return "0 B"
+  // "512 undefined". 非有限值同理（`bytes(Infinity)` 曾印「Infinity PB」）——
+  // 这类值只可能来自坏样本（agent 报了个溢出数），当 0 比印一串天文数字有用。
+  if (!Number.isFinite(n) || n < 1) return "0 B"
   let i = unitOf(n)
   let v = n / 1024 ** i
   const places = () => (i === 0 ? 0 : (digits ?? (v >= 100 ? 0 : v >= 10 ? 1 : 2)))
@@ -25,6 +26,9 @@ export function bytes(n: number, digits?: number): string {
     i += 1
     v = n / 1024 ** i
   }
+  // 与 rate() 同一条：PB 是最后一档，再往上是天文数字（`bytes(1e30)` 会印
+  // 「888178419700125 PB」），夹在 999 —— 卡片上那一格放不下一串十五位数。
+  if (i === UNITS.length - 1) v = Math.min(v, 999)
   return `${v.toFixed(places())} ${UNITS[i]}`
 }
 
@@ -40,16 +44,40 @@ export function bytes(n: number, digits?: number): string {
  * `pair(0.5, 0.9)` 印的是「512.00 / 921.60 undefined」，这里要求两侧都真的落在某一档里。
  */
 export function pair(used: number, total: number): string {
-  const unit = used > 0 && total > 0 && unitOf(used) === unitOf(total) ? unitOf(total) : -1
+  // 非有限值/负数一律当 0：`bytes(Infinity)` 会印「Infinity PB」、负值会让 `unitOf` 给出
+  // 越界档位。这两个入口在调用方看起来都是「一个合法的 number」，不能指望它们自己过滤。
+  const u0 = Number.isFinite(used) && used > 0 ? used : 0
+  const t0 = Number.isFinite(total) && total > 0 ? total : 0
+  const unit = u0 > 0 && t0 > 0 && unitOf(u0) === unitOf(t0) ? unitOf(t0) : -1
   if (unit >= 0) {
     const f = (n: number, power: number) => (n / 1024 ** power).toFixed(power === 0 ? 0 : 2)
-    if (Number(f(total, unit)) >= 1024 && unit < UNITS.length - 1) {
-      const next = unit + 1
-      return `${f(used, next)} / ${f(total, next)} ${UNITS[next]}`
+    // ★两侧都要判（2026-11-07 二审）：只判 total 时「用超套餐但没超太多」那一小段会印出
+    //   「1024 / 1023 B」—— 左边四舍五入顶到 1024、单位却还是小的一档。used 先顶到就一起升档，
+    //   升档后 used 仍 ≥1024 是真的超额（30 GB 套餐用了 102 GB），那时印 100+ 是正确读数。
+    // ★哪一侧顶到 1024，就只让**那一侧**升档（2026-11-21 三审）：原先两侧一起升，
+    //   `pair(1023.4, 1023.6)` 于是印「1.00 / 1.00 KB」—— 而 `bytes(1023.4)` 印的是
+    //   「1023 B」。实际用量 1023 B 被凭空放大成 1 KB，卡片上那一格就成了假读数。
+    //   现在的规则：先按原档印；某一侧四舍五入后到 1024，只把那一侧换成更高一档。
+    const top = UNITS.length - 1
+    const part = (n: number): string => {
+      let power = unit
+      // 至多升一档就够了（1023.999 B → 1.00 KB）；若那一档还是 ≥1024（真的超额），
+      // 继续升到顶档为止，最后夹 999（与 bytes 同一条夹子）。
+      while (power < top && Number(f(n, power)) >= 1024) power += 1
+      const value = n / 1024 ** power
+      if (power >= top) return `${Math.min(value, 999).toFixed(2)} ${UNITS[top]}`
+      return `${f(n, power)} ${UNITS[power]}`
     }
-    return `${f(used, unit)} / ${f(total, unit)} ${UNITS[unit]}`
+    const left = part(u0)
+    const right = part(t0)
+    // 两侧落在同一档时合成「x / y UNIT」（卡片上那一格最紧凑的写法）；
+    // 跨档（一侧升了、另一侧没升）就各自带单位 —— 否则读者会以为两个数同档。
+    const lu = left.slice(left.lastIndexOf(" ") + 1)
+    const ru = right.slice(right.lastIndexOf(" ") + 1)
+    if (lu === ru) return `${left.slice(0, left.lastIndexOf(" "))} / ${left.length && right.slice(0, right.lastIndexOf(" "))} ${lu}`
+    return `${left} / ${right}`
   }
-  return `${bytes(used)} / ${bytes(total)}`
+  return `${bytes(u0)} / ${bytes(t0)}`
 }
 
 /**
@@ -83,8 +111,9 @@ export function axisBytes(v: number): string {
  * readings and that digit still fits.
  */
 export function rate(n: number): string {
-  // `< 1` for the same reason as bytes(): a fraction of a byte puts unitOf at -1.
-  if (!n || n < 1) return "0 B/s"
+  // `< 1` for the same reason as bytes(): a fraction of a byte puts unitOf at -1;
+  // 非有限值同样归零（原先印「Infinity PB/s」）。
+  if (!Number.isFinite(n) || n < 1) return "0 B/s"
   let i = unitOf(n)
   let v = n / 1024 ** i
   // `i < UNITS.length - 1`：进位不能越过 PB —— 一份离谱的大数（Infinity、1e30）会
@@ -93,15 +122,27 @@ export function rate(n: number): string {
     i += 1
     v = n / 1024 ** i
   }
+  // ★PB 是最后一档、上面那道进位写到头就停：`rate(1024**6-1)` 会印「1024 PB/s」、
+  //   `rate(1e30)` 印一串十五位数字 —— 与「每一档都停在 999」的设计自相矛盾，也会在
+  //   卡片的 50/50 格子里被省略号截断。到顶就夹在 999，让人一眼看出「这是个离谱的大数」。
+  if (i === UNITS.length - 1) v = Math.min(v, 999)
   return `${v.toFixed(i >= 1 && v < 10 ? 1 : 0)} ${UNITS[i]}/s`
 }
 
 export function percent(used: number, total: number): number {
-  return total > 0 ? Math.min(100, (used / total) * 100) : 0
+  // 夹到 0..100 两端：负数（坏样本 / 负的差值）原先会印出「-33.33%」，进度条还按它
+  // 画成反向；非有限值同理归零。
+  if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return 0
+  return Math.min(100, Math.max(0, (used / total) * 100))
 }
 
 export function uptime(seconds: number): string {
+  // ★负数与非有限值都当「没有读数」（2026-11-21 三审）：`uptime(-90)` 原先印「-2 分」——
+  //   hub 那边 uptime 来自 agent 的开机时长，时钟回拨/重启中途会给负数。
+  if (!Number.isFinite(seconds) || seconds < 0) return "—"
   if (!seconds) return "—"
+  // 不到 1 分钟单独说：原先 `uptime(0.9)` 印「0 分」，读者会以为「刚重启」与「未知」一样。
+  if (seconds < 60) return "不到 1 分钟"
   const d = Math.floor(seconds / 86400)
   const h = Math.floor((seconds % 86400) / 3600)
   const m = Math.floor((seconds % 3600) / 60)
@@ -121,7 +162,15 @@ export function daysUntil(date?: string | null): number | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date)
   if (!m) return null
   const target = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  // ★`Number.isNaN(target)` 是死判据（2026-11-21 三审）：`Date.UTC(2026, 12, 45)` 不返回 NaN，
+  //   它把越界月份/日期**正常进位**（2026-13-45 → 2027-02-14）。于是 `daysUntil("2026-13-45")`
+  //   返回 85 天、`daysUntil("2026-02-30")` 返回 -264 —— 两个都不存在的日期给出了貌似正常的
+  //   天数。正则通过后必须回读核对三个字段有没有被进位。
   if (Number.isNaN(target)) return null
+  const d = new Date(target)
+  if (d.getUTCFullYear() !== Number(m[1]) || d.getUTCMonth() !== Number(m[2]) - 1 || d.getUTCDate() !== Number(m[3])) {
+    return null
+  }
   const day = 86_400_000
   const beijing = 8 * 3_600_000
   const index = (ms: number) => Math.floor((ms + beijing) / day)
@@ -147,7 +196,13 @@ export function currencySymbol(currency: string): string {
  * 分开是为了「符号单独占一列」的排版：符号进下面那枚读数盒的图标位，数字留在文字位。
  */
 export function moneyAmount(amount: number, currency: string): string {
-  return SYMBOLS[currency] ? amount.toFixed(2) : `${amount.toFixed(2)} ${currency}`.trim()
+  // ★币种缺失时只印数字（2026-11-21 三审）：原先 `moneyAmount(12, undefined)` 印
+  //   「12.00 undefined」、`null` 印「12.00 null」—— 卡片侧三个调用点都是直接透传
+  //   `node.currency`，老 hub 或手填数据缺这个键时访客就会看到这串字。
+  //   口径与 money.ts 的 `(node.currency || "").toUpperCase()` 一致。
+  const code = (currency ?? "").trim().toUpperCase()
+  if (!code) return amount.toFixed(2)
+  return SYMBOLS[code] ? amount.toFixed(2) : `${amount.toFixed(2)} ${code}`
 }
 
 export function money(amount: number, currency: string): string {
@@ -305,7 +360,13 @@ export function timeTicks(from: number, to: number, count = 8): number[] {
  * a peak.
  */
 export function axisTop(max: number, floor: number, base = 10, cap = Infinity): number {
-  const target = Math.min(cap, Math.max(max, floor)) / 4
+  // ★非有限值先归零（2026-11-21 三审）：`axisTop(Infinity)` 原先一路算出 Infinity 并返回，
+  //   而 `quarters(Infinity)` 得到 [NaN×5] —— NodeDetail 的 `+((4 - top % 4) % 4)` 于是变成
+  //   NaN、Y 轴刻度全丢。这与同文件 bytes/rate/percent 已经做的「非有限值归零」自相矛盾。
+  //   来源是 safeNodes 曾放行的 Infinity（那条也一起修了），但函数自己也要挡。
+  const safeMax = Number.isFinite(max) ? max : 0
+  const safeFloor = Number.isFinite(floor) ? floor : 1
+  const target = Math.min(cap, Math.max(safeMax, safeFloor)) / 4
   const scale = base ** Math.floor(Math.log(target) / Math.log(base))
   const step = LADDER[base].map((m) => m * scale).find((n) => n >= target)
   return Math.min(cap, (step ?? target) * 4)
@@ -410,38 +471,77 @@ export function niceScale(lo: number, hi: number, count = 4): { lo: number; hi: 
   const step = STEPS.map((m) => m * mag).find((n) => n >= raw) ?? raw
   const low = Math.floor(lo / step) * step
   const high = Math.ceil(hi / step) * step
+  // ★刻度保留几位**跟着步长走**（2026-11-21 三审）：原先写死 `Math.round(v * 1e6) / 1e6`，
+  //   于是量程小于 1e-6 时每个刻度都被舍成 0 —— `niceScale(0, 1e-9)` 给出
+  //   `ticks = [0, 0, 0, 0, 0]`。图表那边网格线与 Y 轴文字都用 `key={`g${v}`}`，
+  //   五个 0 撞成同一个 key：React 只画得出其中一条网格线，刻度标签也全叠在轴底。
+  //   步长是 1/2/2.5/5 × 10^k，所以「k 的小数位 + 1」位就足够精确（0.25 要两位）。
+  // 步长是 1/2/2.5/5 × 10^k，`-k + 1` 位足够（0.25 用 2 位、1e-9 用 10 位），多的一位吃掉浮点尾巴。
+  const places = (() => {
+    if (!Number.isFinite(step) || step <= 0) return 6
+    const k = Math.floor(Math.log10(step))
+    return Math.min(20, Math.max(0, -k + 1))
+  })()
+  const snap = (v: number) => Number(v.toFixed(places))
   const ticks: number[] = []
-  for (let v = low; v <= high + step / 2; v += step) ticks.push(Math.round(v * 1e6) / 1e6)
-  return { lo: low, hi: high, ticks }
+  for (let v = low; v <= high + step / 2; v += step) ticks.push(snap(v))
+  // 兜底：浮点累加在极小量程上仍可能撞车，最后再按 step/1000 归一次（并去重）。
+  const uniq = [...new Set(ticks.length ? ticks : [snap(low), snap(high)])]
+  return { lo: snap(low), hi: snap(high), ticks: uniq.length ? uniq : [snap(low), snap(high)] }
 }
 
 /**
  * 纵向量程的一次收放（滚轮纵缩用；拖动平移不走这里）：纯函数，单测盯着。
  *
- * 三条夹子，顺序固定（跨度 → 下沿 → 顶端）：
- *  · **跨度下限**不是固定 1ms，而是调用方给的 `floor`（= min(1ms, 自动量程的 1/4)）：
+ * `ratio` 的约定（2026-11-07 二审定死，Chart 与 format 必须同一套）：**从绘图区顶端往下**的
+ * 像素比，0 = 贴在顶端（那里读到的值最大）、1 = 贴在底端（值最小）。Chart 算出来的就是这个；
+ * 所以「锚点下方」在值域里是 `ratio` 那么多、上方是 `1 - ratio`。
+ *
+ * 三道夹子，顺序固定（跨度 → 下沿/顶端 → 补宽）：
+ *  · **跨度下限**不是固定 1ms，而是调用方给的 `floor`（= min(1ms, 轴量程的 1/4)）：
  *    亚毫秒线路的自动量程本来就窄于 1ms，固定下限会把「收窄」硬重置成一个比原量程还宽的
  *    1ms 窗口 —— 第一格滚轮反而把量程放大、锚点被挪到正中，下沿贴 0 时收放还会被夹回同一
  *    状态、滚轮彻底卡死（2026-10-15 审出来）。另外 floor 再取一次 min(floor, 当前跨度)。
  *  · 夹到下限时**按锚点比例收**（锚点在框里的相对位置不变），不能以中心硬重置。
  *  · 下沿不越 0、顶端不越 cap；两根边界夹子各自单调收口，不互相推。
+ *  · ★夹完边界**必须补宽**（2026-11-07 二审）：只夹不补时，光标压在下半图、下沿被夹到 0，
+ *    跨度会一步跌到 `anchor*(1-f)`（实测 0.3 → 0.075，比 floor 小 4 倍），继续滚会塌到
+ *    1e-22，所有采样被 clipPath 剪光、图变成空白。补宽的规矩是「以锚点为中心按比例撑回
+ *    floor」，撑不下就让位给边界（下沿 0 / 顶端 cap）—— 这一档已经是量程极限，宁可窗口
+ *    不居中，也不能让跨度跌到画不出来。
  */
 export function zoomSpan(o: { lo: number; hi: number; anchor: number; ratio: number; factor: number; floor: number; cap: number }): { lo: number; hi: number } {
   const span = o.hi - o.lo
   if (!(span > 0) || !(o.factor > 0) || !Number.isFinite(o.anchor)) return { lo: o.lo, hi: o.hi }
   let lo = o.anchor - (o.anchor - o.lo) * o.factor
   let hi = o.anchor + (o.hi - o.anchor) * o.factor
-  const floor = Math.min(o.floor, span)
+  // floor 不大于**当前这段可用的量程**：cap 之下只有 cap 那么宽，floor 比它还大时夹子会
+  // 永远撑不开（顶端贴着 cap 时尤其明显）。
+  const room = Math.max(0, Math.min(o.cap, span))
+  const floor = Math.min(o.floor, room > 0 ? room : span)
   if (hi - lo < floor) {
+    // 锚点下方那段 = ratio（见上面的约定：ratio 从顶端往下量）。
     const r = Math.min(Math.max(o.ratio, 0), 1)
-    lo = o.anchor - r * floor
-    hi = o.anchor + (1 - r) * floor
+    lo = o.anchor - (1 - r) * floor
+    hi = o.anchor + r * floor
   }
   if (lo < 0) lo = 0
   if (hi > o.cap) hi = o.cap
-  if (hi - lo < floor * 1e-9) {
-    hi = Math.min(o.cap, lo + floor)
-    if (hi - lo < floor * 1e-9) lo = Math.max(0, hi - floor)
+  // 边界夹完之后跨度可能又不够了（上面那一步把它削掉一截）：以锚点为中心撑回 floor，
+  // 撑不下就贴着边界撑。原先这里只在跨度塌到 floor 的十亿分之一时才补，导致「稍微不够」
+  // 的那一档（正是每次滚轮的常态）永远补不上，跨度逐格雪崩。
+  if (floor > 0 && hi - lo < floor) {
+    // 优先保住锚点的相对位置：先把窗口按锚点比例展开，再夹回两条边界。
+    const r = Math.min(Math.max(o.ratio, 0), 1)
+    let nextLo = o.anchor - (1 - r) * floor
+    let nextHi = o.anchor + r * floor
+    if (nextLo < 0) { nextHi -= nextLo; nextLo = 0 }
+    if (nextHi > o.cap) { nextLo -= nextHi - o.cap; nextHi = o.cap }
+    if (nextLo < 0) nextLo = 0
+    // 窗口比 cap 还宽（floor > cap）时就取整段 cap。
+    if (nextHi - nextLo < floor) { nextLo = Math.max(0, Math.min(nextLo, o.cap - floor)); nextHi = nextLo + floor }
+    lo = nextLo
+    hi = nextHi
   }
   return { lo, hi }
 }

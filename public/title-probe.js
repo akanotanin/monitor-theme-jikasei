@@ -35,6 +35,9 @@
       document.title = cached
       mark("cache")
     }
+    // ★缓存命中就到此为止，不发请求：这一步的意义是「先把标签页写对，别等网络」，再问一次
+    //   只是让改过站名的老访客少闪一下旧名，代价却是每次冷启动多一次往返。改站名后的旧名
+    //   由 App 挂载后覆盖（`verify_title` 钉着「首次 1 次 → 命中缓存仍 1 次」）。
     return
   }
   if (!window.fetch) return

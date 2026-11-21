@@ -15,6 +15,9 @@
          图标时按这两个路径回落到主题目录里的 `public/favicon.svg` 与 `public/apple-touch-icon.png`
          （同一枚站标生成，见 tools/make_icons.py），顶栏那枚圆标也走同一个地址。
          所以这里不再需要「早跑脚本改写 <link>」那一步：地址是固定的，换图由 hub 的版本号负责。 -->
+    <!-- ★只留 `svg` 一条：hub 只给 `favicon.svg` 注入内容版本号，多挂一条 `favicon.ico` 会让
+         老图标拿到不带版本号的旧地址，还多一次请求（`verify_icons` 钉着「页头与标签页共用同
+         一个 URL」）。`.ico` 仍打进包里，给直接按约定来要它的老客户端。 -->
     <link rel="icon" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- 标签页标题的占位值：静态 HTML 不可能知道站长把站名改成了什么，真站名要到 JS 里才有。
@@ -54,7 +57,25 @@
           // 隐私模式 / 存储被禁用：没有记录可用，跟系统。
         }
         try {
-          var dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches
+          // ★三档（2026-11-21 三审）：访客的记录 → **站点的固定明暗**（App 缓存下来的
+          //   `jikasei:site_dark`）→ 系统偏好。原先只有首尾两档，于是「站长设固定暗色、
+          //   访客系统亮色」这一档首帧必闪一屏亮色 —— 正是这段脚本要消灭的东西。
+          //   站点的 themeMode 要等 /themes/<short>/config 回来才知道，所以只能缓存；
+          //   首次访问（还没缓存）仍退回系统那一档。
+          // 站点那一档存的是 **themeMode 原值**（dark / light / auto）——见 App.tsx 里
+          // SITE_DARK_KEY 的注释：只认 dark / light 两个强制档，auto 一律退回系统偏好。
+          var siteMode = null
+          try {
+            siteMode = localStorage.getItem("jikasei:site_dark")
+          } catch (e2) {
+            // 存储被禁用：没有站点缓存可用。
+          }
+          var forced = siteMode === "dark" || siteMode === "light"
+          var dark = saved
+            ? saved === "dark"
+            : forced
+              ? siteMode === "dark"
+              : matchMedia("(prefers-color-scheme: dark)").matches
           document.documentElement.classList.toggle("dark", dark)
           // 原生滚动条 / 表单控件与 UA 的默认底色一起说清楚（CSS 里 :root / .dark 也有同一份）。
           document.documentElement.style.colorScheme = dark ? "dark" : "light"

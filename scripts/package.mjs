@@ -49,7 +49,22 @@ if (existsSync('preview.png')) {
 }
 
 const archive = 'release/theme.tar.gz'
-execFileSync('tar', ['-czf', archive, '-C', staging, ...files], { stdio: 'inherit' })
+// ★确定性打包（2026-11-21 三审）：原先裸 `tar -czf`，包头里写的是**这台机器**的 mtime、
+//   uid/gid 与属主名 —— 同一份源码连跑两次 `npm run package`，sha256 就不同（实测
+//   `9ce17f…` → `2ac09b…`）。后果不是洁癖：hub 的 web-theme.pin 按 sha256 认包，站长
+//   「下载源码 + 自己构建」永远对不上发布页那个值，.sha256 的第一道校验也就废了。
+//   钉死：排序 + 全零属主 + 固定 mtime（SOURCE_DATE_EPOCH，没设就用 0 = 1970-01-01）。
+//   `--mtime` 与 `--sort`/`--owner` 是 GNU tar 的开关；Windows 自带的 bsdtar 也认这三条
+//   （仅 `--sort` 在老版本上没有，这里用 try 兜一层，退化成「只钉 mtime 与属主」）。
+const mtime = process.env.SOURCE_DATE_EPOCH ? `@${process.env.SOURCE_DATE_EPOCH}` : "@0"
+const deterministic = ['--owner=0', '--group=0', '--numeric-owner', `--mtime=${mtime}`, '--sort=name']
+const tarArgs = (extra) => ['-czf', archive, '-C', staging, ...extra, ...files]
+try {
+  execFileSync('tar', tarArgs(deterministic), { stdio: 'inherit' })
+} catch {
+  // 老 bsdtar 不认 --sort：去掉它再试一次（其余三个仍能消掉 mtime 与属主的漂移）。
+  execFileSync('tar', tarArgs(deterministic.filter((a) => !a.startsWith('--sort'))), { stdio: 'inherit' })
+}
 
 // 开包验证一遍，别把空包或路径写错的包发出去。
 // 按 CRLF 也切：Windows 的 bsdtar 列出的每行末尾带 \r，只切 \n 的话每个条目都多一个尾随字符，
@@ -65,7 +80,16 @@ const versioned = `release/monitor-theme-${meta.short}-${meta.version}.tar.gz`
 copyFileSync(archive, versioned)
 console.log(`版本化副本: ${versioned}`)
 
-// 校验和：发版页与回装复验都拿它比对
-const digest = createHash('sha256').update(readFileSync(versioned)).digest('hex')
-writeFileSync(`${versioned}.sha256`, `${digest}  ${versioned.split('/').pop()}\n`)
+// 校验和：发版页与回装复验都拿它比对。
+// ★两个文件名都要能验（2026-11-07 二审）：Release 页上传的是 `theme.tar.gz`（hub 的
+//   web-theme.pin 按这个名字取），而这里原先只写版本化副本的名字 —— 于是站长下载
+//   `theme.tar.gz` + `.sha256` 之后 `sha256sum -c` 直接报「No such file or directory」
+//   （第一道完整性校验就废了）。两份 sha 文件、各写各的文件名。
+const record = (file) => {
+  const digest = createHash('sha256').update(readFileSync(file)).digest('hex')
+  writeFileSync(`${file}.sha256`, `${digest}  ${file.split('/').pop()}\n`)
+  return digest
+}
+const digest = record(versioned)
+record(archive)
 console.log(`sha256: ${digest}`)
