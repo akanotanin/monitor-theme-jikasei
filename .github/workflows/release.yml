@@ -46,6 +46,7 @@ jobs:
         run: |
           npm run lint
           npm test
+          npm run test:utc
           npm run check
       # package 自己会先 build，再校验 dist/ 是否比源码新，最后打 theme.tar.gz 并开包核对
       - name: 构建并打包

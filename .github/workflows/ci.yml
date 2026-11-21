@@ -33,5 +33,9 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      # ★同一套单测再用 UTC 跑一遍（2026-11-21 加）：`daysUntil` 按北京日历日算，而夹具若
+      #   按本地日历日拼日期，在 UTC+8 的开发机上恰好一致、在 CI 的 UTC 上就整体差一天。
+      #   这条就是为那一类回归单列的 —— 它比「本机能过」多一层保障。
+      - run: npm run test:utc
       - run: npm run check
       - run: npm run build

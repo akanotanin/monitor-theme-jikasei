@@ -166,15 +166,23 @@ eq(clockBeijing(Date.UTC(2026, 5, 30, 15, 59)), "23:59", "UTC 15:59 → 北京 2
 
 // daysUntil: whole days, negative once past, null when there is no date.
 {
+  // ★按**北京时间**构造（2026-11-21 修）：`daysUntil` 的口径是「北京日历日」（额度到期日
+  //   按站点所在时区数，注释见 @/lib/today-traffic 的 dayStart）。这里原先用 `new Date()`
+  //   的本地日历日去拼字符串 —— 在 UTC+8 的开发机上恰好一致，到了 UTC 的 CI 上就整体差一天
+  //   （实测 CI：十天后得到 9、已过期得到 -4）。
   const at = (days: number) => {
-    const d = new Date()
-    d.setDate(d.getDate() + days)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+    const beijing = new Date(Date.now() + 8 * 3_600_000)
+    beijing.setUTCDate(beijing.getUTCDate() + days)
+    return `${beijing.getUTCFullYear()}-${String(beijing.getUTCMonth() + 1).padStart(2, "0")}-${String(beijing.getUTCDate()).padStart(2, "0")}`
   }
   eq(daysUntil(at(10)), 10, "十天后")
   eq(daysUntil(at(-3)), -3, "已过期为负")
   eq(daysUntil(null), null, "无到期日")
   eq(daysUntil("不是日期"), null, "无法解析的日期")
+  // 越界日期不许被 `Date.UTC` 悄悄进位（2026-13-45 会变成 2027-02-14）。
+  eq(daysUntil("2026-13-45"), null, "13 月 45 日：null 而不是进位后的天数")
+  eq(daysUntil("2026-02-30"), null, "2 月 30 日：null")
+  eq(daysUntil("2026-00-10"), null, "0 月：null")
 }
 
 eq(uptime(0), "—", "没上报过就不写时长")
