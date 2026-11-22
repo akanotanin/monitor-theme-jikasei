@@ -893,12 +893,23 @@ function NodeList({ view, group, onGroup, onOpen, onWarm, latencyLines, cardStyl
   const list = shown.slice(0, limit)
   // 键盘选中（↑↓）的那台：先确保它已经被挂上（分批挂载还没轮到它时 `querySelector` 会落空，
   // 按 ↓ 看起来「没反应」），再滚进视野 —— block: nearest，够不着才拉，不打断访客自己滚到的地方。
+  // ★滚动必须落在 `limit` 变化之后（2026-11-22 三审）：原先 reveal(index) 与
+  //   `querySelector(...).scrollIntoView()` 挤在同一个 effect 里同步执行，而 setLimit 触发的
+  //   那一轮渲染还没提交 —— 此刻新卡根本不在 DOM 里，`?.` 静默跳过，本次按键必落空。
+  //   NodeList 自己的重渲染也不会重跑这个 effect（依赖 `shown` 的引用没变），滚动要等
+  //   App 级的下一次重渲染（一帧 WS ≤2s 或一轮 5s 轮询）才补上。真机上连续按 ↓ 时，
+  //   看起来还能用，只是因为按键序列里穿插了 WS 帧；而**纯静态桩环境**（没有任何数据
+  //   更新来源）里就是「按 ↓ 没反应」—— 恰好是这个功能当初要修的场景。
+  //   拆成两段：先按需把 limit 抬到光标之后，滚动放到依赖 `[cursorId, limit]` 的下一轮。
   useEffect(() => {
     if (cursorId === null) return
     const index = shown.findIndex((node) => node.id === cursorId)
     if (index >= 0) reveal(index)
-    document.querySelector(`[data-node-card="${cursorId}"]`)?.scrollIntoView({ block: "nearest" })
   }, [cursorId, shown, reveal])
+  useEffect(() => {
+    if (cursorId === null) return
+    document.querySelector(`[data-node-card="${cursorId}"]`)?.scrollIntoView({ block: "nearest" })
+  }, [cursorId, limit])
   // 归一化后的值回写给 App（悬空的选中态被回落时纠正一次，见 groupView 的注释）。
   useEffect(() => {
     if (current !== group) onGroup(current)

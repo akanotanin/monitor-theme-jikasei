@@ -208,6 +208,26 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
   // Where the chart begins on screen, so its height can occupy the remainder.
   const [chartTop, setChartTop] = useState(0)
   const chartColRef = useRef<HTMLDivElement | null>(null)
+  const roRef = useRef<ResizeObserver | null>(null)
+  const queuedRef = useRef(0)
+  /** 量一次这一列在文档里的 top（视口坐标 + scrollY），值没变就不 setState。 */
+  const onChartLayout = useCallback(() => {
+    const el = chartColRef.current
+    if (!el) return
+    const top = el.getBoundingClientRect().top + scrollY
+    setChartTop((was) => (Math.abs(was - top) < 0.5 ? was : top))
+  }, [])
+  /**
+   * 把 RO 挂到这一列的**父容器**上（那一列自己的高度由 chartTop 决定，盯它会自激）。
+   * 元素每次（重新）挂上都要调一次 —— 切页签时这一列整块换掉，父节点也跟着换。
+   */
+  const attachChartObserver = useCallback(() => {
+    const parent = chartColRef.current?.parentElement
+    const ro = roRef.current
+    if (!parent || !ro) return
+    ro.disconnect()
+    ro.observe(parent)
+  }, [])
   /**
    * 图表那一列的起始位置（px，文档坐标）：它的高度按「视口剩余」算，所以要这个 top。
    *
@@ -226,48 +246,53 @@ export function NodeDetail({ node, embedded = false, onOpenDetail, historyDays, 
     const top = el.getBoundingClientRect().top + scrollY
     // 值没变就别 setState（重挂载时常见）。
     setChartTop((was) => (Math.abs(was - top) < 0.5 ? was : top))
-  }, [embedded])
+    // ★元素（重新）挂上就把 RO 挂到它的新父节点上（2026-11-22 三审）：这一列在切页签 /
+    //   从「资源」切到「延迟」时会整块重新挂载，而观察父节点的动作原先只在 effect 首跑
+    //   之后的那一帧做一次 —— 于是新元素的父节点从没被观察过，旧的又被 disconnect 掉，
+    //   「TCP/UDP 那一格出现/消失时重算 chartTop」等于只剩 window.resize 一条路。
+    //   放在 callback ref 里就跟着元素的生命周期走：挂上即观察，无需 effect 依赖 tab。
+    attachChartObserver()
+  }, [embedded, attachChartObserver])
   // 窗口缩放会改这个 top（上面的信息格换行、图表宽度变化），监听一次重的。
   // ★还要盯**上面那块自己**的高度变化（2026-11-21 三审）：那段注释一直写着「ResizeObserver
   //   盯布局变化」，实现里却只有 window.resize。而上面那排信息格会随实时推送增减 ——
   //   `Fact` 在值缺失时返回 null，「TCP / UDP 连接」那一格就在 metrics 到达/失效时整格出现
   //   或消失，这时 chartTop 不重算：图表高度按旧的 top 算，底部要么超出视口要么空一大块。
   //   观察的是这一列的**父容器**（那一列本身的高度就是由 chartTop 决定的，盯它会自激）。
+  //
+  // ★观察器要跟着元素走（2026-11-22 三审）：这一列只在「资源 / 延迟」两个页签里存在，切页签
+  //   时整块重新挂载 —— 原先「effect 首跑后一帧 attach 一次」的实现里，新元素的父节点从没
+  //   被观察、旧节点又被 disconnect，于是：
+  //     · 详情页默认落在「资源」页签时 `chartColRef.current` 还是 null → RO 从未观察任何元素；
+  //     · 之后切到「延迟」再切回来，观察的仍是已离线的旧父节点。
+  //   结果「TCP/UDP 那一格出现/消失时重算」只覆盖「?tab=latency 直接进入且不再切页签」一条路径。
+  //   改成：观察器由 ref 持有（`attachChartObserver` 稳定），元素的 callback ref 在每次
+  //   挂上时调它重新 observe 新父节点 —— 生命周期对着元素走，不必让 effect 依赖 tab。
+  //   （`roRef` / `queuedRef` / `onChartLayout` / `attachChartObserver` 都声明在上面，
+  //   因为 measureChartTop 要用 attachChartObserver。）
   useEffect(() => {
     if (embedded) return
-    const onResize = () => {
-      const el = chartColRef.current
-      if (!el) return
-      const top = el.getBoundingClientRect().top + scrollY
-      setChartTop((was) => (Math.abs(was - top) < 0.5 ? was : top))
-    }
-    window.addEventListener("resize", onResize)
+    window.addEventListener("resize", onChartLayout)
     // 同一次重排里量，避免「先看到旧高度再跳」。
-    // ★注意 effect 跑的时候 ref 还是 null（callback ref 在提交阶段才被调用），所以观察目标
-    //   要等下一拍再取；`observe` 对同一元素重复调用是幂等的。
-    let queued = 0
-    let ro: ResizeObserver | null = null
-    const attach = () => {
-      const parent = chartColRef.current?.parentElement
-      if (!parent || !ro) return
-      ro.disconnect()
-      ro.observe(parent)
-    }
     if (typeof ResizeObserver === "function") {
-      ro = new ResizeObserver(() => {
-        if (queued) return
-        queued = requestAnimationFrame(() => { queued = 0; onResize() })
+      const ro = new ResizeObserver(() => {
+        if (queuedRef.current) return
+        queuedRef.current = requestAnimationFrame(() => { queuedRef.current = 0; onChartLayout() })
       })
-      const raf = requestAnimationFrame(() => { attach() })
+      roRef.current = ro
+      // effect 跑的时候元素多半还没挂上（callback ref 在提交阶段才被调用）：挂上了就由
+      // measureChartTop 负责 observe，这里补一次是给「先有 effect、后挂元素」之外的顺序兜底。
+      attachChartObserver()
       return () => {
-        window.removeEventListener("resize", onResize)
-        cancelAnimationFrame(raf)
-        ro?.disconnect()
-        if (queued) cancelAnimationFrame(queued)
+        window.removeEventListener("resize", onChartLayout)
+        ro.disconnect()
+        roRef.current = null
+        if (queuedRef.current) cancelAnimationFrame(queuedRef.current)
+        queuedRef.current = 0
       }
     }
-    return () => window.removeEventListener("resize", onResize)
-  }, [embedded])
+    return () => window.removeEventListener("resize", onChartLayout)
+  }, [embedded, onChartLayout, attachChartObserver])
 
   useEffect(() => {
     let active = true

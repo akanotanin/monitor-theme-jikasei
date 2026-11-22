@@ -441,7 +441,16 @@ export function useNodes() {
       try {
         ws = new WebSocket(url)
       } catch {
+        // ★构造器直接抛（2026-11-22 三审）：广告拦截 / 隐私类扩展会把 `WebSocket` 换成一个
+        //   一调就 throw 的桩。原先这里只挂上 5 秒轮询就 return —— 既不提示「实时数据中断」
+        //   （armGrace 只挂在 onclose 上，而这条路连 onclose 都没有），也不排重连（用户把扩展
+        //   关掉之后必须刷新页面才恢复）。与「推送断了自己说」的意图在覆盖矩阵上不一致。
+        //   现在按 onclose 同一套处理：过首连宽限就亮横幅、计入退避、退避到点重试。
+        if (gotFrame || Date.now() - startedAt > CONNECT_GRACE) setStalled(true)
+        else armGrace()
+        strikes = Math.min(strikes + 1, BACKOFF.length - 1)
         poll ??= setInterval(fetchOnce, 5000)
+        retry = setTimeout(connect, BACKOFF[Math.min(strikes, BACKOFF.length - 1)])
         return
       }
       // 换上新的一条之前把旧的那条摘干净：重连定时器与看门狗都可能走到这里，两条并存会白占

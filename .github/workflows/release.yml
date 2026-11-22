@@ -51,9 +51,13 @@ jobs:
       # package 自己会先 build，再校验 dist/ 是否比源码新，最后打 theme.tar.gz 并开包核对
       - name: 构建并打包
         run: npm run package
-      # ★打包必须可复现（2026-11-21 三审）：hub 的 web-theme.pin 按 sha256 认这个包，
-      #   站长「下载源码 + 自己构建」要能对上同一个值。连打两次比对 —— 一旦有人把
-      #   tar 的确定性开关去掉（mtime / 属主 / 排序），这里当场红。
+      # ★打包必须可复现：tar 与 gzip 两层都由 `scripts/lib/pack.mjs` 自己写（不调外部
+      #   tar），所以 Windows 与 Linux 上同一份源码产出同一个 sha256。连打两次比对 ——
+      #   一旦有人把确定性开关（mtime / 属主 / 排序 / gzip 头）去掉，这里当场红。
+      #   ★别再写「hub 按 sha256 认包」：hub 的 web-theme.pin 只管它构建期内置的默认主题，
+      #    第三方主题经上传 / 从 GitHub 安装进来时只认资产名、大小与 gzip 魔数，不做 sha256
+      #    校验（monitor v1.5.2 的 fetch_theme）。可复现的收益是资产可审计、CI 幂等、
+      #    站长自构建能与发布值对上。
       - name: 校验打包可复现
         run: |
           first=$(sha256sum release/theme.tar.gz | cut -d' ' -f1)
@@ -62,8 +66,15 @@ jobs:
           echo "第一次 $first"
           echo "第二次 $second"
           test "$first" = "$second" || { echo "打包不可复现：两次 sha256 不同" >&2; exit 1; }
+      # 资产四个、成对：`theme.tar.gz`（hub 认的名字）+ 它的 .sha256，以及版本化副本
+      # + 它的 .sha256。★别只传 `release/*.sha256`（2026-11-22 三审）：那会把版本化副本的
+      # .sha256 传上去、而它指向的 tarball 没传 —— 站长 `sha256sum -c` 直接报 No such file。
       - name: 发布 Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" release/theme.tar.gz release/*.sha256 --verify-tag --title "$TAG" --generate-notes
+        run: >
+          gh release create "$TAG"
+          release/theme.tar.gz release/theme.tar.gz.sha256
+          release/monitor-theme-*.tar.gz release/monitor-theme-*.tar.gz.sha256
+          --verify-tag --title "$TAG" --generate-notes

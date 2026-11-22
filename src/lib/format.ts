@@ -74,7 +74,7 @@ export function pair(used: number, total: number): string {
     // 跨档（一侧升了、另一侧没升）就各自带单位 —— 否则读者会以为两个数同档。
     const lu = left.slice(left.lastIndexOf(" ") + 1)
     const ru = right.slice(right.lastIndexOf(" ") + 1)
-    if (lu === ru) return `${left.slice(0, left.lastIndexOf(" "))} / ${left.length && right.slice(0, right.lastIndexOf(" "))} ${lu}`
+    if (lu === ru) return `${left.slice(0, left.lastIndexOf(" "))} / ${right.slice(0, right.lastIndexOf(" "))} ${lu}`
     return `${left} / ${right}`
   }
   return `${bytes(u0)} / ${bytes(t0)}`

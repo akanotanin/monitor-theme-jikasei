@@ -16,12 +16,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The hub embeds a released archive, never this repository's source: release.yml
-  # builds a tag here and publishes theme.tar.gz, while the hub's web-theme.pin
-  # names the tag and its sha256. A break on main therefore cannot break a hub
-  # build, but this is the only gate a tag receives, since by the time the hub sees
-  # it the build has already happened here. Shipping to a hub is two steps: tag
-  # here, then move that pin there.
+  # A hub installs `theme.tar.gz` from a release, never this repository's source:
+  # release.yml builds a tag here and publishes it. The hub's own `web-theme.pin`
+  # concerns only the default theme it embeds at build time, not this one — a
+  # third-party theme arrives by upload or by 从 GitHub 安装, and the hub checks
+  # the asset name, size and gzip magic rather than a sha256. A break on main
+  # therefore cannot break a hub build, but this is the only gate a tag receives;
+  # release.yml now runs the same checks before packaging.
   build:
     runs-on: ubuntu-latest
     steps:
